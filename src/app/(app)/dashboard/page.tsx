@@ -3,20 +3,32 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { useMemo } from "react";
 import {
   ArrowRight,
   BookOpen,
   Calendar,
   Clock,
+  DollarSign,
   MapPin,
   Trophy,
   Users,
 } from "lucide-react";
 import SkillBadge from "@/components/shared/SkillBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { formatStatusLabel } from "@/lib/utils";
+
+const bookingStatusStyles: Record<string, string> = {
+  confirmed: "bg-primary/10 text-primary border-primary/20",
+  cancelled: "bg-destructive/10 text-destructive border-destructive/20",
+  completed: "bg-muted text-muted-foreground border-border",
+};
 
 const quickActions = [
   {
@@ -51,6 +63,26 @@ const quickActions = [
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+
+  const { data: todaysBookingsRaw = [], isLoading: loadingTodayBookings } =
+    useQuery({
+      queryKey: ["dashboard-bookings-today", user?.email, todayIso],
+      queryFn: async () => {
+        const { data } = await courtlyApi.bookings.list({
+          player_email: user?.email,
+          date: todayIso,
+        });
+        return data;
+      },
+      enabled: !!user?.email,
+    });
+
+  const todaysBookings = useMemo(() => {
+    return todaysBookingsRaw
+      .filter((b) => b.status !== "cancelled")
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }, [todaysBookingsRaw]);
 
   const { data: tournaments = [] } = useQuery({
     queryKey: ["tournaments-dashboard"],
@@ -141,6 +173,86 @@ export default function DashboardPage() {
             </Link>
           ))}
         </div>
+
+        <section>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="font-heading text-2xl font-bold text-foreground">
+              Bookings today
+            </h2>
+            <Link
+              href="/my-bookings"
+              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            >
+              My bookings <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {format(new Date(`${todayIso}T12:00:00`), "EEEE, MMM d, yyyy")}
+          </p>
+          {loadingTodayBookings ? (
+            <div className="space-y-3">
+              <Skeleton className="h-24 rounded-xl" />
+              <Skeleton className="h-24 rounded-xl" />
+            </div>
+          ) : todaysBookings.length === 0 ? (
+            <Card className="border-border/50 border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                <Calendar className="h-10 w-10 text-muted-foreground/60" />
+                <div>
+                  <p className="font-medium text-foreground">
+                    No court bookings today
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Reserve a court to see it show up here.
+                  </p>
+                </div>
+                <Button className="font-heading" asChild>
+                  <Link href="/courts">Browse courts</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {todaysBookings.map((b) => (
+                <Card
+                  key={b.id}
+                  className="border-border/50 transition-shadow hover:shadow-sm"
+                >
+                  <CardContent className="p-5">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-heading font-semibold text-foreground">
+                          {b.court_name ?? "Court"}
+                        </h3>
+                        <Badge
+                          variant="outline"
+                          className={
+                            bookingStatusStyles[b.status] ?? ""
+                          }
+                        >
+                          {formatStatusLabel(b.status)}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5 shrink-0" />
+                          {formatTimeShort(b.start_time)} –{" "}
+                          {formatTimeShort(b.end_time)}
+                        </span>
+                        {b.total_cost != null ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                            <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                            {(b.total_cost ?? 0).toFixed(2)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
 
         {tournaments.length > 0 ? (
           <section>

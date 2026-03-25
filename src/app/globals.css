@@ -126,6 +126,30 @@ html {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
   }
+
+  /* react-day-picker — align with Courtly theme (see Calendar component) */
+  .rdp-root {
+    --rdp-accent-color: hsl(var(--primary));
+    --rdp-accent-background-color: hsl(var(--primary) / 0.14);
+    --rdp-day-width: 2.75rem;
+    --rdp-day-height: 2.75rem;
+    --rdp-day_button-width: 2.5rem;
+    --rdp-day_button-height: 2.5rem;
+    --rdp-day_button-border-radius: 0.65rem;
+    --rdp-outside-opacity: 0.45;
+    --rdp-disabled-opacity: 0.35;
+  }
+
+  /* Beat bundled rdp `top: 0` so prev/next stay vertically centered with the caption */
+  .rdp-root[data-nav-layout="around"] .rdp-button_previous,
+  .rdp-root[data-nav-layout="around"] .rdp-button_next {
+    inset-block-start: unset;
+    top: 50%;
+    bottom: auto;
+    height: 2rem;
+    width: 2rem;
+    transform: translateY(-50%);
+  }
 }
 
 @layer utilities {

@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
+import { formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -177,7 +178,7 @@ export default function AdminBookingsPage() {
                         variant="outline"
                         className={statusStyles[b.status] ?? ""}
                       >
-                        {b.status}
+                        {formatStatusLabel(b.status)}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">

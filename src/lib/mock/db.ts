@@ -24,8 +24,16 @@ const courts: Court[] = [
     location: "Bonifacio Global City, Taguig",
     type: "outdoor",
     surface: "sport_court",
-    image_url:
-      "https://images.unsplash.com/photo-1622163642998-1ea49b0e6f3f?w=800&q=80",
+    image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
+    gallery_urls: [
+      "https://picsum.photos/seed/courtly-bgcs-g1/1400/788",
+      "https://picsum.photos/seed/courtly-bgcs-g2/1400/788",
+      "https://picsum.photos/seed/courtly-bgcs-g3/1400/788",
+    ],
+    description:
+      "Rooftop outdoor court with skyline views — great evening lights and breeze. Popular for doubles and open play.",
+    map_latitude: 14.5515,
+    map_longitude: 121.0483,
     hourly_rate: 45,
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
@@ -38,8 +46,16 @@ const courts: Court[] = [
     location: "Makati City",
     type: "indoor",
     surface: "wood",
-    image_url:
-      "https://images.unsplash.com/photo-1595435934249-5dfced6acedd?w=800&q=80",
+    image_url: "https://picsum.photos/seed/courtly-makati-cover/800/450",
+    gallery_urls: [
+      "https://picsum.photos/seed/courtly-makati-g1/1400/788",
+      "https://picsum.photos/seed/courtly-makati-g2/1400/788",
+      "https://picsum.photos/seed/courtly-makati-g3/1400/788",
+    ],
+    description:
+      "Competition-grade indoor wood surface, climate-controlled. Pro shop and lockers on the same floor.",
+    map_latitude: 14.5547,
+    map_longitude: 121.0244,
     hourly_rate: 55,
     amenities: ["lights", "restrooms", "pro_shop", "locker_room"],
     available_hours: { open: "06:00", close: "23:00" },
@@ -52,8 +68,15 @@ const courts: Court[] = [
     location: "Cebu City",
     type: "indoor",
     surface: "sport_court",
-    image_url:
-      "https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=800&q=80",
+    image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
+    gallery_urls: [
+      "https://picsum.photos/seed/courtly-cebu-g1/1400/788",
+      "https://picsum.photos/seed/courtly-cebu-g2/1400/788",
+    ],
+    description:
+      "Spacious indoor sport court surface with easy parking — ideal for club nights and lessons.",
+    map_latitude: 10.3157,
+    map_longitude: 123.8854,
     hourly_rate: 40,
     amenities: ["lights", "parking", "water_fountain"],
     available_hours: { open: "08:00", close: "21:00" },
@@ -133,6 +156,8 @@ const openPlay: OpenPlaySession[] = [
   },
 ];
 
+const splitDemoDate = isoDate(new Date(today.getTime() + 86400000 * 5));
+
 const bookings: Booking[] = [
   {
     id: "book-seed-1",
@@ -146,6 +171,50 @@ const bookings: Booking[] = [
     players_count: 2,
     total_cost: 45,
     status: "confirmed",
+    created_date: new Date().toISOString(),
+  },
+  {
+    id: "book-demo-split-a",
+    court_id: "court-makati-2",
+    court_name: "Makati Social Club — Court A",
+    date: splitDemoDate,
+    start_time: "09:00",
+    end_time: "14:00",
+    player_name: "Alex Player",
+    player_email: "player@courtly.dev",
+    total_cost: 275,
+    status: "confirmed",
+    notes:
+      "Demo: same visit split across unavailable hours (9:00–14:00 segment).",
+    created_date: new Date().toISOString(),
+  },
+  {
+    id: "book-demo-split-b",
+    court_id: "court-makati-2",
+    court_name: "Makati Social Club — Court A",
+    date: splitDemoDate,
+    start_time: "16:00",
+    end_time: "18:00",
+    player_name: "Alex Player",
+    player_email: "player@courtly.dev",
+    total_cost: 110,
+    status: "confirmed",
+    notes:
+      "Demo: second segment same day after blocked slots (16:00–18:00).",
+    created_date: new Date().toISOString(),
+  },
+  {
+    id: "book-demo-completed",
+    court_id: "court-bgcs-1",
+    court_name: "BGC Skyline Court 1",
+    date: isoDate(new Date(today.getTime() - 86400000)),
+    start_time: "08:00",
+    end_time: "09:00",
+    player_name: "Alex Player",
+    player_email: "player@courtly.dev",
+    total_cost: 45,
+    status: "completed",
+    notes: "Demo: past session to show Completed status.",
     created_date: new Date().toISOString(),
   },
   {

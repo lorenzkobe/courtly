@@ -5,6 +5,13 @@ export type Court = {
   type: "indoor" | "outdoor";
   surface: "concrete" | "asphalt" | "wood" | "sport_court";
   image_url: string;
+  /** Extra photos for gallery / carousel; if empty, `image_url` is used alone */
+  gallery_urls?: string[];
+  /** Short venue blurb shown on the book page */
+  description?: string;
+  /** WGS84 — used for map pin / directions */
+  map_latitude?: number;
+  map_longitude?: number;
   hourly_rate: number;
   amenities: string[];
   available_hours: { open: string; close: string };

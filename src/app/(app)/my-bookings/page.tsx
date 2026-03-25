@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
@@ -20,7 +20,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import {
+  bookingDurationHours,
+  formatTimeShort,
+} from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import type { Booking } from "@/lib/types/courtly";
+import { formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -29,6 +35,40 @@ const statusStyles: Record<string, string> = {
   registered: "bg-primary/10 text-primary border-primary/20",
   waitlisted: "bg-chart-3/15 text-chart-3 border-chart-3/30",
 };
+
+type CourtDateGroup = {
+  key: string;
+  courtName: string;
+  date: string;
+  items: Booking[];
+};
+
+function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
+  const map = new Map<string, Booking[]>();
+  for (const b of list) {
+    const key = `${b.court_id}\0${b.date}`;
+    const arr = map.get(key);
+    if (arr) arr.push(b);
+    else map.set(key, [b]);
+  }
+  const groups: CourtDateGroup[] = [];
+  for (const [key, items] of map) {
+    const [courtId, date] = key.split("\0");
+    items.sort((a, c) => a.start_time.localeCompare(c.start_time));
+    groups.push({
+      key,
+      courtName: items[0]?.court_name ?? courtId ?? "Court",
+      date,
+      items,
+    });
+  }
+  groups.sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate !== 0) return byDate;
+    return a.courtName.localeCompare(b.courtName);
+  });
+  return groups;
+}
 
 export default function MyBookingsPage() {
   const [tab, setTab] = useState("bookings");
@@ -45,6 +85,11 @@ export default function MyBookingsPage() {
     },
     enabled: !!user?.email,
   });
+
+  const bookingGroups = useMemo(
+    () => groupCourtBookings(bookings),
+    [bookings],
+  );
 
   const { data: registrations = [], isLoading: loadingRegs } = useQuery({
     queryKey: ["my-registrations", user?.email],
@@ -106,61 +151,109 @@ export default function MyBookingsPage() {
           </EmptyState>
         ) : (
           <div className="space-y-4">
-            {bookings.map((b) => (
-              <Card
-                key={b.id}
-                className="border-border/50 transition-shadow hover:shadow-md"
-              >
-                <CardContent className="p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex-1">
-                      <div className="mb-2 flex items-center gap-2">
+            <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              If your chosen range includes hours that are already booked or
+              blocked, only the <span className="font-medium text-foreground">free</span>{" "}
+              segments are reserved. You confirm that split before the booking
+              is created.
+            </div>
+            {bookingGroups.map((g) => {
+              const sessionTotal = g.items.reduce(
+                (sum, b) => sum + (b.total_cost ?? 0),
+                0,
+              );
+              const showSessionTotal = g.items.length > 1;
+
+              return (
+                <Card
+                  key={g.key}
+                  className="border-border/50 transition-shadow hover:shadow-md"
+                >
+                  <CardContent className="p-5">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
                         <h3 className="font-heading font-bold text-foreground">
-                          {b.court_name || "Court"}
+                          {g.courtName}
                         </h3>
-                        <Badge
-                          variant="outline"
-                          className={statusStyles[b.status] ?? ""}
-                        >
-                          {b.status}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground sm:grid-cols-4">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {b.date && format(new Date(b.date), "MMM d")}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5" />
-                          {b.start_time} – {b.end_time}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Users className="h-3.5 w-3.5" />
-                          {b.players_count} players
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <DollarSign className="h-3.5 w-3.5" />
-                          <span className="font-semibold text-foreground">
-                            ${b.total_cost}
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 shrink-0" />
+                            {g.date &&
+                              format(new Date(`${g.date}T12:00:00`), "EEE, MMM d, yyyy")}
                           </span>
                         </div>
+                        {showSessionTotal ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {g.items.length} reserved time
+                            {g.items.length === 1 ? "" : "s"} (gaps were not
+                            booked)
+                          </p>
+                        ) : null}
                       </div>
                     </div>
-                    {b.status === "confirmed" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                        onClick={() => cancelBooking.mutate(b.id)}
-                        disabled={cancelBooking.isPending}
-                      >
-                        <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                      </Button>
+
+                    <ul className="divide-y divide-border/60 border-t border-border/60">
+                      {g.items.map((b) => {
+                        const hours = bookingDurationHours(b);
+                        return (
+                          <li
+                            key={b.id}
+                            className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
+                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  {formatTimeShort(b.start_time)} –{" "}
+                                  {formatTimeShort(b.end_time)}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                  ({hours} {hours === 1 ? "hr" : "hrs"} booked)
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className={statusStyles[b.status] ?? ""}
+                                >
+                                  {formatStatusLabel(b.status)}
+                                </Badge>
+                                <span className="inline-flex items-center gap-0.5 text-sm font-semibold text-foreground">
+                                  <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                                  {(b.total_cost ?? 0).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                            {b.status === "confirmed" ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0 border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                onClick={() => cancelBooking.mutate(b.id)}
+                                disabled={cancelBooking.isPending}
+                              >
+                                <X className="mr-1 h-3.5 w-3.5" /> Cancel
+                              </Button>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {showSessionTotal ? (
+                      <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-sm">
+                        <span className="font-medium text-muted-foreground">
+                          Session total
+                        </span>
+                        <span className="font-heading text-base font-bold text-primary">
+                          ${sessionTotal.toFixed(2)}
+                        </span>
+                      </div>
                     ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )
       ) : registrations.length === 0 ? (
@@ -191,7 +284,7 @@ export default function MyBookingsPage() {
                         variant="outline"
                         className={statusStyles[r.status] ?? ""}
                       >
-                        {r.status}
+                        {formatStatusLabel(r.status)}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">

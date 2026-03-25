@@ -1,11 +1,24 @@
 import Link from "next/link";
-import { MapPin, Clock, DollarSign } from "lucide-react";
+import { Heart, MapPin, Clock, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
 
-export default function CourtCard({ court }: { court: Court }) {
+function formatAmenityLabel(value: string) {
+  return value.replace(/_/g, " ");
+}
+
+export default function CourtCard({
+  court,
+  isFavorite = false,
+  onToggleFavorite,
+}: {
+  court: Court;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
+}) {
   return (
     <Card className="group overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative h-48 overflow-hidden bg-muted">
@@ -17,7 +30,7 @@ export default function CourtCard({ court }: { court: Court }) {
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
-        <div className="absolute left-3 top-3 flex gap-2">
+        <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-wrap gap-2">
           <Badge className="bg-secondary/90 capitalize text-secondary-foreground backdrop-blur-sm">
             {court.type}
           </Badge>
@@ -25,6 +38,30 @@ export default function CourtCard({ court }: { court: Court }) {
             {court.surface?.replace("_", " ")}
           </Badge>
         </div>
+        {onToggleFavorite ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleFavorite();
+            }}
+            className={cn(
+              "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/85 shadow-sm backdrop-blur-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              isFavorite && "border-primary/40 text-primary",
+            )}
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          >
+            <Heart
+              className={cn(
+                "h-4 w-4",
+                isFavorite
+                  ? "fill-primary stroke-primary"
+                  : "text-muted-foreground",
+              )}
+            />
+          </button>
+        ) : null}
       </div>
       <CardContent className="p-5">
         <h3 className="mb-2 font-heading text-lg font-bold text-foreground">
@@ -54,7 +91,7 @@ export default function CourtCard({ court }: { court: Court }) {
                 variant="outline"
                 className="text-xs font-normal capitalize"
               >
-                {a.replace("_", " ")}
+                {formatAmenityLabel(a)}
               </Badge>
             ))}
           </div>

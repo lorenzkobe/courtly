@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { DayPickerProps } from "react-day-picker";
 import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -12,43 +13,48 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  /** Puts prev/next beside the month title so they stay clickable (default layout is covered by the grid). */
+  navLayout = "around",
   ...props
 }: CalendarProps) {
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      navLayout={navLayout}
       className={cn("p-3", className)}
       classNames={{
-        root: "w-fit",
-        months: "relative flex flex-col gap-4 sm:flex-row",
-        month: "flex w-full flex-col gap-4",
-        month_caption: "relative flex items-center justify-center pt-1",
-        caption_label: "text-sm font-medium",
-        nav: "absolute left-0 top-1 flex w-full items-center justify-between px-1",
+        root: cn("w-full max-w-full"),
+        months: "relative flex w-full flex-col gap-4",
+        month: "relative flex w-full min-w-0 flex-col gap-3",
+        month_caption:
+          "relative mb-1 flex min-h-10 w-full flex-nowrap items-center justify-center px-1 sm:px-0",
+        caption_label:
+          "pointer-events-none z-0 max-w-full truncate px-10 text-center text-sm font-semibold text-foreground",
         button_previous: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+          /* vertical centering: see globals.css rdp[data-nav-layout="around"] */
+          "absolute start-1 z-20 size-8 bg-background p-0 hover:bg-muted sm:start-2",
         ),
         button_next: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+          "absolute end-1 z-20 size-8 bg-background p-0 hover:bg-muted sm:end-2",
         ),
-        month_grid: "mt-4 w-full border-collapse",
-        weekdays: "flex",
+        month_grid: "w-full border-collapse",
+        weekdays: "mb-1 flex w-full",
         weekday:
-          "w-8 text-[0.8rem] font-normal text-muted-foreground rounded-md",
-        week: "mt-2 flex w-full",
-        day: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
+          "flex-1 text-center text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground",
+        week: "mt-1 flex w-full",
+        day: "flex flex-1 justify-center p-0 text-center text-sm focus-within:relative focus-within:z-20",
         day_button: cn(
           buttonVariants({ variant: "ghost" }),
-          "h-8 w-8 p-0 font-normal aria-selected:opacity-100",
+          "size-9 max-w-full p-0 font-medium text-foreground aria-selected:opacity-100",
         ),
         selected:
-          "rounded-md bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        today: "rounded-md bg-accent text-accent-foreground",
-        outside:
-          "text-muted-foreground aria-selected:bg-accent/50 aria-selected:text-muted-foreground",
-        disabled: "text-muted-foreground opacity-50",
+          "[&_button]:!bg-primary [&_button]:!text-primary-foreground [&_button]:shadow-sm [&_button]:hover:!bg-primary [&_button]:hover:!text-primary-foreground",
+        today:
+          "[&_button]:bg-accent/70 [&_button]:font-semibold [&_button]:text-accent-foreground",
+        outside: "text-muted-foreground/70 [&_button]:text-muted-foreground/80",
+        disabled: "text-muted-foreground/50 [&_button]:opacity-40",
         hidden: "invisible",
         ...classNames,
       }}

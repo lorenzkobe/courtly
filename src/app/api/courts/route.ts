@@ -59,6 +59,20 @@ export async function POST(req: Request) {
     status: (body.status as Court["status"]) ?? "active",
     managed_by_user_id,
   };
+  if (typeof body.description === "string") {
+    court.description = body.description;
+  }
+  if (Array.isArray(body.gallery_urls)) {
+    court.gallery_urls = body.gallery_urls.filter(
+      (u): u is string => typeof u === "string",
+    );
+  }
+  if (typeof body.map_latitude === "number" && Number.isFinite(body.map_latitude)) {
+    court.map_latitude = body.map_latitude;
+  }
+  if (typeof body.map_longitude === "number" && Number.isFinite(body.map_longitude)) {
+    court.map_longitude = body.map_longitude;
+  }
   mockDb.courts.push(court);
   return NextResponse.json(court);
 }
