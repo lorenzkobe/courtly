@@ -381,8 +381,9 @@ export default function BookCourtPage() {
   const mapEmbedSrc = hasMapPin
     ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - mapBboxPad},${mapLat - mapBboxPad},${mapLon + mapBboxPad},${mapLat + mapBboxPad}&layer=mapnik`
     : null;
+  /** Full map in browser: Google Maps. Embedded iframe above stays OpenStreetMap. */
   const mapOpenHref = hasMapPin
-    ? `https://www.openstreetmap.org/?mlat=${mapLat}&mlon=${mapLon}#map=16/${mapLat}/${mapLon}`
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
   const directionsHref = hasMapPin
     ? `https://www.google.com/maps/dir/?api=1&destination=${mapLat},${mapLon}`
@@ -674,7 +675,7 @@ export default function BookCourtPage() {
                       rel="noopener noreferrer"
                     >
                       <MapPin className="mr-1.5 h-3.5 w-3.5" />
-                      Open in map
+                      Open in Map
                       <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
                     </a>
                   </Button>
