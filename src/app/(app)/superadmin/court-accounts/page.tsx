@@ -304,7 +304,7 @@ export default function SuperadminCourtAccountsPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-heading">
               {editing ? "Edit court account" : "New court account"}

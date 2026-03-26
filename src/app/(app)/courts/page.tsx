@@ -384,10 +384,11 @@ export default function CourtsPage() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogContent
               className={cn(
-                "flex max-h-[min(92dvh,44rem)] flex-col gap-0 rounded-xl p-0 sm:max-w-lg lg:left-[calc(50vw+8rem)]",
+                "max-h-[min(92dvh,44rem)] sm:max-w-lg lg:left-[calc(50vw+8rem)]",
               )}
+              contentClassName="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0"
             >
-              <DialogHeader className="space-y-1 border-b border-border px-4 py-4 text-left sm:px-6">
+              <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 py-4 text-left sm:px-6">
                 <DialogTitle>Filters</DialogTitle>
                 <DialogDescription>
                   Adjust options below, then tap Apply to update results.
@@ -395,7 +396,7 @@ export default function CourtsPage() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-center gap-2">
                     <Heart
@@ -702,7 +703,7 @@ export default function CourtsPage() {
                 ) : null}
               </div>
 
-              <DialogFooter className="flex-row flex-wrap gap-2 border-t border-border px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-between sm:px-6">
+              <DialogFooter className="shrink-0 flex-row flex-wrap gap-2 border-t border-border px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-between sm:px-6">
                 <Button
                   type="button"
                   variant="ghost"

@@ -2,15 +2,23 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
+import { reviewSummaryForCourt } from "@/lib/review-summary";
 import type { Court } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+function withReviewSummary(court: Court) {
+  return {
+    ...court,
+    review_summary: reviewSummaryForCourt(court.id, mockDb.courtReviews),
+  };
+}
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const court = mockDb.courts.find((c) => c.id === id);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(court);
+  return NextResponse.json(withReviewSummary(court));
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
@@ -25,6 +33,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 
   const patch = (await req.json()) as Partial<Court>;
+  delete (patch as { review_summary?: unknown }).review_summary;
   if (user.role !== "superadmin" && "managed_by_user_id" in patch) {
     delete patch.managed_by_user_id;
   }
@@ -33,7 +42,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 
   mockDb.courts[idx] = { ...mockDb.courts[idx], ...patch };
-  return NextResponse.json(mockDb.courts[idx]);
+  return NextResponse.json(withReviewSummary(mockDb.courts[idx]!));
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {

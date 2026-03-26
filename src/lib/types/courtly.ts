@@ -7,6 +7,41 @@ export type CourtRateWindow = {
   hourly_rate: number;
 };
 
+/** Single-day block when the court is not bookable (maintenance, event, etc.). */
+export type CourtClosure = {
+  id: string;
+  court_id: string;
+  /** yyyy-MM-dd */
+  date: string;
+  start_time: string;
+  end_time: string;
+  /** e.g. maintenance, special_event */
+  reason: string;
+  note?: string;
+  created_at: string;
+};
+
+export type CourtReview = {
+  id: string;
+  court_id: string;
+  user_id: string;
+  user_name: string;
+  booking_id: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  comment?: string;
+  created_at: string;
+  updated_at: string;
+  flagged?: boolean;
+  flagged_at?: string;
+  flagged_by_user_id?: string;
+  flag_reason?: string;
+};
+
+export type CourtReviewSummary = {
+  average_rating: number;
+  review_count: number;
+};
+
 export type Court = {
   id: string;
   name: string;
@@ -33,6 +68,8 @@ export type Court = {
   managed_by_user_id: string | null;
   /** Venue operator account (superadmin assigns courts to accounts). */
   court_account_id: string | null;
+  /** Populated on read APIs from reviews table — not stored on court row. */
+  review_summary?: CourtReviewSummary;
 };
 
 export type Booking = {

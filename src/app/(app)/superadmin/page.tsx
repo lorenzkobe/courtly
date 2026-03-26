@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Building2, PhilippinePeso, UserCog } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  Flag,
+  PhilippinePeso,
+  UserCog,
+} from "lucide-react";
 import PageHeader from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +39,13 @@ const links = [
     description:
       "Filter by date, review income by court account, and drill into each account’s courts.",
     icon: PhilippinePeso,
+  },
+  {
+    href: "/superadmin/moderation",
+    title: "Flagged reviews",
+    description:
+      "Review reports from venue admins about player reviews, clear flags, or remove content.",
+    icon: Flag,
   },
 ] as const;
 

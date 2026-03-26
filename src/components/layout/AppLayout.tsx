@@ -9,6 +9,7 @@ import {
   Building2,
   Calendar,
   Crown,
+  Flag,
   PhilippinePeso,
   LayoutDashboard,
   Layers,
@@ -60,6 +61,11 @@ function platformSuperadminNav(): NavEntry[] {
       path: "/superadmin/revenue",
       label: "Platform revenue",
       icon: PhilippinePeso,
+    },
+    {
+      path: "/superadmin/moderation",
+      label: "Flagged reviews",
+      icon: Flag,
     },
   ];
 }

@@ -5,7 +5,6 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  PhilippinePeso,
   ExternalLink,
   MapPin,
   Search,
@@ -186,7 +185,7 @@ export default function AdminBookingsPage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <Dialog open={!!detailId} onOpenChange={(o) => !o && setDetailId(null)}>
-        <DialogContent className="max-h-[min(90dvh,40rem)] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[min(90dvh,40rem)] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-heading">Booking details</DialogTitle>
           </DialogHeader>
@@ -287,13 +286,15 @@ export default function AdminBookingsPage() {
                     </div>
                   ) : null}
                   {mapEmbedSrc ? (
-                    <iframe
-                      title={`Map — ${detailCourt.name}`}
-                      src={mapEmbedSrc}
-                      className="mt-3 aspect-video w-full max-h-48 rounded-xl border border-border"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                    />
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-border">
+                      <iframe
+                        title={`Map — ${detailCourt.name}`}
+                        src={mapEmbedSrc}
+                        className="aspect-video w-full max-h-48 border-0"
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                      />
+                    </div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" asChild>
@@ -430,11 +431,8 @@ export default function AdminBookingsPage() {
                           {b.notes.trim()}
                         </span>
                       ) : null}
-                      <div className="flex items-center gap-1 font-semibold text-foreground">
-                        <PhilippinePeso className="h-3.5 w-3.5" />{" "}
-                        {b.total_cost != null
-                          ? formatPhp(b.total_cost)
-                          : "—"}
+                      <div className="font-semibold text-foreground tabular-nums">
+                        {b.total_cost != null ? formatPhp(b.total_cost) : "—"}
                       </div>
                     </div>
                   </div>

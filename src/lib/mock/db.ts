@@ -2,6 +2,8 @@ import type {
   Booking,
   Court,
   CourtAccount,
+  CourtClosure,
+  CourtReview,
   ManagedUser,
   OpenPlaySession,
   Tournament,
@@ -296,6 +298,23 @@ const bookings: Booking[] = [
     created_date: new Date().toISOString(),
   },
   {
+    id: "book-demo-makati-completed",
+    court_id: "court-makati-2",
+    court_name: "Makati Social Club — Court A",
+    sport: "pickleball",
+    date: isoDate(new Date(today.getTime() - 86400000 * 2)),
+    start_time: "12:00",
+    end_time: "13:00",
+    player_name: "River Guest",
+    player_email: "guest@example.com",
+    court_subtotal: 55,
+    platform_fee: 2.75,
+    total_cost: 57.75,
+    status: "completed",
+    notes: "Demo: completed visit for flagged-review scenario.",
+    created_date: new Date().toISOString(),
+  },
+  {
     id: "book-seed-2",
     court_id: "court-cebu-3",
     court_name: "Cebu Bay Sports Hub — Court 3",
@@ -316,6 +335,52 @@ const bookings: Booking[] = [
 
 const registrations: TournamentRegistration[] = [];
 
+/** Demo: Makati court blocked 14:00–16:00 on split-demo day (matches seeded split booking story). */
+const courtClosures: CourtClosure[] = [
+  {
+    id: "clos-makati-demo",
+    court_id: "court-makati-2",
+    date: splitDemoDate,
+    start_time: "14:00",
+    end_time: "16:00",
+    reason: "maintenance",
+    note: "Scheduled surface maintenance",
+    created_at: new Date().toISOString(),
+  },
+];
+
+const courtReviews: CourtReview[] = [
+  {
+    id: "rev-demo-bgcs",
+    court_id: "court-bgcs-1",
+    user_id: "user-player-1",
+    user_name: "Alex Player",
+    booking_id: "book-demo-completed",
+    rating: 5,
+    comment: "Great evening lights and breeze. Court was clean.",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  /** Flagged by demo court admin — shows on superadmin moderation queue. */
+  {
+    id: "rev-demo-flagged-makati",
+    court_id: "court-makati-2",
+    user_id: "user-guest-demo",
+    user_name: "River Guest",
+    booking_id: "book-demo-makati-completed",
+    rating: 1,
+    comment:
+      "Worst court I've played on. Equipment broken and nobody at the desk.",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    flagged: true,
+    flagged_at: new Date().toISOString(),
+    flagged_by_user_id: DEMO_ADMIN_ID,
+    flag_reason:
+      "Guest never checked in for this slot — suspect review is fraudulent.",
+  },
+];
+
 /** In-memory store for mock API route handlers (persists for dev server lifetime). */
 export const mockDb = {
   courtAccounts,
@@ -325,4 +390,6 @@ export const mockDb = {
   tournaments,
   openPlay,
   registrations,
+  courtClosures,
+  courtReviews,
 };

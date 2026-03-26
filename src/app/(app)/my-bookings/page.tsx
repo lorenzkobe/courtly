@@ -5,7 +5,6 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  PhilippinePeso,
   Users,
   X,
 } from "lucide-react";
@@ -232,8 +231,7 @@ export default function MyBookingsPage() {
                                 >
                                   {formatStatusLabel(b.status)}
                                 </Badge>
-                                <span className="inline-flex items-center gap-0.5 text-sm font-semibold text-foreground">
-                                  <PhilippinePeso className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-sm font-semibold text-foreground tabular-nums">
                                   {formatPhp(b.total_cost ?? 0)}
                                 </span>
                               </div>

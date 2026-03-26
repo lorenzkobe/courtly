@@ -1,4 +1,4 @@
-import type { Booking } from "@/lib/types/courtly";
+import type { Booking, CourtClosure } from "@/lib/types/courtly";
 
 export type BookingSegment = {
   start_time: string;
@@ -33,6 +33,23 @@ export function bookingDurationHours(
 
 export function formatHourToken(h: number): string {
   return `${String(h).padStart(2, "0")}:00`;
+}
+
+/** Hour starts blocked by court closures on a given calendar date (yyyy-MM-dd). */
+export function occupiedHourStartsFromClosures(
+  closures: Pick<CourtClosure, "date" | "start_time" | "end_time">[],
+  dateIso: string,
+): Set<string> {
+  const set = new Set<string>();
+  for (const c of closures) {
+    if (c.date !== dateIso) continue;
+    const sh = hourFromTime(c.start_time);
+    const eh = hourFromTime(c.end_time);
+    for (let h = sh; h < eh; h++) {
+      set.add(formatHourToken(h));
+    }
+  }
+  return set;
 }
 
 /** Each hour start that falls inside a confirmed booking interval [start, end). */

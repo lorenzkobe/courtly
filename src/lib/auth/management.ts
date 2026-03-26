@@ -34,6 +34,15 @@ export function isSuperadmin(user: SessionUser | null): boolean {
   return user?.role === "superadmin";
 }
 
+/** Venue court admins may flag reviews; platform superadmin handles moderation separately. */
+export function canCourtVenueAdminFlagReview(
+  user: SessionUser | null,
+  court: Court,
+): boolean {
+  if (!user || user.role !== "admin") return false;
+  return canMutateCourt(user, court);
+}
+
 /** Roles that may access `/admin/*` (scoped data for admin, all data for superadmin). */
 export const COURT_ADMIN_ROLES: SessionUser["role"][] = ["admin", "superadmin"];
 

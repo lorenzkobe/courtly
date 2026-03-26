@@ -6,20 +6,23 @@ import {
   ArrowLeft,
   Calendar,
   Clock,
-  PhilippinePeso,
   ExternalLink,
   MapPin,
+  Star,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
 import {
@@ -28,8 +31,8 @@ import {
 } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
-import type { Booking } from "@/lib/types/courtly";
-import { formatStatusLabel } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
+import type { Booking, CourtReview } from "@/lib/types/courtly";
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -94,6 +97,95 @@ export default function BookingDetailPage() {
       return data;
     },
     enabled: !!booking?.court_id,
+  });
+
+  const { data: reviewBundle } = useQuery({
+    queryKey: ["court-reviews", booking?.court_id],
+    queryFn: async () => {
+      const { data: payload } = await courtlyApi.courtReviews.bundle(
+        booking!.court_id,
+      );
+      if (payload == null)
+        return { court: undefined, reviews: [] as CourtReview[] };
+      if (Array.isArray(payload)) {
+        return { court: undefined, reviews: payload };
+      }
+      const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
+      return { ...payload, reviews };
+    },
+    enabled: !!booking?.court_id,
+  });
+
+  const myReview = useMemo(() => {
+    if (!reviewBundle?.reviews || !bookingId) return undefined;
+    return reviewBundle.reviews.find((r) => r.booking_id === bookingId);
+  }, [reviewBundle, bookingId]);
+
+  const [ratingDraft, setRatingDraft] = useState(0);
+  const [commentDraft, setCommentDraft] = useState("");
+
+  useEffect(() => {
+    if (myReview) {
+      setRatingDraft(myReview.rating);
+      setCommentDraft(myReview.comment ?? "");
+    } else {
+      setRatingDraft(0);
+      setCommentDraft("");
+    }
+  }, [myReview]);
+
+  const invalidateReviews = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["court-reviews", booking?.court_id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["court", booking?.court_id] });
+    void queryClient.invalidateQueries({ queryKey: ["courts"] });
+  };
+
+  const createReviewMut = useMutation({
+    mutationFn: async () => {
+      if (!booking?.court_id) throw new Error("No court");
+      await courtlyApi.courtReviews.create(booking.court_id, {
+        booking_id: bookingId,
+        rating: ratingDraft,
+        comment: commentDraft.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Thanks for your review!");
+    },
+    onError: () => toast.error("Could not save review"),
+  });
+
+  const updateReviewMut = useMutation({
+    mutationFn: async () => {
+      if (!booking?.court_id || !myReview) throw new Error("No review");
+      await courtlyApi.courtReviews.update(
+        booking.court_id,
+        myReview.id,
+        {
+          rating: ratingDraft,
+          comment: commentDraft.trim() || undefined,
+        },
+      );
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Review updated");
+    },
+    onError: () => toast.error("Could not update review"),
+  });
+
+  const deleteReviewMut = useMutation({
+    mutationFn: async () => {
+      if (!booking?.court_id || !myReview) throw new Error("No review");
+      await courtlyApi.courtReviews.remove(booking.court_id, myReview.id);
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Review removed");
+    },
   });
 
   const cancelBooking = useMutation({
@@ -161,6 +253,19 @@ export default function BookingDetailPage() {
 
   const multi = segments.length > 1;
 
+  const isMyBooking =
+    user &&
+    booking.player_email?.toLowerCase() === user.email.toLowerCase();
+  const visitCompleted = booking.status === "completed";
+  const canRate =
+    isMyBooking &&
+    visitCompleted &&
+    !myReview &&
+    booking.court_id;
+  const canEditReview = Boolean(
+    isMyBooking && myReview && user && myReview.user_id === user.id,
+  );
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
       <Button
@@ -226,8 +331,7 @@ export default function BookingDetailPage() {
                           >
                             {formatStatusLabel(s.status)}
                           </Badge>
-                          <span className="inline-flex items-center gap-0.5 text-sm font-semibold text-foreground">
-                            <PhilippinePeso className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm font-semibold text-foreground tabular-nums">
                             {formatPhp(s.total_cost ?? 0)}
                           </span>
                         </div>
@@ -251,8 +355,7 @@ export default function BookingDetailPage() {
 
             <div className="flex items-center justify-between border-t border-border/60 pt-4 text-sm">
               <span className="font-medium text-muted-foreground">Total</span>
-              <span className="inline-flex items-center gap-0.5 font-heading text-lg font-bold text-primary">
-                <PhilippinePeso className="h-4 w-4" />
+              <span className="font-heading text-lg font-bold text-primary tabular-nums">
                 {formatPhp(sessionTotal)}
               </span>
             </div>
@@ -267,6 +370,93 @@ export default function BookingDetailPage() {
             ) : null}
           </CardContent>
         </Card>
+
+        {canRate || canEditReview ? (
+          <Card className="border-border/50">
+            <CardContent className="space-y-4 p-6">
+              <h2 className="font-heading text-lg font-semibold text-foreground">
+                {myReview ? "Your review" : "Rate this court"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {myReview
+                  ? "Update your star rating or note, or remove your review."
+                  : "Share a 1–5 star rating after your visit. A short note is optional."}
+              </p>
+              <div className="space-y-2">
+                <Label>Stars</Label>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setRatingDraft(n)}
+                      className="rounded-md p-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`${n} stars`}
+                    >
+                      <Star
+                        className={cn(
+                          "h-8 w-8",
+                          n <= ratingDraft
+                            ? "fill-amber-400 text-amber-400"
+                            : "text-muted-foreground/30",
+                        )}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="review-comment">Review (optional)</Label>
+                <Textarea
+                  id="review-comment"
+                  rows={3}
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  placeholder="How was the court?"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {myReview ? (
+                  <>
+                    <Button
+                      type="button"
+                      disabled={
+                        ratingDraft < 1 ||
+                        ratingDraft > 5 ||
+                        updateReviewMut.isPending
+                      }
+                      onClick={() => updateReviewMut.mutate()}
+                    >
+                      Save changes
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                      disabled={deleteReviewMut.isPending}
+                      onClick={() => deleteReviewMut.mutate()}
+                    >
+                      <Trash2 className="mr-1.5 h-4 w-4" />
+                      Delete review
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={
+                      ratingDraft < 1 ||
+                      ratingDraft > 5 ||
+                      createReviewMut.isPending
+                    }
+                    onClick={() => createReviewMut.mutate()}
+                  >
+                    Submit review
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {court ? (
           <Card className="border-border/50">
@@ -296,13 +486,15 @@ export default function BookingDetailPage() {
                   : "Search the address in your maps app for directions."}
               </p>
               {mapEmbedSrc ? (
-                <iframe
-                  title={`Map — ${court.name}`}
-                  src={mapEmbedSrc}
-                  className="aspect-video w-full max-h-56 rounded-xl border border-border"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
+                <div className="overflow-hidden rounded-2xl border border-border">
+                  <iframe
+                    title={`Map — ${court.name}`}
+                    src={mapEmbedSrc}
+                    className="aspect-video w-full max-h-56 border-0"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" asChild>

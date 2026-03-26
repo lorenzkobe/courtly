@@ -4,6 +4,8 @@ import type {
   Court,
   CourtAccount,
   CourtAccountDetailResponse,
+  CourtClosure,
+  CourtReview,
   ManagedUser,
   OpenPlaySession,
   RevenueSummaryResponse,
@@ -33,6 +35,61 @@ export const courtlyApi = {
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
     remove: (id: string) => http.delete(`/api/courts/${id}`),
+  },
+
+  courtClosures: {
+    list: (courtId: string, params?: { date?: string }) =>
+      http.get<CourtClosure[]>(`/api/courts/${courtId}/closures`, {
+        params: params?.date ? { date: params.date } : {},
+      }),
+    create: (courtId: string, data: Partial<CourtClosure>) =>
+      http.post<CourtClosure>(`/api/courts/${courtId}/closures`, data),
+    update: (
+      courtId: string,
+      closureId: string,
+      data: Partial<CourtClosure>,
+    ) =>
+      http.patch<CourtClosure>(
+        `/api/courts/${courtId}/closures/${closureId}`,
+        data,
+      ),
+    remove: (courtId: string, closureId: string) =>
+      http.delete(`/api/courts/${courtId}/closures/${closureId}`),
+  },
+
+  courtReviews: {
+    bundle: (courtId: string) =>
+      http.get<{ court: Court; reviews: CourtReview[] }>(
+        `/api/courts/${courtId}/reviews`,
+      ),
+    create: (
+      courtId: string,
+      body: { booking_id: string; rating: number; comment?: string },
+    ) => http.post<CourtReview>(`/api/courts/${courtId}/reviews`, body),
+    update: (
+      courtId: string,
+      reviewId: string,
+      body: Partial<{
+        rating: number;
+        comment: string;
+        clear_flag: boolean;
+      }>,
+    ) =>
+      http.patch<CourtReview>(
+        `/api/courts/${courtId}/reviews/${reviewId}`,
+        body,
+      ),
+    remove: (courtId: string, reviewId: string) =>
+      http.delete(`/api/courts/${courtId}/reviews/${reviewId}`),
+    flag: (
+      courtId: string,
+      reviewId: string,
+      body?: { reason?: string },
+    ) =>
+      http.post<CourtReview>(
+        `/api/courts/${courtId}/reviews/${reviewId}/flag`,
+        body ?? {},
+      ),
   },
 
   bookings: {
@@ -122,5 +179,12 @@ export const courtlyApi = {
             : {}),
         },
       }),
+  },
+
+  flaggedReviews: {
+    list: () =>
+      http.get<{
+        reviews: (CourtReview & { court_name: string })[];
+      }>("/api/admin/flagged-reviews"),
   },
 };

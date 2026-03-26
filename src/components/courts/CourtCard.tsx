@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Heart, MapPin, Clock, PhilippinePeso } from "lucide-react";
+import { Heart, MapPin, Clock, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,12 +74,22 @@ export default function CourtCard({
             <Clock className="h-3.5 w-3.5" />
             {court.available_hours?.open} – {court.available_hours?.close}
           </div>
-          <div className="flex items-center gap-2">
-            <PhilippinePeso className="h-3.5 w-3.5" />
-            <span className="font-semibold text-foreground">
-              {formatCourtRateSummary(court)}
-            </span>
+          <div className="font-semibold text-foreground tabular-nums">
+            {formatCourtRateSummary(court)}
           </div>
+          {court.review_summary && court.review_summary.review_count > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
+              <span className="font-medium text-foreground">
+                {court.review_summary.average_rating.toFixed(1)}
+              </span>
+              <span className="text-muted-foreground">
+                ({court.review_summary.review_count}{" "}
+                {court.review_summary.review_count === 1 ? "review" : "reviews"}
+                )
+              </span>
+            </div>
+          ) : null}
         </div>
         {court.amenities?.length ? (
           <div className="mb-4 flex flex-wrap gap-1.5">

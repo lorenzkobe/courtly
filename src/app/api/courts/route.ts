@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
+import { reviewSummaryForCourt } from "@/lib/review-summary";
 import type { Court, CourtRateWindow, CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -29,7 +30,12 @@ export async function GET(req: Request) {
     list = list.filter((c) => c.sport === sport);
   }
 
-  return NextResponse.json(list);
+  return NextResponse.json(
+    list.map((c) => ({
+      ...c,
+      review_summary: reviewSummaryForCourt(c.id, mockDb.courtReviews),
+    })),
+  );
 }
 
 export async function POST(req: Request) {
@@ -100,5 +106,8 @@ export async function POST(req: Request) {
     court.map_longitude = body.map_longitude;
   }
   mockDb.courts.push(court);
-  return NextResponse.json(court);
+  return NextResponse.json({
+    ...court,
+    review_summary: reviewSummaryForCourt(court.id, mockDb.courtReviews),
+  });
 }

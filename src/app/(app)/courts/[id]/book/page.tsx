@@ -6,10 +6,10 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  PhilippinePeso,
   ExternalLink,
   Heart,
   MapPin,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -49,12 +49,14 @@ import {
   formatTimeShort,
   hourFromTime,
   occupiedHourStarts,
+  occupiedHourStartsFromClosures,
   selectionCoversBookedSlots,
   totalBillableHours,
   type BookingSegment,
 } from "@/lib/booking-range";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
+import { canCourtVenueAdminFlagReview, isSuperadmin } from "@/lib/auth/management";
 import type { Booking, Court } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 import { useFavoriteCourtIds } from "@/hooks/use-favorite-court-ids";
@@ -120,6 +122,23 @@ function courtGalleryUrls(court: Court): string[] {
   if (g && g.length > 0) return g;
   if (court.image_url) return [court.image_url];
   return [];
+}
+
+function StarRow({ rating, className }: { rating: number; className?: string }) {
+  const filled = Math.round(rating);
+  return (
+    <div className={cn("flex items-center gap-0.5", className)} aria-hidden>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star
+          key={i}
+          className={cn(
+            "h-4 w-4 shrink-0",
+            i < filled ? "fill-amber-400 text-amber-400" : "text-muted-foreground/25",
+          )}
+        />
+      ))}
+    </div>
+  );
 }
 
 function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) {
@@ -229,22 +248,57 @@ export default function BookCourtPage() {
     enabled: !!courtId,
   });
 
+  const dateIso = format(selectedDate, "yyyy-MM-dd");
+
   const { data: existingBookings = [] } = useQuery({
-    queryKey: ["bookings-for-court", courtId, selectedDate],
+    queryKey: ["bookings-for-court", courtId, dateIso],
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.list({
         court_id: courtId,
-        date: format(selectedDate, "yyyy-MM-dd"),
+        date: dateIso,
       });
       return data.filter((b) => b.status === "confirmed");
     },
     enabled: !!courtId && !!selectedDate,
   });
 
-  const occupied = useMemo(
+  const { data: dayClosures = [] } = useQuery({
+    queryKey: ["court-closures", courtId, dateIso],
+    queryFn: async () => {
+      const { data } = await courtlyApi.courtClosures.list(courtId, {
+        date: dateIso,
+      });
+      return data;
+    },
+    enabled: !!courtId,
+  });
+
+  const bookingOccupied = useMemo(
     () => occupiedHourStarts(existingBookings),
     [existingBookings],
   );
+  const closureOccupied = useMemo(
+    () => occupiedHourStartsFromClosures(dayClosures, dateIso),
+    [dayClosures, dateIso],
+  );
+  const occupied = useMemo(() => {
+    const merged = new Set<string>();
+    for (const t of bookingOccupied) merged.add(t);
+    for (const t of closureOccupied) merged.add(t);
+    return merged;
+  }, [bookingOccupied, closureOccupied]);
+
+  const { data: courtReviews = [] } = useQuery({
+    queryKey: ["court-reviews", courtId],
+    queryFn: async () => {
+      const { data: payload } = await courtlyApi.courtReviews.bundle(courtId);
+      if (payload == null) return [];
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload.reviews)) return payload.reviews;
+      return [];
+    },
+    enabled: !!courtId,
+  });
 
   const galleryUrls = useMemo(
     () => (court ? courtGalleryUrls(court) : []),
@@ -266,6 +320,36 @@ export default function BookCourtPage() {
     return bookedHoursInSelection(startTime, endTime, occupied);
   }, [startTime, endTime, occupied]);
 
+  const [flagReviewId, setFlagReviewId] = useState<string | null>(null);
+  const [flagNote, setFlagNote] = useState("");
+
+  const deleteReviewMut = useMutation({
+    mutationFn: async (reviewId: string) => {
+      await courtlyApi.courtReviews.remove(courtId, reviewId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["court-reviews", courtId] });
+      void queryClient.invalidateQueries({ queryKey: ["court", courtId] });
+      void queryClient.invalidateQueries({ queryKey: ["courts"] });
+      toast.success("Review removed");
+    },
+  });
+
+  const flagReviewMut = useMutation({
+    mutationFn: async (p: { reviewId: string; reason: string }) => {
+      await courtlyApi.courtReviews.flag(courtId, p.reviewId, {
+        reason: p.reason || undefined,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["court-reviews", courtId] });
+      void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
+      setFlagReviewId(null);
+      setFlagNote("");
+      toast.success("Review flagged for platform review");
+    },
+  });
+
   const createBookings = useMutation({
     mutationFn: async (payloads: Partial<Booking>[]) => {
       for (const p of payloads) {
@@ -279,6 +363,7 @@ export default function BookCourtPage() {
       void queryClient.invalidateQueries({
         queryKey: ["bookings-for-court", courtId],
       });
+      void queryClient.invalidateQueries({ queryKey: ["courts"] });
       setBlockedWarningOpen(false);
       setSummaryOpen(false);
       toast.success(
@@ -455,8 +540,64 @@ export default function BookCourtPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!flagReviewId}
+        onOpenChange={(o) => {
+          if (!o) {
+            setFlagReviewId(null);
+            setFlagNote("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Report review</DialogTitle>
+            <DialogDescription>
+              Flag this review for the platform team. The review stays visible
+              until a superadmin removes it or clears the flag.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="flag-note">Note (optional)</Label>
+            <Textarea
+              id="flag-note"
+              value={flagNote}
+              onChange={(e) => setFlagNote(e.target.value)}
+              rows={3}
+              placeholder="Why should we look at this?"
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setFlagReviewId(null);
+                setFlagNote("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="font-heading font-semibold"
+              disabled={!flagReviewId || flagReviewMut.isPending}
+              onClick={() => {
+                if (!flagReviewId) return;
+                flagReviewMut.mutate({
+                  reviewId: flagReviewId,
+                  reason: flagNote.trim(),
+                });
+              }}
+            >
+              {flagReviewMut.isPending ? "Sending…" : "Submit report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
-        <DialogContent className="max-h-[min(90dvh,36rem)] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[min(90dvh,36rem)] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-heading">Booking summary</DialogTitle>
             <DialogDescription>
@@ -528,8 +669,7 @@ export default function BookCourtPage() {
                 <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
                   <dt className="text-muted-foreground">Rate</dt>
                   <dd className="space-y-1 text-right font-medium">
-                    <span className="inline-flex items-center justify-end gap-1">
-                      <PhilippinePeso className="h-3.5 w-3.5 shrink-0" />
+                    <span className="inline-flex items-center justify-end">
                       {formatCourtRateSummary(court)}
                     </span>
                     {(court.hourly_rate_windows?.length ?? 0) > 0 ? (
@@ -704,6 +844,27 @@ export default function BookCourtPage() {
                 </div>
               </dl>
 
+              <div className="space-y-2 border-t border-border/60 pt-4">
+                <h3 className="font-heading text-sm font-semibold text-foreground">
+                  Player ratings
+                </h3>
+                {court.review_summary &&
+                court.review_summary.review_count > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StarRow rating={court.review_summary.average_rating} />
+                    <span className="text-sm text-muted-foreground">
+                      {court.review_summary.average_rating.toFixed(1)} average ·{" "}
+                      {court.review_summary.review_count}{" "}
+                      {court.review_summary.review_count === 1
+                        ? "review"
+                        : "reviews"}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No reviews yet.</p>
+                )}
+              </div>
+
               <div className="space-y-3 border-t border-border/60 pt-6">
                 <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
                   <MapPin className="h-4 w-4 text-primary" aria-hidden />
@@ -715,13 +876,15 @@ export default function BookCourtPage() {
                     : "Search this address in your maps app."}
                 </p>
                 {mapEmbedSrc ? (
-                  <iframe
-                    title={`Map — ${court.name}`}
-                    src={mapEmbedSrc}
-                    className="aspect-16/10 w-full max-h-64 rounded-xl border border-border"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
+                  <div className="overflow-hidden rounded-2xl border border-border">
+                    <iframe
+                      title={`Map — ${court.name}`}
+                      src={mapEmbedSrc}
+                      className="aspect-16/10 w-full max-h-64 border-0"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  </div>
                 ) : null}
                 <div className="flex flex-wrap gap-3">
                   <Button variant="outline" size="sm" asChild>
@@ -746,6 +909,104 @@ export default function BookCourtPage() {
                     </a>
                   </Button>
                 </div>
+              </div>
+
+              <div className="space-y-3 border-t border-border/60 pt-6">
+                <h3 className="font-heading text-base font-semibold text-foreground">
+                  Recent reviews
+                </h3>
+                {courtReviews.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Be the first to review after a completed visit.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {courtReviews.map((review) => {
+                      const isOwner = user?.id === review.user_id;
+                      const canFlag =
+                        user &&
+                        canCourtVenueAdminFlagReview(user, court) &&
+                        review.user_id !== user.id &&
+                        !review.flagged;
+                      const canPlatformDelete =
+                        user && isSuperadmin(user);
+                      return (
+                        <li
+                          key={review.id}
+                          className="rounded-xl border border-border/60 bg-muted/10 px-3 py-3 text-sm"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <StarRow rating={review.rating} />
+                                <span className="font-medium text-foreground">
+                                  {review.user_name}
+                                </span>
+                                {review.flagged ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] text-amber-800 border-amber-500/40 bg-amber-500/10"
+                                  >
+                                    Flagged for review
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {format(
+                                  new Date(review.created_at),
+                                  "MMM d, yyyy",
+                                )}
+                              </p>
+                              {review.comment ? (
+                                <p className="pt-1 text-foreground/90">
+                                  {review.comment}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                              {canFlag ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setFlagNote("");
+                                    setFlagReviewId(review.id);
+                                  }}
+                                >
+                                  Report
+                                </Button>
+                              ) : null}
+                              {isOwner ? (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link
+                                    href={`/my-bookings/${review.booking_id}`}
+                                  >
+                                    Edit review
+                                  </Link>
+                                </Button>
+                              ) : null}
+                              {canPlatformDelete ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive"
+                                  disabled={deleteReviewMut.isPending}
+                                  onClick={() =>
+                                    deleteReviewMut.mutate(review.id)
+                                  }
+                                >
+                                  Delete
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -800,7 +1061,14 @@ export default function BookCourtPage() {
                     className="size-2.5 shrink-0 rounded-md bg-muted ring-1 border border-dashed border-destructive/40"
                     aria-hidden
                   />
-                  Unavailable
+                  Booked
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="size-2.5 shrink-0 rounded-md bg-amber-500/25 ring-1 border border-dashed border-amber-600/50"
+                    aria-hidden
+                  />
+                  Blocked (maintenance / event)
                 </span>
               </div>
             </div>
@@ -825,7 +1093,9 @@ export default function BookCourtPage() {
               <div className="max-h-[min(52vh,22rem)] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
                 <div className="grid grid-cols-3 gap-2 px-0.5 pb-1 pt-1 sm:grid-cols-4 md:grid-cols-5">
                   {timeSlots.map((time) => {
-                    const isBooked = occupied.has(time);
+                    const isUnavailable = occupied.has(time);
+                    const fromClosureOnly =
+                      closureOccupied.has(time) && !bookingOccupied.has(time);
                     const isStart = startTime === time;
                     const isEnd = endTime === time;
                     const isInRange =
@@ -843,22 +1113,27 @@ export default function BookCourtPage() {
                           isStart || isEnd
                             ? "default"
                             : isInRange
-                              ? isBooked
+                              ? isUnavailable
                                 ? "outline"
                                 : "secondary"
                               : "outline"
                         }
-                        disabled={isBooked && !pickingEnd}
+                        disabled={isUnavailable && !pickingEnd}
                         onClick={() => handleTimeSelect(time)}
                         className={cn(
                           "relative flex items-center justify-center px-1.5 text-sm font-medium tabular-nums",
                           showMarker
                             ? "min-h-11 flex-col gap-0.5 py-1"
                             : "h-10 shrink-0",
-                          isBooked &&
+                          isUnavailable &&
                             pickingEnd &&
+                            fromClosureOnly &&
+                            "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
+                          isUnavailable &&
+                            pickingEnd &&
+                            !fromClosureOnly &&
                             "border-destructive/50 bg-destructive/10 text-destructive line-through",
-                          isBooked &&
+                          isUnavailable &&
                             isInRange &&
                             pickingEnd &&
                             "opacity-90",
