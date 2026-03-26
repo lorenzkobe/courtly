@@ -533,7 +533,7 @@ export default function BookCourtPage() {
                       {formatCourtRateSummary(court)}
                     </span>
                     {(court.hourly_rate_windows?.length ?? 0) > 0 ? (
-                      <ul className="ml-auto max-w-[14rem] list-inside list-disc text-xs font-normal text-muted-foreground">
+                      <ul className="ml-auto max-w-48 list-inside list-disc text-xs font-normal text-muted-foreground">
                         {court.hourly_rate_windows!.map((w) => (
                           <li key={`${w.start}-${w.end}-${w.hourly_rate}`}>
                             {formatTimeShort(w.start)}–{formatTimeShort(w.end)}:{" "}

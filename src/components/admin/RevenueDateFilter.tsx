@@ -31,7 +31,7 @@ function DateField({ label, htmlId, value, onChange }: DateFieldProps) {
   const selected = parseIsoToLocalDate(value);
 
   return (
-    <div className="min-w-0 flex-1 sm:max-w-[15rem]">
+    <div className="min-w-0 flex-1 sm:max-w-60">
       <Label htmlFor={htmlId} className="text-xs font-medium text-muted-foreground">
         {label}
       </Label>

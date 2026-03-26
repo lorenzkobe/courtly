@@ -181,7 +181,7 @@ export default function SuperadminCourtAccountsPage() {
 
       {!isLoading && accounts.length > 0 ? (
         <div className="mb-6 flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/10 p-4 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="min-w-[10rem] flex-1">
+          <div className="min-w-40 flex-1">
             <Label className="text-xs text-muted-foreground">Account status</Label>
             <Select
               value={statusFilter}
@@ -199,7 +199,7 @@ export default function SuperadminCourtAccountsPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-[12rem] flex-1">
+          <div className="min-w-48 flex-1">
             <Label className="text-xs text-muted-foreground">Sort by</Label>
             <Select
               value={sortBy}

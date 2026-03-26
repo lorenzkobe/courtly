@@ -29,7 +29,7 @@ export function VenueTimeInput({ id, value, onChange, className }: Props) {
         step={3600}
         value={v}
         onChange={(e) => onChange(e.target.value)}
-        className="min-w-0 flex-1 bg-transparent text-sm font-medium tabular-nums text-foreground outline-none [color-scheme:dark]"
+        className="min-w-0 flex-1 bg-transparent text-sm font-medium tabular-nums text-foreground outline-none scheme-dark"
       />
     </div>
   );
