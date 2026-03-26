@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
+import { normalizeBookingFee } from "@/lib/platform-fee";
 import { reviewSummaryForCourt } from "@/lib/review-summary";
 import type { Court } from "@/lib/types/courtly";
 
@@ -10,6 +11,9 @@ type Ctx = { params: Promise<{ id: string }> };
 function withReviewSummary(court: Court) {
   return {
     ...court,
+    establishment_name: court.court_account_id
+      ? mockDb.courtAccounts.find((a) => a.id === court.court_account_id)?.name
+      : undefined,
     review_summary: reviewSummaryForCourt(court.id, mockDb.courtReviews),
   };
 }
@@ -39,6 +43,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   if (user.role !== "superadmin" && "court_account_id" in patch) {
     delete patch.court_account_id;
+  }
+  if (user.role !== "superadmin" && "booking_fee" in patch) {
+    delete patch.booking_fee;
+  }
+  if (user.role === "superadmin" && "booking_fee" in patch) {
+    patch.booking_fee = normalizeBookingFee(patch.booking_fee);
   }
 
   mockDb.courts[idx] = { ...mockDb.courts[idx], ...patch };

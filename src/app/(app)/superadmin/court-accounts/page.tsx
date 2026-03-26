@@ -36,7 +36,10 @@ const emptyForm = {
   name: "",
   contact_email: "",
   status: "active" as CourtAccount["status"],
-  primary_admin_user_id: "" as string,
+  initial_admin_mode: "existing" as "existing" | "new",
+  initial_admin_user_id: "" as string,
+  initial_admin_new_name: "",
+  initial_admin_new_email: "",
   notes: "",
 };
 
@@ -105,9 +108,21 @@ export default function SuperadminCourtAccountsPage() {
         name: form.name.trim(),
         contact_email: form.contact_email.trim(),
         status: form.status,
-        primary_admin_user_id: form.primary_admin_user_id.trim()
-          ? form.primary_admin_user_id
-          : null,
+        initial_admin_user_id:
+          form.initial_admin_mode === "existing" && form.initial_admin_user_id.trim()
+            ? form.initial_admin_user_id
+            : undefined,
+        initial_admin_new:
+          form.initial_admin_mode === "new"
+            ? {
+                full_name: form.initial_admin_new_name.trim(),
+                email: form.initial_admin_new_email.trim(),
+              }
+            : undefined,
+        primary_admin_user_id:
+          form.initial_admin_mode === "existing" && form.initial_admin_user_id.trim()
+            ? form.initial_admin_user_id
+            : null,
         notes: form.notes.trim() || undefined,
       };
       if (editing) {
@@ -156,7 +171,10 @@ export default function SuperadminCourtAccountsPage() {
       name: a.name,
       contact_email: a.contact_email,
       status: a.status,
-      primary_admin_user_id: a.primary_admin_user_id ?? "",
+      initial_admin_mode: "existing",
+      initial_admin_user_id: a.primary_admin_user_id ?? "",
+      initial_admin_new_name: "",
+      initial_admin_new_email: "",
       notes: a.notes ?? "",
     });
     setDialogOpen(true);
@@ -172,10 +190,10 @@ export default function SuperadminCourtAccountsPage() {
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <PageHeader
         title="Court accounts"
-        subtitle="Venue operator organizations. Assign courts to an account and link a primary admin user."
+        subtitle="Establishments (building/business). Each establishment can have multiple court admins and multiple courts."
       >
         <Button className="font-heading font-semibold" onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> New court account
+          <Plus className="mr-2 h-4 w-4" /> New establishment
         </Button>
       </PageHeader>
 
@@ -312,12 +330,12 @@ export default function SuperadminCourtAccountsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Organization name *</Label>
+              <Label>Establishment name *</Label>
               <Input
                 className="mt-1.5"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Skyline Sports Group"
+                placeholder="e.g. BGC Makati Sports Center"
               />
             </div>
             <div>
@@ -352,31 +370,70 @@ export default function SuperadminCourtAccountsPage() {
               </Select>
             </div>
             <div>
-              <Label>Primary court admin</Label>
+              <Label>Initial establishment admin *</Label>
               <p className="mb-1.5 text-xs text-muted-foreground">
-                Optional — must be a user with the court admin role.
+                Required on creation. You can link an existing admin or create a new
+                admin user.
               </p>
               <Select
-                value={form.primary_admin_user_id || "__none__"}
+                value={form.initial_admin_mode}
                 onValueChange={(v) =>
                   setForm({
                     ...form,
-                    primary_admin_user_id: v === "__none__" ? "" : v,
+                    initial_admin_mode: v as "existing" | "new",
                   })
                 }
               >
                 <SelectTrigger className="mt-0.5">
-                  <SelectValue placeholder="None" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {adminOptions.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.full_name} ({u.email})
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="existing">Link existing admin</SelectItem>
+                  <SelectItem value="new">Create new admin</SelectItem>
                 </SelectContent>
               </Select>
+
+              {form.initial_admin_mode === "existing" ? (
+                <Select
+                  value={form.initial_admin_user_id || "__none__"}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      initial_admin_user_id: v === "__none__" ? "" : v,
+                    })
+                  }
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Select admin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select admin</SelectItem>
+                    {adminOptions.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.full_name} ({u.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <Input
+                    value={form.initial_admin_new_name}
+                    onChange={(e) =>
+                      setForm({ ...form, initial_admin_new_name: e.target.value })
+                    }
+                    placeholder="New admin full name"
+                  />
+                  <Input
+                    type="email"
+                    value={form.initial_admin_new_email}
+                    onChange={(e) =>
+                      setForm({ ...form, initial_admin_new_email: e.target.value })
+                    }
+                    placeholder="new-admin@example.com"
+                  />
+                </div>
+              )}
             </div>
             <div>
               <Label>Notes</Label>
@@ -402,7 +459,12 @@ export default function SuperadminCourtAccountsPage() {
               disabled={
                 saveAccount.isPending ||
                 !form.name.trim() ||
-                !form.contact_email.trim()
+                !form.contact_email.trim() ||
+                (form.initial_admin_mode === "existing" &&
+                  !form.initial_admin_user_id.trim()) ||
+                (form.initial_admin_mode === "new" &&
+                  (!form.initial_admin_new_name.trim() ||
+                    !form.initial_admin_new_email.trim()))
               }
               onClick={() => saveAccount.mutate()}
             >

@@ -54,12 +54,13 @@ export default function CourtAccountDetailPage() {
   }
 
   const { account, courts, primaryAdmin } = data;
+  const admins = data.admins ?? [];
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
       <Button variant="ghost" className="mb-4 -ml-2" asChild>
         <Link href="/superadmin/court-accounts">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Court accounts
+          <ArrowLeft className="mr-2 h-4 w-4" /> Establishments
         </Link>
       </Button>
 
@@ -83,7 +84,7 @@ export default function CourtAccountDetailPage() {
       <div className="mt-8 space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="font-heading text-base">Account details</CardTitle>
+            <CardTitle className="font-heading text-base">Establishment details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
@@ -124,7 +125,7 @@ export default function CourtAccountDetailPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-heading text-base">
               <Building2 className="h-4 w-4" />
-              Linked courts ({courts.length})
+              Courts in this establishment ({courts.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -167,6 +168,29 @@ export default function CourtAccountDetailPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-heading text-base">
+              Establishment admins ({admins.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {admins.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No admins linked yet.
+              </p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {admins.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{a.full_name}</span>
+                    <span className="text-muted-foreground">{a.email}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>

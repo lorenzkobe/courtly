@@ -97,5 +97,7 @@ export async function POST(req: Request, ctx: Ctx) {
     updated_at: now,
   };
   mockDb.courtReviews.push(row);
+  // TODO(notifications): emit placeholder event hook for "review created"
+  // to court admin when Supabase notifications are wired.
   return NextResponse.json(row);
 }

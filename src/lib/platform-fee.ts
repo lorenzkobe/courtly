@@ -1,30 +1,36 @@
-/** Percentage added on top of court reservation subtotal (customer pays subtotal + fee). */
-export const PLATFORM_TRANSACTION_FEE_PERCENT = 5;
-
 function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-/** Fee amount for a given court subtotal (reservation amount before platform fee). */
-export function platformFeeFromCourtSubtotal(courtSubtotal: number) {
-  if (!Number.isFinite(courtSubtotal) || courtSubtotal <= 0) {
-    return 0;
-  }
-  return round2((courtSubtotal * PLATFORM_TRANSACTION_FEE_PERCENT) / 100);
+/** Normalized flat booking fee (whole number, >= 0). */
+export function normalizeBookingFee(raw: number | undefined) {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.trunc(raw));
 }
 
-/** Customer total = court subtotal + platform fee. */
-export function customerTotalFromCourtSubtotal(courtSubtotal: number) {
-  const fee = platformFeeFromCourtSubtotal(courtSubtotal);
-  return round2(courtSubtotal + fee);
+/** Flat booking fee for a court (not percentage-based). */
+export function bookingFeeForCourt(courtBookingFee: number | undefined) {
+  return normalizeBookingFee(courtBookingFee);
 }
 
-export function splitBookingAmounts(courtSubtotal: number) {
-  const platform_fee = platformFeeFromCourtSubtotal(courtSubtotal);
-  const total_cost = round2(courtSubtotal + platform_fee);
+/** Customer total = court subtotal + flat booking fee. */
+export function customerTotalFromCourtSubtotal(
+  courtSubtotal: number,
+  courtBookingFee: number | undefined,
+) {
+  const booking_fee = bookingFeeForCourt(courtBookingFee);
+  return round2(courtSubtotal + booking_fee);
+}
+
+export function splitBookingAmounts(
+  courtSubtotal: number,
+  courtBookingFee: number | undefined,
+) {
+  const booking_fee = bookingFeeForCourt(courtBookingFee);
+  const total_cost = round2(courtSubtotal + booking_fee);
   return {
     court_subtotal: round2(courtSubtotal),
-    platform_fee,
+    booking_fee,
     total_cost,
   };
 }

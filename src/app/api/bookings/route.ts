@@ -49,25 +49,29 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Partial<Booking>;
   const id = `book-${crypto.randomUUID().slice(0, 8)}`;
   const court = mockDb.courts.find((c) => c.id === body.court_id);
+  const courtBookingFee = court?.booking_fee;
 
   let court_subtotal = body.court_subtotal;
-  let platform_fee = body.platform_fee;
+  let booking_fee = body.booking_fee;
   let total_cost = body.total_cost;
 
   const hasFullSplit =
     typeof court_subtotal === "number" &&
-    typeof platform_fee === "number" &&
+    typeof booking_fee === "number" &&
     typeof total_cost === "number";
 
   if (!hasFullSplit) {
     if (typeof court_subtotal === "number") {
-      const split = splitBookingAmounts(court_subtotal);
-      platform_fee = split.platform_fee;
+      const split = splitBookingAmounts(court_subtotal, courtBookingFee);
+      booking_fee = split.booking_fee;
       total_cost = split.total_cost;
     } else if (typeof total_cost === "number") {
-      const split = splitBookingAmounts(total_cost);
+      const normalizedFee =
+        typeof courtBookingFee === "number" ? Math.max(0, Math.trunc(courtBookingFee)) : 0;
+      const subtotalFromTotal = Math.max(0, total_cost - normalizedFee);
+      const split = splitBookingAmounts(subtotalFromTotal, courtBookingFee);
       court_subtotal = split.court_subtotal;
-      platform_fee = split.platform_fee;
+      booking_fee = split.booking_fee;
       total_cost = split.total_cost;
     }
   }
@@ -76,6 +80,9 @@ export async function POST(req: Request) {
     id,
     court_id: body.court_id as string,
     court_name: body.court_name,
+    establishment_name: court?.court_account_id
+      ? mockDb.courtAccounts.find((a) => a.id === court.court_account_id)?.name
+      : undefined,
     sport: body.sport ?? court?.sport,
     booking_group_id: body.booking_group_id,
     date: body.date as string,
@@ -85,12 +92,14 @@ export async function POST(req: Request) {
     player_email: body.player_email,
     players_count: body.players_count,
     court_subtotal,
-    platform_fee,
+    booking_fee,
     total_cost,
     status: (body.status as Booking["status"]) ?? "confirmed",
     notes: body.notes,
     created_date: new Date().toISOString(),
   };
   mockDb.bookings.push(booking);
+  // TODO(notifications): emit placeholder event hook for "booking created"
+  // when Supabase notifications are wired.
   return NextResponse.json(booking);
 }

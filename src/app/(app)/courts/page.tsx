@@ -321,7 +321,7 @@ export default function CourtsPage() {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 md:px-10">
       <PageHeader
         title="Book a Court"
-        subtitle="Choose a court and pick your time"
+        subtitle="Choose an establishment court number, then pick your date and time"
       />
 
       <div className="mb-6 flex min-w-0 flex-row flex-nowrap items-center justify-between gap-2 sm:mb-8 sm:gap-3">

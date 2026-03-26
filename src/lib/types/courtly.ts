@@ -45,6 +45,8 @@ export type CourtReviewSummary = {
 export type Court = {
   id: string;
   name: string;
+  /** Establishment/building name that owns this court. */
+  establishment_name?: string;
   location: string;
   /** Which sport this court is for (filters player app by selected sport). */
   sport: CourtSport;
@@ -59,6 +61,8 @@ export type Court = {
   map_latitude?: number;
   map_longitude?: number;
   hourly_rate: number;
+  /** Flat booking fee charged on top of court subtotal (whole number, set by superadmin). */
+  booking_fee?: number;
   /** Optional time-of-day pricing; each window is [start, end) in whole hours. */
   hourly_rate_windows?: CourtRateWindow[];
   amenities: string[];
@@ -76,6 +80,7 @@ export type Booking = {
   id: string;
   court_id: string;
   court_name?: string;
+  establishment_name?: string;
   sport?: CourtSport;
   /** Same id on segments created in one checkout (e.g. split around unavailable hours). */
   booking_group_id?: string;
@@ -85,14 +90,20 @@ export type Booking = {
   player_name?: string;
   player_email?: string;
   players_count?: number;
-  /** Amount attributed to the court before platform fee (reservation subtotal). */
+  /** Amount attributed to the court before booking fee (reservation subtotal). */
   court_subtotal?: number;
-  /** Courtly transaction fee on this booking (on top of court subtotal). */
-  platform_fee?: number;
-  /** What the customer paid (court subtotal + platform fee) when both are set. */
+  /** Courtly booking fee on this booking (on top of court subtotal). */
+  booking_fee?: number;
+  /** What the customer paid (court subtotal + booking fee) when both are set. */
   total_cost?: number;
   status: "confirmed" | "cancelled" | "completed";
+  /** Player-provided booking note. Set during booking creation; immutable afterwards. */
   notes?: string;
+  /** Internal shared note for court admins/superadmin managing this booking's court. */
+  admin_note?: string;
+  admin_note_updated_by_user_id?: string;
+  admin_note_updated_by_name?: string;
+  admin_note_updated_at?: string;
   created_date?: string;
 };
 
@@ -188,7 +199,7 @@ export type RevenueByCourtRow = {
   court_account_name: string | null;
   booking_count: number;
   court_net: number;
-  platform_fees: number;
+  booking_fees: number;
   customer_total: number;
 };
 
@@ -196,17 +207,16 @@ export type RevenueByAccountRow = {
   court_account_id: string;
   court_account_name: string;
   court_net: number;
-  platform_fees: number;
+  booking_fees: number;
   customer_total: number;
   booking_count: number;
 };
 
 export type RevenueSummaryResponse = {
   scope: "platform" | "venue";
-  fee_percent: number;
   totals: {
     court_net: number;
-    platform_fees: number;
+    booking_fees: number;
     customer_total: number;
     booking_count: number;
   };
@@ -227,4 +237,5 @@ export type CourtAccountDetailResponse = {
   account: CourtAccount;
   courts: Court[];
   primaryAdmin: ManagedUser | null;
+  admins: ManagedUser[];
 };

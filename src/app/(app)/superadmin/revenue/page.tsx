@@ -77,7 +77,7 @@ function PlatformRevenueInner() {
     );
   }
 
-  const { totals, fee_percent, by_account } = data;
+  const { totals, by_account } = data;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -114,8 +114,8 @@ function PlatformRevenueInner() {
 
       <div className="mb-8 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
         <strong className="font-medium text-foreground">Court net</strong> is the
-        reservation subtotal for venues (before the {fee_percent}% fee).{" "}
-        <strong className="font-medium text-foreground">Courtly fees</strong> are
+        reservation subtotal for venues (before booking fees).{" "}
+        <strong className="font-medium text-foreground">Courtly booking fees</strong> are
         charged to customers on top. <strong className="font-medium text-foreground">Customer total</strong>{" "}
         is what players paid.
       </div>
@@ -141,7 +141,7 @@ function PlatformRevenueInner() {
           </CardHeader>
           <CardContent>
             <p className="font-heading text-2xl font-bold text-primary">
-              {formatPhp(totals.platform_fees)}
+              {formatPhp(totals.booking_fees)}
             </p>
           </CardContent>
         </Card>
@@ -174,7 +174,7 @@ function PlatformRevenueInner() {
                   <TableHead>Account</TableHead>
                   <TableHead className="text-right">Bookings</TableHead>
                   <TableHead className="text-right">Court net</TableHead>
-                  <TableHead className="text-right">Courtly fee</TableHead>
+                  <TableHead className="text-right">Courtly booking fee</TableHead>
                   <TableHead className="text-right">Customer total</TableHead>
                 </TableRow>
               </TableHeader>
@@ -199,7 +199,7 @@ function PlatformRevenueInner() {
                       {formatPhp(row.court_net)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-primary">
-                      {formatPhp(row.platform_fees)}
+                      {formatPhp(row.booking_fees)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatPhp(row.customer_total)}

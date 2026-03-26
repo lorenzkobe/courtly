@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
-import { PLATFORM_TRANSACTION_FEE_PERCENT } from "@/lib/platform-fee";
 import {
   filterBookingsByDateRange,
   normalizeDateRange,
@@ -25,7 +24,7 @@ function attachAccountNames(
 
 type Roll = {
   court_net: number;
-  platform_fees: number;
+  booking_fees: number;
   customer_total: number;
   booking_count: number;
 };
@@ -39,12 +38,12 @@ function platformAccountRows(
     const key = row.court_account_id ?? "";
     const cur = agg.get(key) ?? {
       court_net: 0,
-      platform_fees: 0,
+      booking_fees: 0,
       customer_total: 0,
       booking_count: 0,
     };
     cur.court_net += row.court_net;
-    cur.platform_fees += row.platform_fees;
+    cur.booking_fees += row.booking_fees;
     cur.customer_total += row.customer_total;
     cur.booking_count += row.booking_count;
     agg.set(key, cur);
@@ -56,7 +55,7 @@ function platformAccountRows(
       court_account_id: a.id,
       court_account_name: a.name,
       court_net: hit?.court_net ?? 0,
-      platform_fees: hit?.platform_fees ?? 0,
+      booking_fees: hit?.booking_fees ?? 0,
       customer_total: hit?.customer_total ?? 0,
       booking_count: hit?.booking_count ?? 0,
     };
@@ -68,7 +67,7 @@ function platformAccountRows(
       court_account_id: "",
       court_account_name: "Unassigned account",
       court_net: hit?.court_net ?? 0,
-      platform_fees: hit?.platform_fees ?? 0,
+      booking_fees: hit?.booking_fees ?? 0,
       customer_total: hit?.customer_total ?? 0,
       booking_count: hit?.booking_count ?? 0,
     });
@@ -129,11 +128,11 @@ export async function GET(req: Request) {
   const totals = byCourt.reduce(
     (acc, r) => ({
       court_net: acc.court_net + r.court_net,
-      platform_fees: acc.platform_fees + r.platform_fees,
+      booking_fees: acc.booking_fees + r.booking_fees,
       customer_total: acc.customer_total + r.customer_total,
       booking_count: acc.booking_count + r.booking_count,
     }),
-    { court_net: 0, platform_fees: 0, customer_total: 0, booking_count: 0 },
+    { court_net: 0, booking_fees: 0, customer_total: 0, booking_count: 0 },
   );
 
   const filters = {
@@ -158,7 +157,6 @@ export async function GET(req: Request) {
 
   const body: import("@/lib/types/courtly").RevenueSummaryResponse = {
     scope: user.role === "superadmin" ? "platform" : "venue",
-    fee_percent: PLATFORM_TRANSACTION_FEE_PERCENT,
     totals,
     by_court: byCourt,
     filters,

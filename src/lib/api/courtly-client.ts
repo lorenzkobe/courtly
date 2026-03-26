@@ -12,6 +12,7 @@ import type {
   Tournament,
   TournamentRegistration,
 } from "@/lib/types/courtly";
+import type { NotificationsListResponse } from "@/lib/notifications/types";
 
 export const courtlyApi = {
   auth: {
@@ -34,6 +35,11 @@ export const courtlyApi = {
     create: (data: Partial<Court>) => http.post<Court>("/api/courts", data),
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
+    applyBookingFeeToAll: (data: { booking_fee: number }) =>
+      http.patch<{ ok: true; booking_fee: number; updated_count: number }>(
+        "/api/courts/booking-fees",
+        data,
+      ),
     remove: (id: string) => http.delete(`/api/courts/${id}`),
   },
 
@@ -106,6 +112,10 @@ export const courtlyApi = {
       http.post<Booking>("/api/bookings", data),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
+    setAdminNote: (
+      id: string,
+      body: { admin_note?: string; clear_admin_note?: boolean },
+    ) => http.patch<Booking>(`/api/bookings/${id}`, body),
   },
 
   tournaments: {
@@ -186,5 +196,11 @@ export const courtlyApi = {
       http.get<{
         reviews: (CourtReview & { court_name: string })[];
       }>("/api/admin/flagged-reviews"),
+  },
+
+  notifications: {
+    list: () => http.get<NotificationsListResponse>("/api/notifications"),
+    markAllRead: () => http.patch("/api/notifications"),
+    markRead: (id: string) => http.patch(`/api/notifications/${id}`),
   },
 };

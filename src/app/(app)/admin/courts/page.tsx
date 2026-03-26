@@ -53,6 +53,8 @@ const defaultForm = {
   type: "indoor" as Court["type"],
   surface: "sport_court" as Court["surface"],
   hourly_rate: "",
+  booking_fee: "0",
+  apply_booking_fee_to_all: false,
   hourly_rate_windows: [] as RateRow[],
   image_url: "",
   status: "active" as Court["status"],
@@ -104,6 +106,18 @@ function validateCourtForm(
     baseRate <= 0
   ) {
     return "Enter a default hourly rate greater than zero.";
+  }
+
+  if (opts.globalAdmin) {
+    const bookingFee = Number.parseFloat(form.booking_fee);
+    if (
+      !form.booking_fee.trim() ||
+      !Number.isFinite(bookingFee) ||
+      bookingFee < 0 ||
+      !Number.isInteger(bookingFee)
+    ) {
+      return "Enter a whole-number booking fee (0 or higher).";
+    }
   }
 
   for (let i = 0; i < form.hourly_rate_windows.length; i++) {
@@ -299,6 +313,7 @@ export default function AdminCourtsPage() {
       type: form.type,
       surface: form.surface,
       hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
+      booking_fee: Number.parseFloat(form.booking_fee) || 0,
       hourly_rate_windows,
       image_url: form.image_url,
       status: form.status,
@@ -323,6 +338,11 @@ export default function AdminCourtsPage() {
         await courtlyApi.courts.update(editing.id, payload);
       } else {
         await courtlyApi.courts.create(payload);
+      }
+      if (globalAdmin && form.apply_booking_fee_to_all) {
+        await courtlyApi.courts.applyBookingFeeToAll({
+          booking_fee: Number.parseFloat(form.booking_fee) || 0,
+        });
       }
     },
     onSuccess: () => {
@@ -367,6 +387,8 @@ export default function AdminCourtsPage() {
       type: court.type || "indoor",
       surface: court.surface || "sport_court",
       hourly_rate: String(court.hourly_rate ?? ""),
+      booking_fee: String(court.booking_fee ?? 0),
+      apply_booking_fee_to_all: false,
       hourly_rate_windows: (court.hourly_rate_windows ?? []).map((w) => ({
         start: w.start,
         end: w.end,
@@ -383,6 +405,10 @@ export default function AdminCourtsPage() {
   };
 
   const openCreate = () => {
+    if (globalAdmin) {
+      toast.error("Only court admins can create courts");
+      return;
+    }
     setEditing(null);
     setForm(defaultForm);
     setOpen(true);
@@ -466,13 +492,15 @@ export default function AdminCourtsPage() {
         title={globalAdmin ? "Manage courts" : "My courts"}
         subtitle={
           globalAdmin
-            ? "Add, edit, or assign courts across the platform"
+            ? "View and manage existing courts across the platform"
             : "Courts assigned to your account and their availability"
         }
       >
-        <Button className="font-heading font-semibold" onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Add Court
-        </Button>
+        {!globalAdmin ? (
+          <Button className="font-heading font-semibold" onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" /> Add Court
+          </Button>
+        ) : null}
       </PageHeader>
 
       {isLoading ? (
@@ -523,6 +551,11 @@ export default function AdminCourtsPage() {
                   <div className="font-semibold text-foreground tabular-nums">
                     {formatCourtRateSummary(court)}
                   </div>
+                  {typeof court.booking_fee === "number" ? (
+                    <div className="text-xs text-muted-foreground">
+                      Booking fee: ₱{court.booking_fee}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -697,6 +730,46 @@ export default function AdminCourtsPage() {
                   placeholder="45"
                 />
               </div>
+              {globalAdmin ? (
+                <div className="col-span-2 space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+                  <div>
+                    <Label>Booking fee (₱) *</Label>
+                    <p className="mb-1.5 text-xs text-muted-foreground">
+                      Flat whole-number fee added per booking for this court.
+                    </p>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={form.booking_fee}
+                      onChange={(e) =>
+                        setForm({ ...form, booking_fee: e.target.value })
+                      }
+                      placeholder="3"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4"
+                      checked={form.apply_booking_fee_to_all}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          apply_booking_fee_to_all: e.target.checked,
+                        })
+                      }
+                    />
+                    <span>
+                      Apply this booking fee to all courts
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        You will be asked to confirm because other courts may use
+                        different booking fees.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              ) : null}
               <div className="col-span-2 space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -944,6 +1017,13 @@ export default function AdminCourtsPage() {
               className="w-full font-heading font-semibold"
               type="button"
               onClick={() =>
+                globalAdmin &&
+                form.apply_booking_fee_to_all &&
+                !window.confirm(
+                  "Apply this booking fee to all courts? This can overwrite different fees currently set on other courts.",
+                )
+                  ? null
+                  :
                 submitCourtForm(form, {
                   globalAdmin,
                   courtAccountCount: courtAccounts.length,

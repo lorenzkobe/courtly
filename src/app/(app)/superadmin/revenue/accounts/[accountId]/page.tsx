@@ -104,7 +104,7 @@ function AccountRevenueInner() {
     );
   }
 
-  const { totals, fee_percent, by_court, focus_account } = data;
+  const { totals, by_court, focus_account } = data;
   const title = focus_account?.name ?? "Court account";
 
   return (
@@ -153,14 +153,14 @@ function AccountRevenueInner() {
         <Card className="border-primary/25 bg-primary/5">
           <CardHeader className="pb-2">
             <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Courtly fees
+              Courtly booking fees
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-heading text-2xl font-bold text-primary">
-              {formatPhp(totals.platform_fees)}
+              {formatPhp(totals.booking_fees)}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">{fee_percent}% on subtotal</p>
+            <p className="mt-1 text-xs text-muted-foreground">Flat fee per booking</p>
           </CardContent>
         </Card>
         <Card className="border-border/60">
@@ -191,7 +191,7 @@ function AccountRevenueInner() {
                 <TableHead>Court</TableHead>
                 <TableHead className="text-right">Bookings</TableHead>
                 <TableHead className="text-right">Court net</TableHead>
-                <TableHead className="text-right">Courtly fee</TableHead>
+                <TableHead className="text-right">Courtly booking fee</TableHead>
                 <TableHead className="text-right">Customer total</TableHead>
               </TableRow>
             </TableHeader>
@@ -206,7 +206,7 @@ function AccountRevenueInner() {
                     {formatPhp(row.court_net)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-primary">
-                    {formatPhp(row.platform_fees)}
+                    {formatPhp(row.booking_fees)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatPhp(row.customer_total)}

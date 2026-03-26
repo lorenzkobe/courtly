@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
+import { normalizeBookingFee } from "@/lib/platform-fee";
 import { reviewSummaryForCourt } from "@/lib/review-summary";
 import type { Court, CourtRateWindow, CourtSport } from "@/lib/types/courtly";
 
@@ -33,6 +34,9 @@ export async function GET(req: Request) {
   return NextResponse.json(
     list.map((c) => ({
       ...c,
+      establishment_name: c.court_account_id
+        ? mockDb.courtAccounts.find((a) => a.id === c.court_account_id)?.name
+        : undefined,
       review_summary: reviewSummaryForCourt(c.id, mockDb.courtReviews),
     })),
   );
@@ -40,30 +44,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const user = await readSessionUser();
-  if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
+  if (!user || user.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = (await req.json()) as Partial<Court>;
   const id = `court-${crypto.randomUUID().slice(0, 8)}`;
-
-  let managed_by_user_id: string | null;
-  if (user.role === "superadmin") {
-    managed_by_user_id =
-      typeof body.managed_by_user_id === "string"
-        ? body.managed_by_user_id
-        : null;
-  } else {
-    managed_by_user_id = user.id;
-  }
-
-  let court_account_id: string | null = null;
-  if (user.role === "superadmin") {
-    court_account_id =
-      typeof body.court_account_id === "string" ? body.court_account_id : null;
-  } else if (user.role === "admin") {
-    const mu = mockDb.managedUsers.find((m) => m.id === user.id);
-    court_account_id = mu?.court_account_id ?? null;
+  const managed_by_user_id = user.id;
+  const mu = mockDb.managedUsers.find((m) => m.id === user.id);
+  const court_account_id = mu?.court_account_id ?? null;
+  if (!court_account_id) {
+    return NextResponse.json(
+      { error: "Admin must be linked to an establishment before creating courts" },
+      { status: 400 },
+    );
   }
 
   const court: Court = {
@@ -75,6 +69,7 @@ export async function POST(req: Request) {
     surface: (body.surface as Court["surface"]) ?? "sport_court",
     image_url: body.image_url ?? "",
     hourly_rate: Number(body.hourly_rate) || 0,
+    booking_fee: normalizeBookingFee(body.booking_fee),
     amenities: Array.isArray(body.amenities) ? body.amenities : [],
     available_hours: body.available_hours ?? { open: "07:00", close: "22:00" },
     status: (body.status as Court["status"]) ?? "active",
@@ -106,6 +101,8 @@ export async function POST(req: Request) {
     court.map_longitude = body.map_longitude;
   }
   mockDb.courts.push(court);
+  // TODO(notifications): emit placeholder event hook for "court created"
+  // to superadmin recipients when Supabase notifications are wired.
   return NextResponse.json({
     ...court,
     review_summary: reviewSummaryForCourt(court.id, mockDb.courtReviews),

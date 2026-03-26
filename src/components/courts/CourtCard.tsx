@@ -63,8 +63,11 @@ export default function CourtCard({
       </div>
       <CardContent className="p-5">
         <h3 className="mb-2 font-heading text-lg font-bold text-foreground">
-          {court.name}
+          {court.establishment_name ?? court.name}
         </h3>
+        {court.establishment_name ? (
+          <p className="mb-2 text-xs text-muted-foreground">{court.name}</p>
+        ) : null}
         <div className="mb-4 space-y-1.5 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <MapPin className="h-3.5 w-3.5 shrink-0" />

@@ -29,6 +29,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
@@ -38,7 +45,6 @@ import {
   formatCourtRateSummary,
 } from "@/lib/court-pricing";
 import {
-  PLATFORM_TRANSACTION_FEE_PERCENT,
   splitBookingAmounts,
 } from "@/lib/platform-fee";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -97,7 +103,10 @@ function buildBookingPayloads(
 ): Partial<Booking>[] {
   return segments.map((seg) => {
     const court_subtotal = segmentTotalCost(court, seg);
-    const { platform_fee, total_cost } = splitBookingAmounts(court_subtotal);
+    const { booking_fee, total_cost } = splitBookingAmounts(
+      court_subtotal,
+      court.booking_fee,
+    );
     return {
       court_id: court.id,
       court_name: court.name,
@@ -109,7 +118,7 @@ function buildBookingPayloads(
       player_name: ctx.playerName,
       player_email: ctx.playerEmail,
       court_subtotal,
-      platform_fee,
+      booking_fee,
       total_cost,
       notes: ctx.notes || undefined,
       status: "confirmed" as const,
@@ -122,6 +131,17 @@ function courtGalleryUrls(court: Court): string[] {
   if (g && g.length > 0) return g;
   if (court.image_url) return [court.image_url];
   return [];
+}
+
+function courtNumberLabel(court: Court): string {
+  const establishment = court.establishment_name?.trim();
+  const rawName = court.name.trim();
+  if (!establishment) return rawName;
+  const prefix = `${establishment} - `;
+  if (rawName.startsWith(prefix)) {
+    return rawName.slice(prefix.length).trim();
+  }
+  return rawName;
 }
 
 function StarRow({ rating, className }: { rating: number; className?: string }) {
@@ -246,6 +266,21 @@ export default function BookCourtPage() {
       return data;
     },
     enabled: !!courtId,
+  });
+
+  const { data: establishmentCourts = [] } = useQuery({
+    queryKey: ["establishment-courts", court?.court_account_id, court?.sport],
+    queryFn: async () => {
+      const { data } = await courtlyApi.courts.list({
+        status: "active",
+        sport: court!.sport,
+      });
+      if (!court?.court_account_id) return [court!];
+      return data
+        .filter((c) => c.court_account_id === court.court_account_id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+    enabled: !!court,
   });
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
@@ -397,7 +432,9 @@ export default function BookCourtPage() {
       ? segmentsTotalCost(court, segments)
       : 0;
   const bookingTotals =
-    courtSubtotal > 0 ? splitBookingAmounts(courtSubtotal) : null;
+    court && courtSubtotal > 0
+      ? splitBookingAmounts(courtSubtotal, court.booking_fee)
+      : null;
 
   const runBooking = (toBook: BookingSegment[]) => {
     if (!user || !court) return;
@@ -704,11 +741,9 @@ export default function BookCourtPage() {
                       </dd>
                     </div>
                     <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                      <dt className="text-muted-foreground">
-                        Platform fee ({PLATFORM_TRANSACTION_FEE_PERCENT}%)
-                      </dt>
+                      <dt className="text-muted-foreground">Booking fee</dt>
                       <dd className="font-medium sm:text-right">
-                        {formatPhp(bookingTotals.platform_fee)}
+                        {formatPhp(bookingTotals.booking_fee)}
                       </dd>
                     </div>
                   </>
@@ -759,8 +794,8 @@ export default function BookCourtPage() {
           />
 
           <PageHeader
-            title={`Book ${court.name}`}
-            subtitle={court.location}
+            title={`Book ${court.establishment_name ?? court.name}`}
+            subtitle={`${courtNumberLabel(court)} · ${court.location}`}
             alignActions="start"
           >
             <Button
@@ -1013,6 +1048,37 @@ export default function BookCourtPage() {
         </div>
 
         <div className="space-y-6">
+        {establishmentCourts.length > 1 ? (
+          <Card className="border-border/60">
+            <CardContent className="p-4">
+              <div className="space-y-2">
+                <Label>Select court number</Label>
+                <Select
+                  value={court.id}
+                  onValueChange={(nextCourtId) => {
+                    if (nextCourtId !== court.id) {
+                      router.push(`/courts/${nextCourtId}/book`);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose court" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {establishmentCourts.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {courtNumberLabel(c)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  This establishment has multiple courts. Choose which court number you want to book.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
         <Card className="border-border/50">
           <CardHeader className="pb-2 pt-6">
             <CardTitle className="font-heading text-lg">

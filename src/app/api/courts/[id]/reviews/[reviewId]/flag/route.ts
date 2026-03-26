@@ -39,5 +39,7 @@ export async function POST(req: Request, ctx: Ctx) {
     flag_reason: reason || undefined,
     updated_at: new Date().toISOString(),
   };
+  // TODO(notifications): emit placeholder event hooks for "review under review"
+  // (author) and "review flagged" (superadmin) when Supabase is wired.
   return NextResponse.json(mockDb.courtReviews[idx]);
 }

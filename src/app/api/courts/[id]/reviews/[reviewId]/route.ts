@@ -32,6 +32,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
       flag_reason: undefined,
       updated_at: new Date().toISOString(),
     };
+    // TODO(notifications): emit placeholder moderation feedback hook for flagger
+    // when Supabase notifications are wired.
     return NextResponse.json(mockDb.courtReviews[idx]);
   }
 
@@ -92,5 +94,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   mockDb.courtReviews.splice(idx, 1);
+  // TODO(notifications): emit placeholder moderation feedback hook for flagger
+  // when Supabase notifications are wired.
   return NextResponse.json({ ok: true });
 }

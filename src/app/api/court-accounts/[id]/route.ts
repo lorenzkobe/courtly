@@ -9,10 +9,13 @@ function accountDetail(id: string) {
   const account = mockDb.courtAccounts.find((a) => a.id === id);
   if (!account) return null;
   const courts: Court[] = mockDb.courts.filter((c) => c.court_account_id === id);
+  const admins = mockDb.managedUsers.filter(
+    (u) => u.role === "admin" && u.court_account_id === id,
+  );
   const primaryAdmin = account.primary_admin_user_id
     ? mockDb.managedUsers.find((u) => u.id === account.primary_admin_user_id) ?? null
     : null;
-  return { account, courts, primaryAdmin };
+  return { account, courts, primaryAdmin, admins };
 }
 
 export async function GET(_req: Request, ctx: Ctx) {

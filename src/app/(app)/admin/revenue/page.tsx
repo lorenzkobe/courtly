@@ -67,13 +67,13 @@ function VenueRevenueInner() {
     );
   }
 
-  const { totals, fee_percent, by_court } = data;
+  const { totals, by_court } = data;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <PageHeader
         title="Revenue"
-        subtitle="Earnings from confirmed and completed reservations on your courts. Filter by reservation date; customer totals include the Courtly transaction fee on top of your listed rates."
+        subtitle="Earnings from confirmed and completed reservations on your courts. Filter by reservation date; customer totals include Courtly booking fees on top of your listed rates."
       />
 
       <div className="mb-6">
@@ -96,10 +96,10 @@ function VenueRevenueInner() {
 
       <div className="mb-8 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
         <strong className="font-medium text-foreground">Your net</strong> is the
-        court subtotal (what you earn from court time before the platform fee).{" "}
-        <strong className="font-medium text-foreground">Platform fee</strong> is
-        the {fee_percent}% collected on top of that subtotal — it is not deducted
-        from your rate in this demo model.
+        court subtotal (what you earn from court time before the booking fee).{" "}
+        <strong className="font-medium text-foreground">Booking fees</strong> are
+        fixed per court and collected on top of that subtotal — they are not
+        deducted from your rate in this demo model.
       </div>
 
       <div className="mb-10 grid gap-4 sm:grid-cols-3">
@@ -122,16 +122,14 @@ function VenueRevenueInner() {
         <Card className="border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Platform fees (on your bookings)
+              Booking fees (on your bookings)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-heading text-2xl font-bold text-foreground">
-              {formatPhp(totals.platform_fees)}
+              {formatPhp(totals.booking_fees)}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {fee_percent}% on top of your subtotal — retained by Courtly
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Flat fee retained by Courtly</p>
           </CardContent>
         </Card>
         <Card className="border-primary/20 bg-primary/5">
@@ -145,7 +143,7 @@ function VenueRevenueInner() {
               {formatPhp(totals.customer_total)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Subtotal + platform fee
+              Subtotal + booking fee
             </p>
           </CardContent>
         </Card>
@@ -162,7 +160,7 @@ function VenueRevenueInner() {
                 <TableHead>Court</TableHead>
                 <TableHead className="text-right">Bookings</TableHead>
                 <TableHead className="text-right">Your net</TableHead>
-                <TableHead className="text-right">Platform fee</TableHead>
+                <TableHead className="text-right">Booking fee</TableHead>
                 <TableHead className="text-right">Customer total</TableHead>
               </TableRow>
             </TableHeader>
@@ -177,7 +175,7 @@ function VenueRevenueInner() {
                     {formatPhp(row.court_net)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {formatPhp(row.platform_fees)}
+                    {formatPhp(row.booking_fees)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatPhp(row.customer_total)}

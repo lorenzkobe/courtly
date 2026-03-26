@@ -34,6 +34,24 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Booking, CourtReview } from "@/lib/types/courtly";
 
+function mutationErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error && "response" in error) {
+    const response = (error as { response?: { data?: { error?: string } } }).response;
+    const msg = response?.data?.error;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return fallback;
+}
+
+function applyBookingStatus(
+  list: Booking[] | undefined,
+  id: string,
+  status: Booking["status"],
+) {
+  if (!list) return list;
+  return list.map((b) => (b.id === id ? { ...b, status } : b));
+}
+
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
@@ -192,13 +210,21 @@ export default function BookingDetailPage() {
     mutationFn: async (id: string) => {
       await courtlyApi.bookings.update(id, { status: "cancelled" });
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      queryClient.setQueriesData(
+        { queryKey: ["my-bookings"] },
+        (old: Booking[] | undefined) =>
+          applyBookingStatus(old, id, "cancelled"),
+      );
       void queryClient.invalidateQueries({ queryKey: ["booking", bookingId] });
       void queryClient.invalidateQueries({
         queryKey: ["booking-group", booking?.booking_group_id],
       });
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Reservation cancelled");
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not cancel reservation"));
     },
   });
 
@@ -362,7 +388,7 @@ export default function BookingDetailPage() {
 
             {combinedNote ? (
               <div className="border-t border-border/60 pt-4">
-                <p className="mb-1 text-sm text-muted-foreground">Your notes</p>
+                <p className="mb-1 text-sm text-muted-foreground">Your note</p>
                 <p className="whitespace-pre-wrap text-sm text-foreground">
                   {combinedNote}
                 </p>

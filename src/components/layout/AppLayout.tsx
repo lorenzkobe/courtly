@@ -20,6 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
 import { cn, formatStatusLabel } from "@/lib/utils";
@@ -215,18 +216,21 @@ export default function AppLayout({
               </span>
             </span>
           </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="text-secondary-foreground"
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
-          </Button>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="text-secondary-foreground"
+            >
+              {mobileOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
+            </Button>
+          </div>
         </div>
         {mobileOpen ? (
           <nav className="max-h-[calc(100vh-8rem)] space-y-1 overflow-y-auto px-3 pb-3">
@@ -263,10 +267,15 @@ export default function AppLayout({
       <main className="lg:pl-64">
         <div className="min-h-screen pt-16 lg:pt-0">
           {showSportPicker ? (
-            <div className="flex items-center justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
+            <div className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
               <SportPicker layout="toolbar" id="app-shell-sport" />
+              <NotificationBell />
             </div>
-          ) : null}
+          ) : (
+            <div className="flex justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
+              <NotificationBell />
+            </div>
+          )}
           {children}
         </div>
       </main>

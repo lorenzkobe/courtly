@@ -1,40 +1,46 @@
 import type { Booking, Court } from "@/lib/types/courtly";
 import {
+  bookingFeeForCourt,
   customerTotalFromCourtSubtotal,
-  platformFeeFromCourtSubtotal,
 } from "@/lib/platform-fee";
 
 const COUNTABLE: Booking["status"][] = ["confirmed", "completed"];
 
 export type BookingFinancials = {
   court_subtotal: number;
-  platform_fee: number;
+  booking_fee: number;
   customer_total: number;
 };
 
 /** Normalize stored or legacy booking amounts for dashboards. */
-export function bookingFinancials(b: Booking): BookingFinancials {
+export function bookingFinancials(
+  b: Booking,
+  fallbackCourtBookingFee: number | undefined,
+): BookingFinancials {
   const hasSplit =
     typeof b.court_subtotal === "number" &&
-    typeof b.platform_fee === "number" &&
+    typeof b.booking_fee === "number" &&
     typeof b.total_cost === "number";
 
   if (hasSplit) {
     return {
       court_subtotal: b.court_subtotal!,
-      platform_fee: b.platform_fee!,
+      booking_fee: b.booking_fee!,
       customer_total: b.total_cost!,
     };
   }
 
   const raw = b.total_cost ?? 0;
   if (raw <= 0) {
-    return { court_subtotal: 0, platform_fee: 0, customer_total: 0 };
+    return { court_subtotal: 0, booking_fee: 0, customer_total: 0 };
   }
   const court_subtotal = raw;
-  const platform_fee = platformFeeFromCourtSubtotal(court_subtotal);
-  const customer_total = customerTotalFromCourtSubtotal(court_subtotal);
-  return { court_subtotal, platform_fee, customer_total };
+  const booking_fee = bookingFeeForCourt(fallbackCourtBookingFee);
+  const customer_total = customerTotalFromCourtSubtotal(
+    court_subtotal,
+    fallbackCourtBookingFee,
+  );
+  return { court_subtotal, booking_fee, customer_total };
 }
 
 export type CourtRevenueRow = {
@@ -44,7 +50,7 @@ export type CourtRevenueRow = {
   court_account_name: string | null;
   booking_count: number;
   court_net: number;
-  platform_fees: number;
+  booking_fees: number;
   customer_total: number;
 };
 
@@ -57,7 +63,7 @@ export function aggregateRevenueByCourt(
     string,
     {
       court_net: number;
-      platform_fees: number;
+      booking_fees: number;
       customer_total: number;
       booking_count: number;
     }
@@ -65,15 +71,17 @@ export function aggregateRevenueByCourt(
 
   for (const b of bookings) {
     if (!COUNTABLE.includes(b.status)) continue;
-    const f = bookingFinancials(b);
+    const court = courtMap.get(b.court_id);
+    const fallbackCourtBookingFee = court?.booking_fee;
+    const f = bookingFinancials(b, fallbackCourtBookingFee);
     const cur = byCourt.get(b.court_id) ?? {
       court_net: 0,
-      platform_fees: 0,
+      booking_fees: 0,
       customer_total: 0,
       booking_count: 0,
     };
     cur.court_net += f.court_subtotal;
-    cur.platform_fees += f.platform_fee;
+    cur.booking_fees += f.booking_fee;
     cur.customer_total += f.customer_total;
     cur.booking_count += 1;
     byCourt.set(b.court_id, cur);
@@ -88,7 +96,7 @@ export function aggregateRevenueByCourt(
       court_account_name: null,
       booking_count: agg?.booking_count ?? 0,
       court_net: agg?.court_net ?? 0,
-      platform_fees: agg?.platform_fees ?? 0,
+      booking_fees: agg?.booking_fees ?? 0,
       customer_total: agg?.customer_total ?? 0,
     };
   });

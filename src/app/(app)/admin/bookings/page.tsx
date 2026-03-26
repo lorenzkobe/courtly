@@ -10,7 +10,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -31,13 +32,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
 import { formatAmenityLabel } from "@/lib/format-amenity";
+import type { Booking } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
+
+function mutationErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error && "response" in error) {
+    const response = (error as { response?: { data?: { error?: string } } }).response;
+    const msg = response?.data?.error;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return fallback;
+}
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -52,6 +64,8 @@ export default function AdminBookingsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [adminNoteDraft, setAdminNoteDraft] = useState("");
+  const currentUserId = user?.id ?? "";
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],
@@ -160,6 +174,51 @@ export default function AdminBookingsPage() {
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking updated");
     },
+    onMutate: async ({ id, status }) => {
+      queryClient.setQueriesData(
+        { queryKey: ["admin-bookings"] },
+        (old: Booking[] | undefined) =>
+          old?.map((b) => (b.id === id ? { ...b, status: status as typeof b.status } : b)),
+      );
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not update booking"));
+    },
+  });
+
+  const saveAdminNote = useMutation({
+    mutationFn: async () => {
+      if (!detailBooking) throw new Error("No booking selected");
+      await courtlyApi.bookings.setAdminNote(detailBooking.id, {
+        admin_note: adminNoteDraft,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+      toast.success("Note saved");
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not save note"));
+    },
+  });
+
+  const clearAdminNote = useMutation({
+    mutationFn: async () => {
+      if (!detailBooking) throw new Error("No booking selected");
+      await courtlyApi.bookings.setAdminNote(detailBooking.id, {
+        clear_admin_note: true,
+      });
+    },
+    onSuccess: () => {
+      setAdminNoteDraft("");
+      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+      toast.success("Note deleted");
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not delete note"));
+    },
   });
 
   const filtered = bookings.filter((b) => {
@@ -181,6 +240,10 @@ export default function AdminBookingsPage() {
       .filter((b) => b.status !== "cancelled")
       .reduce((sum, b) => sum + (b.total_cost || 0), 0),
   };
+
+  useEffect(() => {
+    setAdminNoteDraft(detailBooking?.admin_note ?? "");
+  }, [detailBooking?.id, detailBooking?.admin_note, currentUserId]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -265,6 +328,43 @@ export default function AdminBookingsPage() {
                     </>
                   ) : null}
                 </dl>
+              </section>
+              <section className="border-t border-border/60 pt-4">
+                <Label htmlFor="admin-booking-note">Admin note</Label>
+                <Textarea
+                  id="admin-booking-note"
+                  className="mt-1.5"
+                  rows={3}
+                  value={adminNoteDraft}
+                  onChange={(e) => setAdminNoteDraft(e.target.value)}
+                  placeholder="Add internal note/comment for this booking"
+                />
+                {detailBooking.admin_note_updated_at ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Last updated by{" "}
+                    {detailBooking.admin_note_updated_by_name ?? "Admin"} on{" "}
+                    {format(new Date(detailBooking.admin_note_updated_at), "PPpp")}
+                  </p>
+                ) : null}
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => saveAdminNote.mutate()}
+                    disabled={saveAdminNote.isPending}
+                  >
+                    Save note
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => clearAdminNote.mutate()}
+                    disabled={clearAdminNote.isPending}
+                  >
+                    Delete note
+                  </Button>
+                </div>
               </section>
               {detailCourt ? (
                 <section className="border-t border-border/60 pt-4">

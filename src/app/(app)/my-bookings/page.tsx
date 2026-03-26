@@ -16,6 +16,14 @@ import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { courtlyApi } from "@/lib/api/courtly-client";
@@ -28,6 +36,24 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
+
+function mutationErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error && "response" in error) {
+    const response = (error as { response?: { data?: { error?: string } } }).response;
+    const msg = response?.data?.error;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return fallback;
+}
+
+function applyBookingStatus(
+  list: Booking[] | undefined,
+  id: string,
+  status: Booking["status"],
+) {
+  if (!list) return list;
+  return list.map((b) => (b.id === id ? { ...b, status } : b));
+}
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -62,7 +88,7 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
     const first = items[0];
     groups.push({
       key,
-      courtName: first?.court_name ?? "Court",
+      courtName: first?.establishment_name ?? first?.court_name ?? "Court",
       date: first?.date ?? "",
       items,
       detailBookingId: first?.id ?? "",
@@ -78,6 +104,9 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
 
 export default function MyBookingsPage() {
   const [tab, setTab] = useState("bookings");
+  const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("all");
+  const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const selectedSport = useSelectedSport((s) => s.sport);
@@ -94,10 +123,26 @@ export default function MyBookingsPage() {
     enabled: !!user?.email,
   });
 
-  const bookingGroups = useMemo(
-    () => groupCourtBookings(bookings),
-    [bookings],
-  );
+  const bookingGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = bookings.filter((b) => {
+      if (statusFilter !== "all" && b.status !== statusFilter) return false;
+      if (!q) return true;
+      const court = (b.court_name ?? "").toLowerCase();
+      const date = b.date.toLowerCase();
+      const status = b.status.toLowerCase();
+      return court.includes(q) || date.includes(q) || status.includes(q);
+    });
+
+    const groups = groupCourtBookings(filtered);
+    groups.sort((a, b) => {
+      if (sortBy === "court") return a.courtName.localeCompare(b.courtName);
+      if (sortBy === "oldest") return a.date.localeCompare(b.date);
+      // default: most recent first
+      return b.date.localeCompare(a.date);
+    });
+    return groups;
+  }, [bookings, query, sortBy, statusFilter]);
 
   const { data: registrations = [], isLoading: loadingRegs } = useQuery({
     queryKey: ["my-registrations", user?.email],
@@ -117,6 +162,15 @@ export default function MyBookingsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking cancelled");
+    },
+    onMutate: async (id) => {
+      queryClient.setQueriesData(
+        { queryKey: ["my-bookings"] },
+        (old: Booking[] | undefined) => applyBookingStatus(old, id, "cancelled"),
+      );
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not cancel booking"));
     },
   });
 
@@ -159,13 +213,53 @@ export default function MyBookingsPage() {
           </EmptyState>
         ) : (
           <div className="space-y-4">
+            <div className="grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 md:grid-cols-3">
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search court, date, or status"
+              />
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => setStatusFilter(v as "all" | Booking["status"])}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={sortBy}
+                onValueChange={(v) => setSortBy(v as "recent" | "oldest" | "court")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recent">Most recent (default)</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="court">Court name (A-Z)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
               If your chosen range includes hours that are already booked or
               blocked, only the <span className="font-medium text-foreground">free</span>{" "}
               segments are reserved. You confirm that split before the booking
               is created.
             </div>
-            {bookingGroups.map((g) => {
+            {bookingGroups.length === 0 ? (
+              <EmptyState
+                icon={Calendar}
+                title="No bookings match your filters"
+                description="Try changing search, status, or sort options."
+              />
+            ) : bookingGroups.map((g) => {
               const sessionTotal = g.items.reduce(
                 (sum, b) => sum + (b.total_cost ?? 0),
                 0,
