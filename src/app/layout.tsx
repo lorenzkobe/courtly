@@ -15,9 +15,19 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Courtly — Court booking & tournaments",
+  applicationName: "Courtly",
+  title: {
+    default: "Courtly — Book courts, play your sport",
+    template: "%s | Courtly",
+  },
   description:
-    "Book courts, join open play, and register for tournaments — mock data for local development.",
+    "Courtly is the all-in-one platform for booking sports courts, joining tournaments, and finding open play — built for players and facility managers alike.",
+  openGraph: {
+    title: "Courtly — Book courts, play your sport",
+    description:
+      "Book sports courts, join tournaments, and find open play — for players and facility managers.",
+    siteName: "Courtly",
+  },
 };
 
 export default function RootLayout({

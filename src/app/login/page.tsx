@@ -84,13 +84,18 @@ function LoginContent() {
         Back to home
       </Link>
 
-      <div className="mb-8 flex items-center justify-center gap-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-          <Layers className="h-5 w-5 text-primary-foreground" />
+      <div className="mb-8 flex flex-col items-center gap-1 text-center">
+        <div className="flex items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
+            <Layers className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <span className="font-heading text-2xl font-bold tracking-tight text-secondary-foreground">
+            Courtly
+          </span>
         </div>
-        <span className="font-heading text-2xl font-bold tracking-tight text-secondary-foreground">
-          Courtly
-        </span>
+        <p className="text-sm text-muted-foreground">
+          Book courts, tournaments & open play
+        </p>
       </div>
 
       <Card className="border-border/60 shadow-xl shadow-primary/5">

@@ -97,14 +97,22 @@ export default function HomePage() {
     <div className="min-h-screen bg-background">
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+          <Link
+            href="/"
+            className="flex items-center gap-2 transition-opacity hover:opacity-90"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
               <Layers className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-heading text-xl font-bold tracking-tight text-foreground">
-              Courtly
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="font-heading text-xl font-bold tracking-tight text-foreground">
+                Courtly
+              </span>
+              <span className="hidden text-xs font-medium text-muted-foreground sm:block">
+                Book courts, play your sport
+              </span>
             </span>
-          </div>
+          </Link>
           <div className="flex items-center gap-2">
             {user ? (
               <Button className="font-heading font-semibold" asChild>

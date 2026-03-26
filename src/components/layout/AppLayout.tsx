@@ -150,7 +150,7 @@ export default function AppLayout({
                 Courtly
               </h1>
               <p className="text-xs text-muted-foreground">
-                Sports Court Booking
+                Book courts, tournaments & open play
               </p>
             </div>
           </Link>
@@ -197,11 +197,16 @@ export default function AppLayout({
       <div className="fixed left-0 right-0 top-0 z-50 border-b border-sidebar-border bg-secondary/95 backdrop-blur-xl lg:hidden">
         <div className="flex items-center justify-between px-4 py-3">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
               <Layers className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-heading font-bold text-secondary-foreground">
-              Courtly
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="font-heading font-bold text-secondary-foreground">
+                Courtly
+              </span>
+              <span className="truncate text-[10px] font-medium text-muted-foreground">
+                Book courts, tournaments & open play
+              </span>
             </span>
           </Link>
           <Button
