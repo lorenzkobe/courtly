@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { homePathForRole } from "@/lib/auth/management";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth/auth-context";
 
@@ -92,6 +93,7 @@ const testimonials = [
 
 export default function HomePage() {
   const { user } = useAuth();
+  const appHomePath = homePathForRole(user?.role);
 
   return (
     <div className="min-h-screen bg-background">
@@ -116,7 +118,7 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             {user ? (
               <Button className="font-heading font-semibold" asChild>
-                <Link href="/dashboard">Open app</Link>
+                <Link href={appHomePath}>Open app</Link>
               </Button>
             ) : (
               <>

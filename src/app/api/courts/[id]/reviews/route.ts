@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { mockDb } from "@/lib/mock/db";
-import { reviewSummaryForCourt } from "@/lib/review-summary";
+import { reviewSummaryForVenue } from "@/lib/review-summary";
 import type { Court, CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 function enrichCourt(c: Court) {
   return {
     ...c,
-    review_summary: reviewSummaryForCourt(c.id, mockDb.courtReviews),
+    review_summary: reviewSummaryForVenue(c.venue_id, mockDb.courtReviews),
   };
 }
 
@@ -19,7 +19,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const list = mockDb.courtReviews
-    .filter((r) => r.court_id === courtId)
+    .filter((r) => r.venue_id === court.venue_id)
     .sort((a, b) =>
       String(b.created_at).localeCompare(String(a.created_at)),
     );
@@ -62,7 +62,10 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const booking = mockDb.bookings.find((b) => b.id === bookingId);
-  if (!booking || booking.court_id !== courtId) {
+  const bookingCourt = booking
+    ? mockDb.courts.find((c) => c.id === booking.court_id)
+    : undefined;
+  if (!booking || !bookingCourt || bookingCourt.venue_id !== court.venue_id) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
   if (booking.status !== "completed") {
@@ -87,6 +90,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const now = new Date().toISOString();
   const row: CourtReview = {
     id: `rev-${crypto.randomUUID().slice(0, 8)}`,
+    venue_id: court.venue_id,
     court_id: courtId,
     user_id: user.id,
     user_name: user.full_name?.trim() || user.email,

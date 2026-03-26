@@ -11,8 +11,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: courtId, reviewId } = await ctx.params;
+  const court = mockDb.courts.find((c) => c.id === courtId);
+  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.court_id === courtId,
+    (r) => r.id === reviewId && r.venue_id === court.venue_id,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -80,8 +82,10 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: courtId, reviewId } = await ctx.params;
+  const court = mockDb.courts.find((c) => c.id === courtId);
+  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.court_id === courtId,
+    (r) => r.id === reviewId && r.venue_id === court.venue_id,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

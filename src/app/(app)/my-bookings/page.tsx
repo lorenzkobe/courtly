@@ -6,7 +6,6 @@ import {
   Calendar,
   Clock,
   Users,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -44,15 +43,6 @@ function mutationErrorMessage(error: unknown, fallback: string) {
     if (typeof msg === "string" && msg.trim()) return msg;
   }
   return fallback;
-}
-
-function applyBookingStatus(
-  list: Booking[] | undefined,
-  id: string,
-  status: Booking["status"],
-) {
-  if (!list) return list;
-  return list.map((b) => (b.id === id ? { ...b, status } : b));
 }
 
 const statusStyles: Record<string, string> = {
@@ -153,25 +143,6 @@ export default function MyBookingsPage() {
       return data;
     },
     enabled: !!user?.email,
-  });
-
-  const cancelBooking = useMutation({
-    mutationFn: async (id: string) => {
-      await courtlyApi.bookings.update(id, { status: "cancelled" });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
-      toast.success("Booking cancelled");
-    },
-    onMutate: async (id) => {
-      queryClient.setQueriesData(
-        { queryKey: ["my-bookings"] },
-        (old: Booking[] | undefined) => applyBookingStatus(old, id, "cancelled"),
-      );
-    },
-    onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not cancel booking"));
-    },
   });
 
   const isLoading = loadingBookings || loadingRegs;
@@ -330,19 +301,6 @@ export default function MyBookingsPage() {
                                 </span>
                               </div>
                             </div>
-                            {b.status === "confirmed" ? (
-                              <div className="flex shrink-0 flex-wrap gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                  onClick={() => cancelBooking.mutate(b.id)}
-                                  disabled={cancelBooking.isPending}
-                                >
-                                  <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                                </Button>
-                              </div>
-                            ) : null}
                           </li>
                         );
                       })}

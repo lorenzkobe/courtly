@@ -13,9 +13,11 @@ export async function GET() {
     .filter((r) => r.flagged)
     .map((r) => {
       const court = mockDb.courts.find((c) => c.id === r.court_id);
+      const venue = mockDb.venues.find((v) => v.id === r.venue_id);
       return {
         ...r,
         court_name: court?.name ?? r.court_id,
+        venue_name: venue?.name ?? r.venue_id,
       };
     })
     .sort((a, b) =>

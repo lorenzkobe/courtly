@@ -1,10 +1,10 @@
 import type { CourtReview, CourtReviewSummary } from "@/lib/types/courtly";
 
-export function reviewSummaryForCourt(
-  courtId: string,
+export function reviewSummaryForVenue(
+  venueId: string,
   reviews: CourtReview[],
 ): CourtReviewSummary {
-  const list = reviews.filter((r) => r.court_id === courtId);
+  const list = reviews.filter((r) => r.venue_id === venueId);
   if (list.length === 0) {
     return { average_rating: 0, review_count: 0 };
   }

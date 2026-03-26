@@ -92,7 +92,7 @@ export function aggregateRevenueByCourt(
     return {
       court_id: c.id,
       court_name: c.name,
-      court_account_id: c.court_account_id,
+      court_account_id: c.court_account_id ?? null,
       court_account_name: null,
       booking_count: agg?.booking_count ?? 0,
       court_net: agg?.court_net ?? 0,

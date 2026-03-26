@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,10 +62,15 @@ export default function AdminBookingsPage() {
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("confirmed");
+  const [sortBy, setSortBy] = useState<
+    "latest_date" | "oldest_date" | "amount_high" | "amount_low"
+  >("latest_date");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [adminNoteDraft, setAdminNoteDraft] = useState("");
+  const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
+  const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
   const currentUserId = user?.id ?? "";
 
   const { data: bookings = [], isLoading } = useQuery({
@@ -221,16 +227,35 @@ export default function AdminBookingsPage() {
     },
   });
 
-  const filtered = bookings.filter((b) => {
-    const statusMatch = statusFilter === "all" || b.status === statusFilter;
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const searchMatch =
-      !search ||
-      b.player_name?.toLowerCase().includes(q) ||
-      b.player_email?.toLowerCase().includes(q) ||
-      b.court_name?.toLowerCase().includes(q);
-    return statusMatch && searchMatch;
-  });
+    const list = bookings.filter((b) => {
+      const statusMatch = statusFilter === "all" || b.status === statusFilter;
+      const searchMatch =
+        !search ||
+        b.player_name?.toLowerCase().includes(q) ||
+        b.player_email?.toLowerCase().includes(q) ||
+        b.court_name?.toLowerCase().includes(q);
+      return statusMatch && searchMatch;
+    });
+    list.sort((a, b) => {
+      if (sortBy === "oldest_date") {
+        const byDate = a.date.localeCompare(b.date);
+        if (byDate !== 0) return byDate;
+        return a.start_time.localeCompare(b.start_time);
+      }
+      if (sortBy === "amount_high") {
+        return (b.total_cost ?? 0) - (a.total_cost ?? 0);
+      }
+      if (sortBy === "amount_low") {
+        return (a.total_cost ?? 0) - (b.total_cost ?? 0);
+      }
+      const byDate = b.date.localeCompare(a.date);
+      if (byDate !== 0) return byDate;
+      return b.start_time.localeCompare(a.start_time);
+    });
+    return list;
+  }, [bookings, search, sortBy, statusFilter]);
 
   const stats = {
     total: bookings.length,
@@ -247,6 +272,33 @@ export default function AdminBookingsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
+      <ConfirmDialog
+        open={!!confirmCancelBookingId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmCancelBookingId(null);
+        }}
+        title="Cancel booking?"
+        description="This will mark the booking as cancelled."
+        confirmLabel="Yes, cancel booking"
+        isPending={updateStatus.isPending}
+        onConfirm={() => {
+          if (!confirmCancelBookingId) return;
+          updateStatus.mutate({ id: confirmCancelBookingId, status: "cancelled" });
+          setConfirmCancelBookingId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={confirmDeleteNoteOpen}
+        onOpenChange={setConfirmDeleteNoteOpen}
+        title="Delete admin note?"
+        description="This will remove the internal note for this booking."
+        confirmLabel="Delete note"
+        isPending={clearAdminNote.isPending}
+        onConfirm={() => {
+          clearAdminNote.mutate();
+          setConfirmDeleteNoteOpen(false);
+        }}
+      />
       <Dialog open={!!detailId} onOpenChange={(o) => !o && setDetailId(null)}>
         <DialogContent className="max-h-[min(90dvh,40rem)] sm:max-w-lg">
           <DialogHeader>
@@ -328,6 +380,31 @@ export default function AdminBookingsPage() {
                     </>
                   ) : null}
                 </dl>
+                {detailBooking.status === "confirmed" ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() =>
+                        updateStatus.mutate({
+                          id: detailBooking.id,
+                          status: "completed",
+                        })
+                      }
+                    >
+                      Complete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
+                      onClick={() => setConfirmCancelBookingId(detailBooking.id)}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" /> Cancel
+                    </Button>
+                  </div>
+                ) : null}
               </section>
               <section className="border-t border-border/60 pt-4">
                 <Label htmlFor="admin-booking-note">Admin note</Label>
@@ -359,60 +436,13 @@ export default function AdminBookingsPage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => clearAdminNote.mutate()}
+                    onClick={() => setConfirmDeleteNoteOpen(true)}
                     disabled={clearAdminNote.isPending}
                   >
                     Delete note
                   </Button>
                 </div>
               </section>
-              {detailCourt ? (
-                <section className="border-t border-border/60 pt-4">
-                  <h3 className="mb-2 font-heading font-semibold text-foreground">
-                    Venue & directions
-                  </h3>
-                  <p className="font-medium text-foreground">{detailCourt.name}</p>
-                  <p className="mt-1 flex items-start gap-2 text-muted-foreground">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    {detailCourt.location}
-                  </p>
-                  {detailCourt.amenities?.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {detailCourt.amenities.map((a, i) => (
-                        <Badge key={`${i}-${a}`} variant="outline" className="font-normal">
-                          {formatAmenityLabel(a)}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
-                  {mapEmbedSrc ? (
-                    <div className="mt-3 overflow-hidden rounded-2xl border border-border">
-                      <iframe
-                        title={`Map — ${detailCourt.name}`}
-                        src={mapEmbedSrc}
-                        className="aspect-video w-full max-h-48 border-0"
-                        loading="lazy"
-                        referrerPolicy="no-referrer-when-downgrade"
-                      />
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
-                        <MapPin className="mr-1.5 h-3.5 w-3.5" />
-                        Open in Map
-                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                      </a>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={directionsHref} target="_blank" rel="noopener noreferrer">
-                        Directions
-                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                      </a>
-                    </Button>
-                  </div>
-                </section>
-              ) : null}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -476,6 +506,22 @@ export default function AdminBookingsPage() {
             <SelectItem value="completed">Completed</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={sortBy}
+          onValueChange={(v) =>
+            setSortBy(v as "latest_date" | "oldest_date" | "amount_high" | "amount_low")
+          }
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="latest_date">Latest date (default)</SelectItem>
+            <SelectItem value="oldest_date">Oldest date</SelectItem>
+            <SelectItem value="amount_high">Amount: high to low</SelectItem>
+            <SelectItem value="amount_low">Amount: low to high</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -493,11 +539,20 @@ export default function AdminBookingsPage() {
           {filtered.map((b) => (
             <Card
               key={b.id}
-              className="border-border/50 transition-shadow hover:shadow-sm"
+              className="cursor-pointer border-border/50 transition-shadow hover:shadow-sm"
+              onClick={() => setDetailId(b.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setDetailId(b.id);
+                }
+              }}
             >
-              <CardContent className="p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex-1">
+              <CardContent className="min-h-30 p-5">
+                <div className="flex min-h-20 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-1 flex-col justify-between">
                     <div className="mb-1.5 flex items-center gap-2">
                       <span className="font-heading font-bold text-foreground">
                         {b.court_name || "Court"}
@@ -530,52 +585,15 @@ export default function AdminBookingsPage() {
                         >
                           {b.notes.trim()}
                         </span>
-                      ) : null}
+                      ) : (
+                        <span className="invisible max-w-full truncate text-xs">No note</span>
+                      )}
                       <div className="font-semibold text-foreground tabular-nums">
                         {b.total_cost != null ? formatPhp(b.total_cost) : "—"}
                       </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="text-xs"
-                      onClick={() => setDetailId(b.id)}
-                    >
-                      Details
-                    </Button>
-                    {b.status === "confirmed" ? (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          onClick={() =>
-                            updateStatus.mutate({
-                              id: b.id,
-                              status: "completed",
-                            })
-                          }
-                        >
-                          Complete
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
-                          onClick={() =>
-                            updateStatus.mutate({
-                              id: b.id,
-                              status: "cancelled",
-                            })
-                          }
-                        >
-                          <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
+                  <div className="shrink-0 text-xs text-muted-foreground">View details</div>
                 </div>
               </CardContent>
             </Card>

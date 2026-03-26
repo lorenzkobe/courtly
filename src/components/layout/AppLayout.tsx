@@ -23,6 +23,7 @@ import {
 import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
+import { homePathForRole } from "@/lib/auth/management";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { SessionUser } from "@/lib/types/courtly";
@@ -43,7 +44,7 @@ type NavEntry = (typeof PLAYER_NAV)[number] | {
 
 function venueAdminNav(): NavEntry[] {
   return [
-    { path: "/admin/courts", label: "My courts", icon: Layers },
+    { path: "/admin/courts", label: "Venues", icon: Layers },
     { path: "/admin/bookings", label: "Court bookings", icon: Calendar },
     { path: "/admin/revenue", label: "Revenue", icon: PhilippinePeso },
   ];
@@ -54,10 +55,10 @@ function platformSuperadminNav(): NavEntry[] {
     { path: "/superadmin", label: "Overview", icon: Crown },
     {
       path: "/superadmin/court-accounts",
-      label: "Court accounts",
+      label: "Venues",
       icon: Building2,
     },
-    { path: "/superadmin/users", label: "User accounts", icon: UserCog },
+    { path: "/superadmin/users", label: "Users", icon: UserCog },
     {
       path: "/superadmin/revenue",
       label: "Platform revenue",
@@ -115,6 +116,7 @@ export default function AppLayout({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
+  const homePath = homePathForRole(user?.role);
 
   const sidebar = useMemo(() => sidebarForRole(user?.role), [user?.role]);
   const navItems = sidebar.items;
@@ -146,7 +148,7 @@ export default function AppLayout({
       <aside className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
         <div className="flex grow flex-col overflow-y-auto bg-secondary">
           <Link
-            href="/"
+            href={homePath}
             className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6 transition-opacity hover:opacity-90"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
@@ -203,7 +205,7 @@ export default function AppLayout({
 
       <div className="fixed left-0 right-0 top-0 z-50 border-b border-sidebar-border bg-secondary/95 backdrop-blur-xl lg:hidden">
         <div className="flex items-center justify-between px-4 py-3">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={homePath} className="flex items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
               <Layers className="h-4 w-4 text-primary-foreground" />
             </div>

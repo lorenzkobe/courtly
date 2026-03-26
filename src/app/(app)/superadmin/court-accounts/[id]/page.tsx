@@ -53,20 +53,21 @@ export default function CourtAccountDetailPage() {
     );
   }
 
-  const { account, courts, primaryAdmin } = data;
+  const account = data.account ?? data.venue;
+  const { courts, primaryAdmin } = data;
   const admins = data.admins ?? [];
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
       <Button variant="ghost" className="mb-4 -ml-2" asChild>
         <Link href="/superadmin/court-accounts">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Establishments
+          <ArrowLeft className="mr-2 h-4 w-4" /> Venues
         </Link>
       </Button>
 
       <PageHeader
         title={account.name}
-        subtitle={account.contact_email}
+        subtitle={account.location}
         alignActions="start"
       >
         <Badge
@@ -103,12 +104,6 @@ export default function CourtAccountDetailPage() {
                 )}
               </span>
             </div>
-            {account.notes ? (
-              <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
-                <span className="text-muted-foreground">Notes</span>
-                <span className="whitespace-pre-wrap">{account.notes}</span>
-              </div>
-            ) : null}
             <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
               <span className="text-muted-foreground">Created</span>
               <span>

@@ -1,31 +1,18 @@
 import { NextResponse } from "next/server";
 import { readSessionUser, SESSION_COOKIE } from "@/lib/auth/cookie-session";
+import { mockDb } from "@/lib/mock/db";
 import type { SessionUser } from "@/lib/types/courtly";
 
-function userForRole(role: SessionUser["role"]): SessionUser {
-  switch (role) {
-    case "admin":
-      return {
-        id: "user-admin-1",
-        email: "admin@courtly.dev",
-        full_name: "Court Admin",
-        role: "admin",
-      };
-    case "superadmin":
-      return {
-        id: "user-superadmin-1",
-        email: "superadmin@courtly.dev",
-        full_name: "Platform Superadmin",
-        role: "superadmin",
-      };
-    default:
-      return {
-        id: "user-player-1",
-        email: "player@courtly.dev",
-        full_name: "Alex Player",
-        role: "user",
-      };
-  }
+function userForRole(role: SessionUser["role"]): SessionUser | null {
+  const managed = mockDb.managedUsers.find((u) => u.role === role);
+  if (!managed) return null;
+  return {
+    id: managed.id,
+    email: managed.email,
+    full_name: managed.full_name,
+    role: managed.role,
+    is_active: managed.is_active,
+  };
 }
 
 export async function POST(req: Request) {
@@ -44,6 +31,12 @@ export async function POST(req: Request) {
   }
 
   const user = userForRole(role);
+  if (!user || user.is_active === false) {
+    return NextResponse.json(
+      { error: "This account is inactive and cannot log in." },
+      { status: 403 },
+    );
+  }
 
   const res = NextResponse.json({ user });
   res.cookies.set(SESSION_COOKIE, JSON.stringify(user), {

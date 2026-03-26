@@ -14,14 +14,15 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { homePathForRole } from "@/lib/auth/management";
 import { useAuth } from "@/lib/auth/auth-context";
 
-function safeRedirectPath(raw: string | null): string {
+function safeRedirectPath(raw: string | null): string | null {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
-    return "/dashboard";
+    return null;
   }
   if (raw === "/login" || raw.startsWith("/login")) {
-    return "/dashboard";
+    return null;
   }
   return raw;
 }
@@ -41,7 +42,7 @@ function LoginContent() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace(nextPath);
+      router.replace(nextPath ?? homePathForRole(user.role));
     }
   }, [isLoading, user, router, nextPath]);
 
@@ -50,7 +51,7 @@ function LoginContent() {
     setSubmitting(true);
     try {
       await login(role);
-      router.replace(nextPath);
+      router.replace(nextPath ?? homePathForRole(role));
     } catch {
       setError("Could not sign you in. Please try again.");
     } finally {

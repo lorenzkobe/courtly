@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const user = await readSessionUser();
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const { id: courtId } = await ctx.params;
   const court = mockDb.courts.find((c) => c.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

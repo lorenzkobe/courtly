@@ -8,14 +8,14 @@ import {
   parseIsoDateParam,
 } from "@/lib/revenue-filters";
 import { aggregateRevenueByCourt } from "@/lib/revenue-aggregate";
-import type { CourtAccount, RevenueByAccountRow } from "@/lib/types/courtly";
+import type { RevenueByAccountRow, Venue } from "@/lib/types/courtly";
 
 function attachAccountNames(
   rows: ReturnType<typeof aggregateRevenueByCourt>,
 ): ReturnType<typeof aggregateRevenueByCourt> {
   return rows.map((row) => {
     const name = row.court_account_id
-      ? mockDb.courtAccounts.find((a) => a.id === row.court_account_id)?.name ??
+      ? mockDb.venues.find((a) => a.id === row.court_account_id)?.name ??
         null
       : null;
     return { ...row, court_account_name: name };
@@ -30,7 +30,7 @@ type Roll = {
 };
 
 function platformAccountRows(
-  courtAccounts: CourtAccount[],
+  courtAccounts: Venue[],
   byCourt: ReturnType<typeof attachAccountNames>,
 ): RevenueByAccountRow[] {
   const agg = new Map<string, Roll>();
@@ -52,6 +52,8 @@ function platformAccountRows(
   const out: RevenueByAccountRow[] = courtAccounts.map((a) => {
     const hit = agg.get(a.id);
     return {
+      venue_id: a.id,
+      venue_name: a.name,
       court_account_id: a.id,
       court_account_name: a.name,
       court_net: hit?.court_net ?? 0,
@@ -64,6 +66,8 @@ function platformAccountRows(
   if (mockDb.courts.some((c) => c.court_account_id == null)) {
     const hit = agg.get("");
     out.push({
+      venue_id: "",
+      venue_name: "Unassigned venue",
       court_account_id: "",
       court_account_name: "Unassigned account",
       court_net: hit?.court_net ?? 0,
@@ -102,21 +106,23 @@ export async function GET(req: Request) {
   if (
     courtAccountFilter &&
     courtAccountFilter !== "unassigned" &&
-    !mockDb.courtAccounts.some((a) => a.id === courtAccountFilter)
+    !mockDb.venues.some((a) => a.id === courtAccountFilter)
   ) {
     return NextResponse.json({ error: "Court account not found" }, { status: 404 });
   }
 
   let courts = [...mockDb.courts];
   if (user.role === "admin") {
-    const ids = new Set(manageableCourtIds(user, mockDb.courts));
+    const ids = new Set(
+      manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
+    );
     courts = courts.filter((c) => ids.has(c.id));
   }
 
   if (courtAccountFilter === "unassigned") {
-    courts = courts.filter((c) => c.court_account_id == null);
+    courts = courts.filter((c) => !c.venue_id);
   } else if (courtAccountFilter) {
-    courts = courts.filter((c) => c.court_account_id === courtAccountFilter);
+    courts = courts.filter((c) => c.venue_id === courtAccountFilter);
   }
 
   const courtIds = new Set(courts.map((c) => c.id));
@@ -139,11 +145,12 @@ export async function GET(req: Request) {
     date_from: dateFrom,
     date_to: dateTo,
     court_account_id: courtAccountFilter,
+    venue_id: courtAccountFilter,
   };
 
   let byAccount: RevenueByAccountRow[] | undefined;
   if (user.role === "superadmin" && !courtAccountFilter) {
-    byAccount = platformAccountRows(mockDb.courtAccounts, byCourt);
+    byAccount = platformAccountRows(mockDb.venues, byCourt);
     byAccount.sort((a, b) => b.customer_total - a.customer_total);
   }
 
@@ -151,17 +158,23 @@ export async function GET(req: Request) {
   if (courtAccountFilter === "unassigned") {
     focus_account = { id: "unassigned", name: "Unassigned account" };
   } else if (courtAccountFilter) {
-    const a = mockDb.courtAccounts.find((x) => x.id === courtAccountFilter);
+    const a = mockDb.venues.find((x) => x.id === courtAccountFilter);
     focus_account = a ? { id: a.id, name: a.name } : null;
   }
 
   const body: import("@/lib/types/courtly").RevenueSummaryResponse = {
     scope: user.role === "superadmin" ? "platform" : "venue",
     totals,
-    by_court: byCourt,
+    by_court: byCourt.map((row) => ({
+      ...row,
+      venue_id: row.court_account_id,
+      venue_name: row.court_account_name,
+    })),
     filters,
     ...(byAccount ? { by_account: byAccount } : {}),
+    ...(byAccount ? { by_account_legacy: byAccount } : {}),
     ...(courtAccountFilter ? { focus_account } : {}),
+    ...(courtAccountFilter ? { focus_venue: focus_account } : {}),
   };
 
   return NextResponse.json(body);

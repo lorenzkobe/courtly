@@ -1,16 +1,29 @@
 import type { Court, SessionUser } from "@/lib/types/courtly";
 
+function venueIdsForAdmin(
+  adminUserId: string,
+  assignments: { venue_id: string; admin_user_id: string }[],
+): Set<string> {
+  return new Set(
+    assignments
+      .filter((a) => a.admin_user_id === adminUserId)
+      .map((a) => a.venue_id),
+  );
+}
+
 export function manageableCourtIds(
   user: SessionUser | null,
   allCourts: Court[],
+  assignments: { venue_id: string; admin_user_id: string }[] = [],
 ): string[] {
   if (!user) return [];
   if (user.role === "superadmin") {
     return allCourts.map((c) => c.id);
   }
   if (user.role === "admin") {
+    const venueIds = venueIdsForAdmin(user.id, assignments);
     return allCourts
-      .filter((c) => c.managed_by_user_id === user.id)
+      .filter((c) => venueIds.has(c.venue_id))
       .map((c) => c.id);
   }
   return [];
@@ -19,10 +32,14 @@ export function manageableCourtIds(
 export function canMutateCourt(
   user: SessionUser | null,
   court: Court,
+  assignments: { venue_id: string; admin_user_id: string }[] = [],
 ): boolean {
   if (!user) return false;
   if (user.role === "superadmin") return true;
-  if (user.role === "admin") return court.managed_by_user_id === user.id;
+  if (user.role === "admin") {
+    const venueIds = venueIdsForAdmin(user.id, assignments);
+    return venueIds.has(court.venue_id);
+  }
   return false;
 }
 
@@ -32,6 +49,18 @@ export function isCourtStaff(user: SessionUser | null): boolean {
 
 export function isSuperadmin(user: SessionUser | null): boolean {
   return user?.role === "superadmin";
+}
+
+export function homePathForRole(role: SessionUser["role"] | undefined): string {
+  switch (role) {
+    case "admin":
+      return "/admin/courts";
+    case "superadmin":
+      return "/superadmin";
+    case "user":
+    default:
+      return "/dashboard";
+  }
 }
 
 /** Venue court admins may flag reviews; platform superadmin handles moderation separately. */

@@ -23,6 +23,8 @@ export type CourtClosure = {
 
 export type CourtReview = {
   id: string;
+  venue_id: string;
+  /** @deprecated Legacy compatibility. */
   court_id: string;
   user_id: string;
   user_name: string;
@@ -42,38 +44,75 @@ export type CourtReviewSummary = {
   review_count: number;
 };
 
-export type Court = {
+export type VenueStatus = "active" | "closed";
+
+/** Establishment/building that contains one or more physical courts. */
+export type Venue = {
   id: string;
   name: string;
-  /** Establishment/building name that owns this court. */
-  establishment_name?: string;
   location: string;
-  /** Which sport this court is for (filters player app by selected sport). */
+  contact_phone: string;
   sport: CourtSport;
-  type: "indoor" | "outdoor";
-  surface: "concrete" | "asphalt" | "wood" | "sport_court";
-  image_url: string;
-  /** Extra photos for gallery / carousel; if empty, `image_url` is used alone */
-  gallery_urls?: string[];
-  /** Short venue blurb shown on the book page */
-  description?: string;
-  /** WGS84 — used for map pin / directions */
-  map_latitude?: number;
-  map_longitude?: number;
   hourly_rate: number;
-  /** Flat booking fee charged on top of court subtotal (whole number, set by superadmin). */
-  booking_fee?: number;
-  /** Optional time-of-day pricing; each window is [start, end) in whole hours. */
   hourly_rate_windows?: CourtRateWindow[];
+  opens_at: string;
+  closes_at: string;
+  status: VenueStatus;
   amenities: string[];
+  image_url: string;
+  created_at: string;
+};
+
+export type VenueAdminAssignment = {
+  id: string;
+  venue_id: string;
+  admin_user_id: string;
+  created_at: string;
+};
+
+export type Court = {
+  id: string;
+  venue_id: string;
+  name: string;
+  status: "active" | "closed";
+  /** Derived on read from linked venue. */
+  establishment_name?: string;
+  /** Derived on read from linked venue. */
+  contact_phone?: string;
+  /** Derived on read from linked venue. */
+  location: string;
+  /** Derived on read from linked venue. */
+  sport: CourtSport;
+  /** Derived on read from linked venue. */
+  image_url: string;
+  /** Deprecated/optional legacy metadata. */
+  gallery_urls?: string[];
+  /** Deprecated/optional legacy metadata. */
+  description?: string;
+  /** Deprecated/optional legacy metadata. */
+  map_latitude?: number;
+  /** Deprecated/optional legacy metadata. */
+  map_longitude?: number;
+  /** Deprecated but retained for compatibility in current UI. */
+  type: "indoor" | "outdoor";
+  /** Deprecated but retained for compatibility in current UI. */
+  surface: "concrete" | "asphalt" | "wood" | "sport_court";
+  /** Derived on read from linked venue. */
+  hourly_rate: number;
+  /** Derived on read from linked venue. */
+  hourly_rate_windows?: CourtRateWindow[];
+  /** Derived on read from linked venue. */
+  amenities: string[];
+  /** Derived on read from linked venue. */
   available_hours: { open: string; close: string };
-  status: "active" | "maintenance" | "closed";
-  /** Court admin who manages this venue; null = platform / superadmin only */
-  managed_by_user_id: string | null;
-  /** Venue operator account (superadmin assigns courts to accounts). */
-  court_account_id: string | null;
   /** Populated on read APIs from reviews table — not stored on court row. */
   review_summary?: CourtReviewSummary;
+  /** @deprecated Legacy compatibility field. */
+  court_account_id?: string | null;
+  /** @deprecated Legacy compatibility field. */
+  managed_by_user_id?: string | null;
+  /** @deprecated Legacy compatibility field. */
+  booking_fee?: number;
 };
 
 export type Booking = {
@@ -167,19 +206,11 @@ export type SessionUser = {
   email: string;
   full_name: string;
   role: "user" | "admin" | "superadmin";
+  is_active?: boolean;
 };
 
-/** Business account for one or more courts (superadmin-managed). */
-export type CourtAccount = {
-  id: string;
-  name: string;
-  contact_email: string;
-  status: "active" | "suspended";
-  /** Primary court admin user for this account, if assigned */
-  primary_admin_user_id: string | null;
-  notes?: string;
-  created_at: string;
-};
+/** @deprecated Use Venue instead. */
+export type CourtAccount = Venue;
 
 /** Directory user record (superadmin CRUD); aligns with demo login identities. */
 export type ManagedUser = {
@@ -187,16 +218,21 @@ export type ManagedUser = {
   email: string;
   full_name: string;
   role: "user" | "admin" | "superadmin";
-  /** When role is admin, links them to a court account */
-  court_account_id: string | null;
+  is_active: boolean;
+  /** @deprecated Legacy single-account link; use venue assignments. */
+  court_account_id?: string | null;
   created_at: string;
 };
 
 export type RevenueByCourtRow = {
   court_id: string;
   court_name: string;
-  court_account_id: string | null;
-  court_account_name: string | null;
+  venue_id: string | null;
+  venue_name: string | null;
+  /** @deprecated Legacy alias. */
+  court_account_id?: string | null;
+  /** @deprecated Legacy alias. */
+  court_account_name?: string | null;
   booking_count: number;
   court_net: number;
   booking_fees: number;
@@ -204,7 +240,11 @@ export type RevenueByCourtRow = {
 };
 
 export type RevenueByAccountRow = {
+  venue_id: string;
+  venue_name: string;
+  /** @deprecated Legacy alias. */
   court_account_id: string;
+  /** @deprecated Legacy alias. */
   court_account_name: string;
   court_net: number;
   booking_fees: number;
@@ -222,20 +262,30 @@ export type RevenueSummaryResponse = {
   };
   by_court: RevenueByCourtRow[];
   by_account?: RevenueByAccountRow[];
+  /** @deprecated Legacy alias. */
+  by_account_legacy?: RevenueByAccountRow[];
   /** Applied filters (echo for UI). */
   filters: {
     date_from: string | null;
     date_to: string | null;
-    /** Set when response is scoped to one account or "unassigned". */
-    court_account_id: string | null;
+    /** Set when response is scoped to one venue or "unassigned". */
+    venue_id: string | null;
   };
-  /** Present when `court_account_id` filter is set (drill-down page). */
+  /** Present when `venue_id` filter is set (drill-down page). */
+  focus_venue?: { id: string; name: string } | null;
+  /** @deprecated Legacy alias. */
   focus_account?: { id: string; name: string } | null;
 };
 
-export type CourtAccountDetailResponse = {
-  account: CourtAccount;
+export type VenueDetailResponse = {
+  venue: Venue;
+  /** @deprecated Legacy alias. */
+  account?: Venue;
   courts: Court[];
-  primaryAdmin: ManagedUser | null;
+  /** @deprecated Legacy single-admin shape. */
+  primaryAdmin?: ManagedUser | null;
   admins: ManagedUser[];
 };
+
+/** @deprecated Use VenueDetailResponse. */
+export type CourtAccountDetailResponse = VenueDetailResponse;

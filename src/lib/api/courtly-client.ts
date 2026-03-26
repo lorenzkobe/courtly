@@ -2,8 +2,6 @@ import { http } from "@/lib/http-client";
 import type {
   Booking,
   Court,
-  CourtAccount,
-  CourtAccountDetailResponse,
   CourtClosure,
   CourtReview,
   ManagedUser,
@@ -11,6 +9,8 @@ import type {
   RevenueSummaryResponse,
   Tournament,
   TournamentRegistration,
+  Venue,
+  VenueDetailResponse,
 } from "@/lib/types/courtly";
 import type { NotificationsListResponse } from "@/lib/notifications/types";
 
@@ -155,13 +155,22 @@ export const courtlyApi = {
   },
 
   courtAccounts: {
-    list: () => http.get<CourtAccount[]>("/api/court-accounts"),
-    create: (data: Partial<CourtAccount>) =>
-      http.post<CourtAccount>("/api/court-accounts", data),
+    list: () => http.get<Venue[]>("/api/court-accounts"),
+    create: (data: Partial<Venue>) =>
+      http.post<Venue>("/api/court-accounts", data),
     get: (id: string) =>
-      http.get<CourtAccountDetailResponse>(`/api/court-accounts/${id}`),
-    update: (id: string, data: Partial<CourtAccount>) =>
-      http.patch<CourtAccount>(`/api/court-accounts/${id}`, data),
+      http.get<VenueDetailResponse>(`/api/court-accounts/${id}`),
+    update: (id: string, data: Partial<Venue>) =>
+      http.patch<Venue>(`/api/court-accounts/${id}`, data),
+    remove: (id: string) => http.delete(`/api/court-accounts/${id}`),
+  },
+
+  venues: {
+    list: () => http.get<Venue[]>("/api/court-accounts"),
+    create: (data: Partial<Venue>) => http.post<Venue>("/api/court-accounts", data),
+    get: (id: string) => http.get<VenueDetailResponse>(`/api/court-accounts/${id}`),
+    update: (id: string, data: Partial<Venue>) =>
+      http.patch<Venue>(`/api/court-accounts/${id}`, data),
     remove: (id: string) => http.delete(`/api/court-accounts/${id}`),
   },
 

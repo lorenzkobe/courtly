@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -357,6 +358,7 @@ export default function BookCourtPage() {
 
   const [flagReviewId, setFlagReviewId] = useState<string | null>(null);
   const [flagNote, setFlagNote] = useState("");
+  const [confirmDeleteReviewId, setConfirmDeleteReviewId] = useState<string | null>(null);
 
   const deleteReviewMut = useMutation({
     mutationFn: async (reviewId: string) => {
@@ -532,12 +534,24 @@ export default function BookCourtPage() {
   const mapOpenHref = hasMapPin
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
-  const directionsHref = hasMapPin
-    ? `https://www.google.com/maps/dir/?api=1&destination=${mapLat},${mapLon}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:px-10">
+      <ConfirmDialog
+        open={!!confirmDeleteReviewId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteReviewId(null);
+        }}
+        title="Delete review?"
+        description="This action cannot be undone."
+        confirmLabel="Delete review"
+        isPending={deleteReviewMut.isPending}
+        onConfirm={() => {
+          if (!confirmDeleteReviewId) return;
+          deleteReviewMut.mutate(confirmDeleteReviewId);
+          setConfirmDeleteReviewId(null);
+        }}
+      />
       <Dialog open={blockedWarningOpen} onOpenChange={setBlockedWarningOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -804,19 +818,19 @@ export default function BookCourtPage() {
               size="icon"
               className={cn(
                 "shrink-0",
-                isFavorite(court.id) && "border-primary/50",
+                isFavorite(court.venue_id) && "border-primary/50",
               )}
               aria-label={
-                isFavorite(court.id)
+                isFavorite(court.venue_id)
                   ? "Remove from favorites"
                   : "Add to favorites"
               }
-              onClick={() => toggleFavorite(court.id)}
+              onClick={() => toggleFavorite(court.venue_id)}
             >
               <Heart
                 className={cn(
                   "h-4 w-4",
-                  isFavorite(court.id)
+                  isFavorite(court.venue_id)
                     ? "fill-primary stroke-primary"
                     : "text-muted-foreground",
                 )}
@@ -857,6 +871,12 @@ export default function BookCourtPage() {
                   <dt className="text-muted-foreground">Rate</dt>
                   <dd className="mt-0.5 font-medium text-foreground">
                     {formatCourtRateSummary(court)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Contact</dt>
+                  <dd className="mt-0.5 font-medium text-foreground">
+                    {court.contact_phone ?? "—"}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
@@ -910,17 +930,15 @@ export default function BookCourtPage() {
                     ? "Pinned location for this venue. Open the map to zoom or get directions."
                     : "Search this address in your maps app."}
                 </p>
-                {mapEmbedSrc ? (
-                  <div className="overflow-hidden rounded-2xl border border-border">
-                    <iframe
-                      title={`Map — ${court.name}`}
-                      src={mapEmbedSrc}
-                      className="aspect-16/10 w-full max-h-64 border-0"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                    />
-                  </div>
-                ) : null}
+                <div className="overflow-hidden rounded-2xl border border-border">
+                  <iframe
+                    title={`Map — ${court.name}`}
+                      src={mapEmbedSrc ?? undefined}
+                    className="aspect-16/10 w-full max-h-64 border-0"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
                 <div className="flex flex-wrap gap-3">
                   <Button variant="outline" size="sm" asChild>
                     <a
@@ -930,16 +948,6 @@ export default function BookCourtPage() {
                     >
                       <MapPin className="mr-1.5 h-3.5 w-3.5" />
                       Open in Map
-                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                    </a>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={directionsHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Directions
                       <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
                     </a>
                   </Button>
@@ -1028,9 +1036,7 @@ export default function BookCourtPage() {
                                   size="sm"
                                   className="text-destructive hover:text-destructive"
                                   disabled={deleteReviewMut.isPending}
-                                  onClick={() =>
-                                    deleteReviewMut.mutate(review.id)
-                                  }
+                                  onClick={() => setConfirmDeleteReviewId(review.id)}
                                 >
                                   Delete
                                 </Button>
@@ -1192,17 +1198,12 @@ export default function BookCourtPage() {
                             ? "min-h-11 flex-col gap-0.5 py-1"
                             : "h-10 shrink-0",
                           isUnavailable &&
-                            pickingEnd &&
                             fromClosureOnly &&
                             "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
                           isUnavailable &&
-                            pickingEnd &&
                             !fromClosureOnly &&
                             "border-destructive/50 bg-destructive/10 text-destructive line-through",
-                          isUnavailable &&
-                            isInRange &&
-                            pickingEnd &&
-                            "opacity-90",
+                          isUnavailable && isInRange && "opacity-90",
                           isStart &&
                             "ring-2 ring-primary ring-offset-1 ring-offset-background",
                           isEnd &&

@@ -2,7 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "courtly.favoriteCourtIds";
+const STORAGE_KEY = "courtly.favoriteVenueIds";
 const CHANGED = "courtly-favorites-changed";
 
 const serverEmpty = new Set<string>();
@@ -44,10 +44,10 @@ function subscribe(onChange: () => void) {
 export function useFavoriteCourtIds() {
   const favoriteIds = useSyncExternalStore(subscribe, getSnapshot, () => serverEmpty);
 
-  const toggleFavorite = useCallback((courtId: string) => {
+  const toggleFavorite = useCallback((venueId: string) => {
     const next = new Set(getSnapshot());
-    if (next.has(courtId)) next.delete(courtId);
-    else next.add(courtId);
+    if (next.has(venueId)) next.delete(venueId);
+    else next.add(venueId);
     const json = JSON.stringify([...next]);
     try {
       window.localStorage.setItem(STORAGE_KEY, json);
@@ -60,7 +60,7 @@ export function useFavoriteCourtIds() {
   }, []);
 
   const isFavorite = useCallback(
-    (courtId: string) => favoriteIds.has(courtId),
+    (venueId: string) => favoriteIds.has(venueId),
     [favoriteIds],
   );
 

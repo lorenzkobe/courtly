@@ -68,6 +68,44 @@ function VenueRevenueInner() {
   }
 
   const { totals, by_court } = data;
+  const byVenue = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        venueName: string;
+        rows: typeof by_court;
+        totals: {
+          booking_count: number;
+          court_net: number;
+          booking_fees: number;
+          customer_total: number;
+        };
+      }
+    >();
+
+    for (const row of by_court) {
+      const key = row.venue_id ?? "unassigned";
+      const venueName = row.venue_name ?? "Unassigned venue";
+      const existing = groups.get(key) ?? {
+        venueName,
+        rows: [],
+        totals: {
+          booking_count: 0,
+          court_net: 0,
+          booking_fees: 0,
+          customer_total: 0,
+        },
+      };
+      existing.rows.push(row);
+      existing.totals.booking_count += row.booking_count;
+      existing.totals.court_net += row.court_net;
+      existing.totals.booking_fees += row.booking_fees;
+      existing.totals.customer_total += row.customer_total;
+      groups.set(key, existing);
+    }
+
+    return [...groups.values()].sort((a, b) => b.totals.customer_total - a.totals.customer_total);
+  }, [by_court]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -149,43 +187,94 @@ function VenueRevenueInner() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-lg">By court</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Court</TableHead>
-                <TableHead className="text-right">Bookings</TableHead>
-                <TableHead className="text-right">Your net</TableHead>
-                <TableHead className="text-right">Booking fee</TableHead>
-                <TableHead className="text-right">Customer total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {by_court.map((row) => (
-                <TableRow key={row.court_id}>
-                  <TableCell className="font-medium">{row.court_name}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.booking_count}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatPhp(row.court_net)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {formatPhp(row.booking_fees)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatPhp(row.customer_total)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {byVenue.map((group) => (
+          <Card key={group.venueName}>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <CardTitle className="font-heading text-lg">{group.venueName}</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {group.totals.booking_count} booking
+                  {group.totals.booking_count === 1 ? "" : "s"} ·{" "}
+                  {formatPhp(group.totals.customer_total)} customer total
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Card className="border-border/60">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-heading text-xs font-medium text-muted-foreground">
+                      Venue net
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <p className="font-heading text-lg font-bold text-foreground">
+                      {formatPhp(group.totals.court_net)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/60">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-heading text-xs font-medium text-muted-foreground">
+                      Venue booking fees
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <p className="font-heading text-lg font-bold text-foreground">
+                      {formatPhp(group.totals.booking_fees)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-heading text-xs font-medium text-muted-foreground">
+                      Venue customer total
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <p className="font-heading text-lg font-bold text-primary">
+                      {formatPhp(group.totals.customer_total)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Court</TableHead>
+                    <TableHead className="text-right">Bookings</TableHead>
+                    <TableHead className="text-right">Your net</TableHead>
+                    <TableHead className="text-right">Booking fee</TableHead>
+                    <TableHead className="text-right">Customer total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {group.rows.map((row) => (
+                    <TableRow key={row.court_id}>
+                      <TableCell className="font-medium">{row.court_name}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.booking_count}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatPhp(row.court_net)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatPhp(row.booking_fees)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatPhp(row.customer_total)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,8 @@ const emptyForm = {
   email: "",
   full_name: "",
   role: "user" as ManagedUser["role"],
-  court_account_id: "" as string,
+  is_active: true,
+  venue_ids: [] as string[],
 };
 
 function roleBadgeClass(role: ManagedUser["role"]) {
@@ -61,6 +63,7 @@ export default function SuperadminUsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedUser | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [confirmRemoveUserId, setConfirmRemoveUserId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<"all" | ManagedUser["role"]>(
     "all",
   );
@@ -120,10 +123,8 @@ export default function SuperadminUsersPage() {
         email: form.email.trim().toLowerCase(),
         full_name: form.full_name.trim(),
         role: form.role,
-        court_account_id:
-          form.role === "admin" && form.court_account_id.trim()
-            ? form.court_account_id
-            : null,
+        is_active: form.is_active,
+        venue_ids: form.role === "admin" ? form.venue_ids : [],
       };
       if (editing) {
         await courtlyApi.managedUsers.update(editing.id, body);
@@ -153,6 +154,9 @@ export default function SuperadminUsersPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
       toast.success("User removed");
+      setDialogOpen(false);
+      setEditing(null);
+      setForm(emptyForm);
     },
     onError: (err: unknown) => {
       const msg = isAxiosError(err)
@@ -174,21 +178,41 @@ export default function SuperadminUsersPage() {
       email: u.email,
       full_name: u.full_name,
       role: u.role,
-      court_account_id: u.court_account_id ?? "",
+      is_active: u.is_active !== false,
+      venue_ids: ((u as ManagedUser & { venue_ids?: string[] }).venue_ids ?? []).filter(
+        Boolean,
+      ),
     });
     setDialogOpen(true);
   };
 
-  const accountLabel = (id: string | null) => {
-    if (!id) return "—";
-    return accounts.find((a) => a.id === id)?.name ?? id;
+  const venueLabels = (ids: string[]) => {
+    if (!ids.length) return "—";
+    return ids
+      .map((id) => accounts.find((a) => a.id === id)?.name ?? id)
+      .join(", ");
   };
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
+      <ConfirmDialog
+        open={!!confirmRemoveUserId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRemoveUserId(null);
+        }}
+        title="Delete user?"
+        description="This user account will be removed."
+        confirmLabel="Delete user"
+        isPending={removeUser.isPending}
+        onConfirm={() => {
+          if (!confirmRemoveUserId) return;
+          removeUser.mutate(confirmRemoveUserId);
+          setConfirmRemoveUserId(null);
+        }}
+      />
       <PageHeader
-        title="User accounts"
-        subtitle="Directory of players, court admins, and platform staff. Court admins can be linked to a court account."
+        title="Users"
+        subtitle="Directory of players, admins, and platform staff. Admins can be assigned to multiple venues."
       >
         <Button className="font-heading font-semibold" onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" /> Add user
@@ -256,8 +280,20 @@ export default function SuperadminUsersPage() {
       ) : (
         <div className="space-y-2">
           {visibleUsers.map((u) => (
-            <Card key={u.id} className="border-border/60">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <Card
+              key={u.id}
+              className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
+              onClick={() => openEdit(u)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openEdit(u);
+                }
+              }}
+            >
+              <CardContent className="flex min-h-24 items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-heading font-semibold text-foreground">
@@ -269,34 +305,27 @@ export default function SuperadminUsersPage() {
                     >
                       {formatStatusLabel(u.role)}
                     </Badge>
+                    {u.is_active === false ? (
+                      <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                        Inactive
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">{u.email}</p>
-                  {u.role === "admin" ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Court account:{" "}
-                      <span className="font-medium text-foreground">
-                        {accountLabel(u.court_account_id)}
-                      </span>
-                    </p>
-                  ) : null}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Venues:{" "}
+                    <span className="font-medium text-foreground">
+                      {u.role === "admin"
+                        ? venueLabels(
+                            ((u as ManagedUser & { venue_ids?: string[] }).venue_ids ?? []).filter(
+                              Boolean,
+                            ),
+                          )
+                        : "—"}
+                    </span>
+                  </p>
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEdit(u)}
-                  >
-                    <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-destructive/25 text-destructive hover:bg-destructive/5"
-                    onClick={() => removeUser.mutate(u.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                <div className="shrink-0 text-xs text-muted-foreground">Click to edit</div>
               </CardContent>
             </Card>
           ))}
@@ -339,8 +368,7 @@ export default function SuperadminUsersPage() {
                   setForm({
                     ...form,
                     role: v as ManagedUser["role"],
-                    court_account_id:
-                      v === "admin" ? form.court_account_id : "",
+                    venue_ids: v === "admin" ? form.venue_ids : [],
                   })
                 }
               >
@@ -354,34 +382,69 @@ export default function SuperadminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={form.is_active ? "active" : "inactive"}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    is_active: v === "active",
+                  })
+                }
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Inactive users cannot log in.
+              </p>
+            </div>
             {form.role === "admin" ? (
               <div>
-                <Label>Court account</Label>
-                <Select
-                  value={form.court_account_id || "__none__"}
-                  onValueChange={(v) =>
-                    setForm({
-                      ...form,
-                      court_account_id: v === "__none__" ? "" : v,
-                    })
-                  }
-                >
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Venue assignments</Label>
+                <div className="mt-1.5 space-y-2 rounded-md border border-border/60 p-3">
+                  {accounts.map((a) => {
+                    const checked = form.venue_ids.includes(a.id);
+                    return (
+                      <label key={a.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              venue_ids: e.target.checked
+                                ? [...prev.venue_ids, a.id]
+                                : prev.venue_ids.filter((id) => id !== a.id),
+                            }))
+                          }
+                        />
+                        <span>{a.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
+            {editing ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-destructive/25 text-destructive hover:bg-destructive/5"
+                onClick={() => setConfirmRemoveUserId(editing.id)}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

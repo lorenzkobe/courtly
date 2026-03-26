@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { ArrowLeft, Flag, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { useState } from "react";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,10 @@ import { cn } from "@/lib/utils";
 
 export default function SuperadminModerationPage() {
   const queryClient = useQueryClient();
+  const [confirmDelete, setConfirmDelete] = useState<{
+    courtId: string;
+    reviewId: string;
+  } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["flagged-reviews"],
@@ -53,6 +59,21 @@ export default function SuperadminModerationPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDelete(null);
+        }}
+        title="Delete flagged review?"
+        description="This permanently removes the review."
+        confirmLabel="Delete review"
+        isPending={deleteReviewMut.isPending}
+        onConfirm={() => {
+          if (!confirmDelete) return;
+          deleteReviewMut.mutate(confirmDelete);
+          setConfirmDelete(null);
+        }}
+      />
       <Button variant="ghost" className="mb-4 -ml-2 text-muted-foreground" asChild>
         <Link href="/superadmin">
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -126,7 +147,7 @@ export default function SuperadminModerationPage() {
                         variant="destructive"
                         disabled={deleteReviewMut.isPending}
                         onClick={() =>
-                          deleteReviewMut.mutate({
+                          setConfirmDelete({
                             courtId: r.court_id,
                             reviewId: r.id,
                           })

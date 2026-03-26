@@ -136,34 +136,44 @@ export default function CourtsPage() {
     },
   });
 
+  const venueCards = useMemo(() => {
+    const byVenue = new Map<string, (typeof courts)[number]>();
+    for (const court of courts) {
+      if (!byVenue.has(court.venue_id)) {
+        byVenue.set(court.venue_id, court);
+      }
+    }
+    return [...byVenue.values()];
+  }, [courts]);
+
   const uniqueLocations = useMemo(
     () =>
-      [...new Set(courts.map((c) => c.location))].sort((a, b) =>
+      [...new Set(venueCards.map((c) => c.location))].sort((a, b) =>
         a.localeCompare(b),
       ),
-    [courts],
+    [venueCards],
   );
 
-  const timeOptions = useMemo(() => buildTimeOptions(courts), [courts]);
+  const timeOptions = useMemo(() => buildTimeOptions(venueCards), [venueCards]);
 
   const uniqueAmenities = useMemo(() => {
     const s = new Set<string>();
-    for (const c of courts) {
+    for (const c of venueCards) {
       for (const a of c.amenities ?? []) s.add(a);
     }
     return [...s].sort((a, b) => a.localeCompare(b));
-  }, [courts]);
+  }, [venueCards]);
 
   const sortedRates = useMemo(() => {
     const s = new Set<number>();
-    for (const c of courts) {
+    for (const c of venueCards) {
       const { min, max } = courtRateRange(c);
       s.add(min);
       s.add(max);
     }
     const list = [...s].sort((a, b) => a - b);
     return list.length ? list : [40, 45, 50, 55];
-  }, [courts]);
+  }, [venueCards]);
 
   const {
     typeFilter,
@@ -179,9 +189,9 @@ export default function CourtsPage() {
   } = applied;
 
   const filtered = useMemo(() => {
-    return courts.filter((c) => {
+    return venueCards.filter((c) => {
       if (typeFilter !== "all" && c.type !== typeFilter) return false;
-      if (favoritesOnly && !favoriteIds.has(c.id)) return false;
+      if (favoritesOnly && !favoriteIds.has(c.venue_id)) return false;
       if (locationFilter !== "all" && c.location !== locationFilter)
         return false;
 
@@ -212,7 +222,7 @@ export default function CourtsPage() {
       return true;
     });
   }, [
-    courts,
+    venueCards,
     typeFilter,
     favoritesOnly,
     favoriteIds,
@@ -745,10 +755,10 @@ export default function CourtsPage() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((court) => (
             <CourtCard
-              key={court.id}
+              key={court.venue_id}
               court={court}
-              isFavorite={isFavorite(court.id)}
-              onToggleFavorite={() => toggleFavorite(court.id)}
+              isFavorite={isFavorite(court.venue_id)}
+              onToggleFavorite={() => toggleFavorite(court.venue_id)}
             />
           ))}
         </div>

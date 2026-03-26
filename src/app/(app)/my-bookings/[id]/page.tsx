@@ -10,12 +10,12 @@ import {
   MapPin,
   Star,
   Trash2,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,24 +33,6 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Booking, CourtReview } from "@/lib/types/courtly";
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
-}
-
-function applyBookingStatus(
-  list: Booking[] | undefined,
-  id: string,
-  status: Booking["status"],
-) {
-  if (!list) return list;
-  return list.map((b) => (b.id === id ? { ...b, status } : b));
-}
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -141,6 +123,7 @@ export default function BookingDetailPage() {
 
   const [ratingDraft, setRatingDraft] = useState(0);
   const [commentDraft, setCommentDraft] = useState("");
+  const [confirmDeleteReviewOpen, setConfirmDeleteReviewOpen] = useState(false);
 
   useEffect(() => {
     if (myReview) {
@@ -206,28 +189,6 @@ export default function BookingDetailPage() {
     },
   });
 
-  const cancelBooking = useMutation({
-    mutationFn: async (id: string) => {
-      await courtlyApi.bookings.update(id, { status: "cancelled" });
-    },
-    onSuccess: (_data, id) => {
-      queryClient.setQueriesData(
-        { queryKey: ["my-bookings"] },
-        (old: Booking[] | undefined) =>
-          applyBookingStatus(old, id, "cancelled"),
-      );
-      void queryClient.invalidateQueries({ queryKey: ["booking", bookingId] });
-      void queryClient.invalidateQueries({
-        queryKey: ["booking-group", booking?.booking_group_id],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
-      toast.success("Reservation cancelled");
-    },
-    onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not cancel reservation"));
-    },
-  });
-
   const loading =
     loadingBooking ||
     (booking?.booking_group_id && loadingGroup) ||
@@ -249,11 +210,6 @@ export default function BookingDetailPage() {
   const mapOpenHref = court
     ? hasMapPin
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`
-    : "#";
-  const directionsHref = court
-    ? hasMapPin
-      ? `https://www.google.com/maps/dir/?api=1&destination=${mapLat},${mapLon}`
       : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`
     : "#";
 
@@ -294,6 +250,18 @@ export default function BookingDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
+      <ConfirmDialog
+        open={confirmDeleteReviewOpen}
+        onOpenChange={setConfirmDeleteReviewOpen}
+        title="Delete your review?"
+        description="This action cannot be undone."
+        confirmLabel="Delete review"
+        isPending={deleteReviewMut.isPending}
+        onConfirm={() => {
+          deleteReviewMut.mutate();
+          setConfirmDeleteReviewOpen(false);
+        }}
+      />
       <Button
         variant="ghost"
         className="mb-4 -ml-2 text-muted-foreground"
@@ -362,17 +330,6 @@ export default function BookingDetailPage() {
                           </span>
                         </div>
                       </div>
-                      {s.status === "confirmed" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="shrink-0 border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                          onClick={() => cancelBooking.mutate(s.id)}
-                          disabled={cancelBooking.isPending}
-                        >
-                          <X className="mr-1 h-3.5 w-3.5" /> Cancel this time
-                        </Button>
-                      ) : null}
                     </li>
                   );
                 })}
@@ -460,7 +417,7 @@ export default function BookingDetailPage() {
                       variant="outline"
                       className="border-destructive/30 text-destructive hover:bg-destructive/10"
                       disabled={deleteReviewMut.isPending}
-                      onClick={() => deleteReviewMut.mutate()}
+                      onClick={() => setConfirmDeleteReviewOpen(true)}
                     >
                       <Trash2 className="mr-1.5 h-4 w-4" />
                       Delete review
@@ -491,11 +448,15 @@ export default function BookingDetailPage() {
                 Venue
               </h2>
               <div className="space-y-1 text-sm">
-                <p className="font-medium text-foreground">{court.name}</p>
+                <p className="font-medium text-foreground">
+                  {court.establishment_name ?? booking.establishment_name ?? "—"}
+                </p>
+                <p className="text-muted-foreground">{court.name}</p>
                 <p className="flex items-start gap-2 text-muted-foreground">
                   <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {court.location}
                 </p>
+                <p className="text-muted-foreground">Contact: {court.contact_phone ?? "—"}</p>
               </div>
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -531,16 +492,6 @@ export default function BookingDetailPage() {
                   >
                     <MapPin className="mr-1.5 h-3.5 w-3.5" />
                     Open in Map
-                    <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                  </a>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={directionsHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Directions
                     <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
                   </a>
                 </Button>

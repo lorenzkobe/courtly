@@ -8,7 +8,8 @@ import type { Booking, CourtSport } from "@/lib/types/courtly";
 function bookingSport(b: Booking): CourtSport | undefined {
   if (b.sport) return b.sport;
   const court = mockDb.courts.find((c) => c.id === b.court_id);
-  return court?.sport;
+  if (!court) return undefined;
+  return mockDb.venues.find((v) => v.id === court.venue_id)?.sport;
 }
 
 export async function GET(req: Request) {
@@ -27,7 +28,9 @@ export async function GET(req: Request) {
     if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const ids = new Set(manageableCourtIds(user, mockDb.courts));
+    const ids = new Set(
+      manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
+    );
     list = list.filter((b) => ids.has(b.court_id));
   }
 
@@ -49,6 +52,16 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Partial<Booking>;
   const id = `book-${crypto.randomUUID().slice(0, 8)}`;
   const court = mockDb.courts.find((c) => c.id === body.court_id);
+  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : null;
+  if (!court || !venue) {
+    return NextResponse.json({ error: "Court not found" }, { status: 404 });
+  }
+  if (court.status !== "active" || venue.status !== "active") {
+    return NextResponse.json(
+      { error: "This venue/court is inactive and cannot be booked." },
+      { status: 409 },
+    );
+  }
   const courtBookingFee = court?.booking_fee;
 
   let court_subtotal = body.court_subtotal;
@@ -80,10 +93,12 @@ export async function POST(req: Request) {
     id,
     court_id: body.court_id as string,
     court_name: body.court_name,
-    establishment_name: court?.court_account_id
-      ? mockDb.courtAccounts.find((a) => a.id === court.court_account_id)?.name
+    establishment_name: court
+      ? venue.name
       : undefined,
-    sport: body.sport ?? court?.sport,
+    sport:
+      body.sport ??
+      (court ? venue.sport : undefined),
     booking_group_id: body.booking_group_id,
     date: body.date as string,
     start_time: body.start_time as string,

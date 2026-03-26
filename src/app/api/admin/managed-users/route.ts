@@ -8,7 +8,22 @@ export async function GET() {
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json([...mockDb.managedUsers]);
+  return NextResponse.json(
+    mockDb.managedUsers.map((u) => ({
+      ...u,
+      venue_ids:
+        u.role === "admin"
+          ? mockDb.venueAdminAssignments
+              .filter((a) => a.admin_user_id === u.id)
+              .map((a) => a.venue_id)
+          : [],
+      court_account_id:
+        u.role === "admin"
+          ? mockDb.venueAdminAssignments.find((a) => a.admin_user_id === u.id)
+              ?.venue_id ?? null
+          : null,
+    })),
+  );
 }
 
 export async function POST(req: Request) {
@@ -17,16 +32,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as Partial<ManagedUser>;
+  const body = (await req.json()) as Partial<ManagedUser> & {
+    venue_ids?: string[];
+  };
   const id = `user-${crypto.randomUUID().slice(0, 8)}`;
   const role =
     body.role === "admin" || body.role === "superadmin" ? body.role : "user";
-
-  let court_account_id: string | null = null;
-  if (role === "admin") {
-    court_account_id =
-      typeof body.court_account_id === "string" ? body.court_account_id : null;
-  }
 
   const email =
     typeof body.email === "string" && body.email.includes("@")
@@ -49,9 +60,24 @@ export async function POST(req: Request) {
         ? body.full_name.trim()
         : "New user",
     role,
-    court_account_id,
+    is_active: body.is_active !== false,
     created_at: new Date().toISOString(),
   };
   mockDb.managedUsers.push(managed);
-  return NextResponse.json(managed);
+  if (role === "admin" && Array.isArray(body.venue_ids)) {
+    for (const venueId of body.venue_ids) {
+      if (!mockDb.venues.some((v) => v.id === venueId)) continue;
+      mockDb.venueAdminAssignments.push({
+        id: `va-${crypto.randomUUID().slice(0, 8)}`,
+        venue_id: venueId,
+        admin_user_id: managed.id,
+        created_at: new Date().toISOString(),
+      });
+    }
+  }
+  return NextResponse.json({
+    ...managed,
+    court_account_id: null,
+    venue_ids: role === "admin" ? body.venue_ids ?? [] : [],
+  });
 }

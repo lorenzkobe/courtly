@@ -1,13 +1,14 @@
 import type {
   Booking,
   Court,
-  CourtAccount,
   CourtClosure,
   CourtReview,
   ManagedUser,
   OpenPlaySession,
   Tournament,
   TournamentRegistration,
+  Venue,
+  VenueAdminAssignment,
 } from "@/lib/types/courtly";
 
 function isoDate(d: Date) {
@@ -21,22 +22,35 @@ soon.setDate(soon.getDate() + 14);
 /** Demo court admin (see auth login route ids) */
 const DEMO_ADMIN_ID = "user-admin-1";
 
-const courtAccounts: CourtAccount[] = [
+const venues: Venue[] = [
   {
-    id: "acct-skyline-sports",
+    id: "venue-bgcmakati",
     name: "BGC Makati Sports Center",
-    contact_email: "ops@skyline-sports.example",
     status: "active",
-    primary_admin_user_id: DEMO_ADMIN_ID,
-    notes: "BGC + Makati venues",
+    location: "Bonifacio Global City, Taguig",
+    contact_phone: "+63 917 800 1001",
+    sport: "pickleball",
+    hourly_rate: 45,
+    hourly_rate_windows: [{ start: "17:00", end: "22:00", hourly_rate: 60 }],
+    opens_at: "07:00",
+    closes_at: "22:00",
+    amenities: ["lights", "parking", "restrooms", "seating"],
+    image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
     created_at: new Date().toISOString(),
   },
   {
-    id: "acct-cebu-bay",
+    id: "venue-cebubay",
     name: "Cebu Bay Sports Hub",
-    contact_email: "frontdesk@cebubay.example",
+    location: "Cebu City",
+    contact_phone: "+63 32 410 2200",
+    sport: "pickleball",
+    hourly_rate: 40,
+    hourly_rate_windows: [],
+    opens_at: "08:00",
+    closes_at: "21:00",
     status: "active",
-    primary_admin_user_id: null,
+    amenities: ["lights", "parking", "water_fountain"],
+    image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
     created_at: new Date().toISOString(),
   },
 ];
@@ -47,7 +61,7 @@ const managedUsers: ManagedUser[] = [
     email: "admin@courtly.dev",
     full_name: "Court Admin",
     role: "admin",
-    court_account_id: "acct-skyline-sports",
+    is_active: true,
     created_at: new Date().toISOString(),
   },
   {
@@ -55,7 +69,7 @@ const managedUsers: ManagedUser[] = [
     email: "superadmin@courtly.dev",
     full_name: "Platform Superadmin",
     role: "superadmin",
-    court_account_id: null,
+    is_active: true,
     created_at: new Date().toISOString(),
   },
   {
@@ -63,7 +77,16 @@ const managedUsers: ManagedUser[] = [
     email: "player@courtly.dev",
     full_name: "Alex Player",
     role: "user",
-    court_account_id: null,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
+const venueAdminAssignments: VenueAdminAssignment[] = [
+  {
+    id: "va-bgcmakati-admin1",
+    venue_id: "venue-bgcmakati",
+    admin_user_id: DEMO_ADMIN_ID,
     created_at: new Date().toISOString(),
   },
 ];
@@ -71,80 +94,54 @@ const managedUsers: ManagedUser[] = [
 const courts: Court[] = [
   {
     id: "court-bgcs-1",
-    name: "BGC Makati - Court 1",
+    venue_id: "venue-bgcmakati",
+    name: "Court 1",
     location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
-    type: "outdoor",
-    surface: "sport_court",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
-    gallery_urls: [
-      "https://picsum.photos/seed/courtly-bgcs-g1/1400/788",
-      "https://picsum.photos/seed/courtly-bgcs-g2/1400/788",
-      "https://picsum.photos/seed/courtly-bgcs-g3/1400/788",
-    ],
-    description:
-      "Rooftop outdoor court with skyline views — great evening lights and breeze. Popular for doubles and open play.",
     map_latitude: 14.5515,
     map_longitude: 121.0483,
     hourly_rate: 45,
-    booking_fee: 3,
-    hourly_rate_windows: [
-      { start: "17:00", end: "22:00", hourly_rate: 60 },
-    ],
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
+    type: "indoor",
+    surface: "sport_court",
+    court_account_id: "venue-bgcmakati",
     status: "active",
-    managed_by_user_id: DEMO_ADMIN_ID,
-    court_account_id: "acct-skyline-sports",
   },
   {
     id: "court-makati-2",
-    name: "BGC Makati - Court 2",
-    location: "Makati City",
+    venue_id: "venue-bgcmakati",
+    name: "Court 2",
+    location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
+    image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
+    map_latitude: 14.5515,
+    map_longitude: 121.0483,
+    hourly_rate: 45,
+    amenities: ["lights", "parking", "restrooms", "seating"],
+    available_hours: { open: "07:00", close: "22:00" },
     type: "indoor",
-    surface: "wood",
-    image_url: "https://picsum.photos/seed/courtly-makati-cover/800/450",
-    gallery_urls: [
-      "https://picsum.photos/seed/courtly-makati-g1/1400/788",
-      "https://picsum.photos/seed/courtly-makati-g2/1400/788",
-      "https://picsum.photos/seed/courtly-makati-g3/1400/788",
-    ],
-    description:
-      "Competition-grade indoor wood surface, climate-controlled. Pro shop and lockers on the same floor.",
-    map_latitude: 14.5547,
-    map_longitude: 121.0244,
-    hourly_rate: 55,
-    booking_fee: 4,
-    amenities: ["lights", "restrooms", "pro_shop", "locker_room"],
-    available_hours: { open: "06:00", close: "23:00" },
+    surface: "sport_court",
+    court_account_id: "venue-bgcmakati",
     status: "active",
-    managed_by_user_id: DEMO_ADMIN_ID,
-    court_account_id: "acct-skyline-sports",
   },
   {
     id: "court-cebu-3",
-    name: "Cebu Bay Sports Hub - Court 1",
+    venue_id: "venue-cebubay",
+    name: "Court 1",
     location: "Cebu City",
     sport: "pickleball",
-    type: "indoor",
-    surface: "sport_court",
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
-    gallery_urls: [
-      "https://picsum.photos/seed/courtly-cebu-g1/1400/788",
-      "https://picsum.photos/seed/courtly-cebu-g2/1400/788",
-    ],
-    description:
-      "Spacious indoor sport court surface with easy parking — ideal for club nights and lessons.",
     map_latitude: 10.3157,
     map_longitude: 123.8854,
     hourly_rate: 40,
-    booking_fee: 2,
     amenities: ["lights", "parking", "water_fountain"],
     available_hours: { open: "08:00", close: "21:00" },
+    type: "indoor",
+    surface: "sport_court",
+    court_account_id: "venue-cebubay",
     status: "active",
-    managed_by_user_id: null,
-    court_account_id: "acct-cebu-bay",
   },
 ];
 
@@ -231,7 +228,7 @@ const bookings: Booking[] = [
   {
     id: "book-seed-1",
     court_id: "court-bgcs-1",
-    court_name: "BGC Makati - Court 1",
+    court_name: "Court 1",
     sport: "pickleball",
     date: isoDate(new Date(today.getTime() + 86400000)),
     start_time: "10:00",
@@ -248,7 +245,7 @@ const bookings: Booking[] = [
   {
     id: "book-demo-split-a",
     court_id: "court-makati-2",
-    court_name: "BGC Makati - Court 2",
+    court_name: "Court 2",
     sport: "pickleball",
     booking_group_id: SPLIT_DEMO_GROUP,
     date: splitDemoDate,
@@ -267,7 +264,7 @@ const bookings: Booking[] = [
   {
     id: "book-demo-split-b",
     court_id: "court-makati-2",
-    court_name: "BGC Makati - Court 2",
+    court_name: "Court 2",
     sport: "pickleball",
     booking_group_id: SPLIT_DEMO_GROUP,
     date: splitDemoDate,
@@ -286,7 +283,7 @@ const bookings: Booking[] = [
   {
     id: "book-demo-completed",
     court_id: "court-bgcs-1",
-    court_name: "BGC Makati - Court 1",
+    court_name: "Court 1",
     sport: "pickleball",
     date: isoDate(new Date(today.getTime() - 86400000)),
     start_time: "08:00",
@@ -303,7 +300,7 @@ const bookings: Booking[] = [
   {
     id: "book-demo-makati-completed",
     court_id: "court-makati-2",
-    court_name: "BGC Makati - Court 2",
+    court_name: "Court 2",
     sport: "pickleball",
     date: isoDate(new Date(today.getTime() - 86400000 * 2)),
     start_time: "12:00",
@@ -320,7 +317,7 @@ const bookings: Booking[] = [
   {
     id: "book-seed-2",
     court_id: "court-cebu-3",
-    court_name: "Cebu Bay Sports Hub - Court 1",
+    court_name: "Court 1",
     sport: "pickleball",
     date: isoDate(new Date(today.getTime() + 86400000 * 2)),
     start_time: "14:00",
@@ -355,6 +352,7 @@ const courtClosures: CourtClosure[] = [
 const courtReviews: CourtReview[] = [
   {
     id: "rev-demo-bgcs",
+    venue_id: "venue-bgcmakati",
     court_id: "court-bgcs-1",
     user_id: "user-player-1",
     user_name: "Alex Player",
@@ -367,6 +365,7 @@ const courtReviews: CourtReview[] = [
   /** Flagged by demo court admin — shows on superadmin moderation queue. */
   {
     id: "rev-demo-flagged-makati",
+    venue_id: "venue-bgcmakati",
     court_id: "court-makati-2",
     user_id: "user-guest-demo",
     user_name: "River Guest",
@@ -386,7 +385,10 @@ const courtReviews: CourtReview[] = [
 
 /** In-memory store for mock API route handlers (persists for dev server lifetime). */
 export const mockDb = {
-  courtAccounts,
+  venues,
+  venueAdminAssignments,
+  /** @deprecated for compatibility during venue migration. */
+  courtAccounts: venues,
   managedUsers,
   courts,
   bookings,

@@ -11,7 +11,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const { id: courtId, closureId } = await ctx.params;
   const court = mockDb.courts.find((c) => c.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -70,7 +70,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const { id: courtId, closureId } = await ctx.params;
   const court = mockDb.courts.find((c) => c.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

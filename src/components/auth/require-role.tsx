@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
+import { homePathForRole } from "@/lib/auth/management";
 import type { SessionUser } from "@/lib/types/courtly";
 
 export function RequireRole({
@@ -23,7 +24,7 @@ export function RequireRole({
       return;
     }
     if (!allow.includes(user.role)) {
-      router.replace("/dashboard");
+      router.replace(homePathForRole(user.role));
     }
   }, [allow, user, isLoading, router]);
 

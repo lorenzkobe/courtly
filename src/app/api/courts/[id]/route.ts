@@ -2,19 +2,30 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
-import { normalizeBookingFee } from "@/lib/platform-fee";
-import { reviewSummaryForCourt } from "@/lib/review-summary";
+import { reviewSummaryForVenue } from "@/lib/review-summary";
 import type { Court } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 function withReviewSummary(court: Court) {
+  const venue = mockDb.venues.find((v) => v.id === court.venue_id);
   return {
     ...court,
-    establishment_name: court.court_account_id
-      ? mockDb.courtAccounts.find((a) => a.id === court.court_account_id)?.name
-      : undefined,
-    review_summary: reviewSummaryForCourt(court.id, mockDb.courtReviews),
+    establishment_name: venue?.name ?? court.establishment_name,
+    contact_phone: venue?.contact_phone ?? court.contact_phone,
+    location: venue?.location ?? court.location,
+    sport: venue?.sport ?? court.sport,
+    image_url: venue?.image_url ?? court.image_url,
+    type: "indoor",
+    surface: "sport_court",
+    hourly_rate: venue?.hourly_rate ?? court.hourly_rate,
+    hourly_rate_windows: venue?.hourly_rate_windows ?? court.hourly_rate_windows,
+    amenities: venue?.amenities ?? court.amenities,
+    available_hours: venue
+      ? { open: venue.opens_at, close: venue.closes_at }
+      : court.available_hours,
+    court_account_id: court.venue_id,
+    review_summary: reviewSummaryForVenue(court.venue_id, mockDb.courtReviews),
   };
 }
 
@@ -32,26 +43,24 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const court = mockDb.courts[idx];
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const patch = (await req.json()) as Partial<Court>;
   delete (patch as { review_summary?: unknown }).review_summary;
-  if (user.role !== "superadmin" && "managed_by_user_id" in patch) {
-    delete patch.managed_by_user_id;
+  if ("venue_id" in patch) {
+    delete patch.venue_id;
   }
-  if (user.role !== "superadmin" && "court_account_id" in patch) {
-    delete patch.court_account_id;
-  }
-  if (user.role !== "superadmin" && "booking_fee" in patch) {
-    delete patch.booking_fee;
-  }
-  if (user.role === "superadmin" && "booking_fee" in patch) {
-    patch.booking_fee = normalizeBookingFee(patch.booking_fee);
-  }
-
-  mockDb.courts[idx] = { ...mockDb.courts[idx], ...patch };
+  mockDb.courts[idx] = {
+    ...mockDb.courts[idx],
+    ...(typeof patch.name === "string" && patch.name.trim()
+      ? { name: patch.name.trim() }
+      : {}),
+    ...(patch.status === "active" || patch.status === "closed"
+      ? { status: patch.status }
+      : {}),
+  };
   return NextResponse.json(withReviewSummary(mockDb.courts[idx]!));
 }
 
@@ -62,8 +71,21 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const court = mockDb.courts[idx];
-  if (!user || !canMutateCourt(user, court)) {
+  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const hasActiveBookings = mockDb.bookings.some(
+    (b) => b.court_id === court.id && b.status === "confirmed",
+  );
+  if (hasActiveBookings) {
+    return NextResponse.json(
+      {
+        error:
+          "Cannot delete this court while it has active bookings. Cancel or complete those bookings first.",
+      },
+      { status: 409 },
+    );
   }
 
   mockDb.courts.splice(idx, 1);

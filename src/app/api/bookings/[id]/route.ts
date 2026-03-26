@@ -17,7 +17,7 @@ function canReadBooking(
     if (a && b && a === b) return true;
   }
   const court = mockDb.courts.find((c) => c.id === booking.court_id);
-  if (court && canMutateCourt(user, court)) return true;
+  if (court && canMutateCourt(user, court, mockDb.venueAdminAssignments)) return true;
   return false;
 }
 
@@ -59,20 +59,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const onlyStatusCancel =
     patch.status === "cancelled" && Object.keys(patch).length === 1;
   if (ownerMatches && onlyStatusCancel) {
-    // Idempotent for repeated clicks/retries.
-    if (booking.status === "cancelled") {
-      return NextResponse.json(booking);
-    }
-    if (booking.status !== "confirmed") {
-      return NextResponse.json(
-        { error: "Only confirmed bookings can be cancelled" },
-        { status: 400 },
-      );
-    }
-    mockDb.bookings[idx] = { ...booking, status: "cancelled" };
-    // TODO(notifications): emit placeholder event hook for player/admin cancellation
-    // when Supabase notifications are wired.
-    return NextResponse.json(mockDb.bookings[idx]);
+    return NextResponse.json(
+      { error: "This booking is paid. Please contact the venue to request cancellation." },
+      { status: 403 },
+    );
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, "notes")) {
@@ -82,7 +72,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
 
-  if (!court || !canMutateCourt(user, court)) {
+  if (!court || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
