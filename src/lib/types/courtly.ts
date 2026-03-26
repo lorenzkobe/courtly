@@ -1,7 +1,18 @@
+export type CourtSport = "pickleball" | "tennis" | "badminton" | "padel";
+
+/** Non-overlapping [start, end) hour slots; times are HH:mm on the hour. */
+export type CourtRateWindow = {
+  start: string;
+  end: string;
+  hourly_rate: number;
+};
+
 export type Court = {
   id: string;
   name: string;
   location: string;
+  /** Which sport this court is for (filters player app by selected sport). */
+  sport: CourtSport;
   type: "indoor" | "outdoor";
   surface: "concrete" | "asphalt" | "wood" | "sport_court";
   image_url: string;
@@ -13,23 +24,35 @@ export type Court = {
   map_latitude?: number;
   map_longitude?: number;
   hourly_rate: number;
+  /** Optional time-of-day pricing; each window is [start, end) in whole hours. */
+  hourly_rate_windows?: CourtRateWindow[];
   amenities: string[];
   available_hours: { open: string; close: string };
   status: "active" | "maintenance" | "closed";
   /** Court admin who manages this venue; null = platform / superadmin only */
   managed_by_user_id: string | null;
+  /** Venue operator account (superadmin assigns courts to accounts). */
+  court_account_id: string | null;
 };
 
 export type Booking = {
   id: string;
   court_id: string;
   court_name?: string;
+  sport?: CourtSport;
+  /** Same id on segments created in one checkout (e.g. split around unavailable hours). */
+  booking_group_id?: string;
   date: string;
   start_time: string;
   end_time: string;
   player_name?: string;
   player_email?: string;
   players_count?: number;
+  /** Amount attributed to the court before platform fee (reservation subtotal). */
+  court_subtotal?: number;
+  /** Courtly transaction fee on this booking (on top of court subtotal). */
+  platform_fee?: number;
+  /** What the customer paid (court subtotal + platform fee) when both are set. */
   total_cost?: number;
   status: "confirmed" | "cancelled" | "completed";
   notes?: string;
@@ -38,6 +61,7 @@ export type Booking = {
 
 export type Tournament = {
   id: string;
+  sport: CourtSport;
   name: string;
   description?: string;
   date: string;
@@ -73,6 +97,7 @@ export type TournamentRegistration = {
 
 export type OpenPlaySession = {
   id: string;
+  sport: CourtSport;
   title: string;
   date: string;
   start_time: string;
@@ -94,4 +119,75 @@ export type SessionUser = {
   email: string;
   full_name: string;
   role: "user" | "admin" | "superadmin";
+};
+
+/** Business account for one or more courts (superadmin-managed). */
+export type CourtAccount = {
+  id: string;
+  name: string;
+  contact_email: string;
+  status: "active" | "suspended";
+  /** Primary court admin user for this account, if assigned */
+  primary_admin_user_id: string | null;
+  notes?: string;
+  created_at: string;
+};
+
+/** Directory user record (superadmin CRUD); aligns with demo login identities. */
+export type ManagedUser = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: "user" | "admin" | "superadmin";
+  /** When role is admin, links them to a court account */
+  court_account_id: string | null;
+  created_at: string;
+};
+
+export type RevenueByCourtRow = {
+  court_id: string;
+  court_name: string;
+  court_account_id: string | null;
+  court_account_name: string | null;
+  booking_count: number;
+  court_net: number;
+  platform_fees: number;
+  customer_total: number;
+};
+
+export type RevenueByAccountRow = {
+  court_account_id: string;
+  court_account_name: string;
+  court_net: number;
+  platform_fees: number;
+  customer_total: number;
+  booking_count: number;
+};
+
+export type RevenueSummaryResponse = {
+  scope: "platform" | "venue";
+  fee_percent: number;
+  totals: {
+    court_net: number;
+    platform_fees: number;
+    customer_total: number;
+    booking_count: number;
+  };
+  by_court: RevenueByCourtRow[];
+  by_account?: RevenueByAccountRow[];
+  /** Applied filters (echo for UI). */
+  filters: {
+    date_from: string | null;
+    date_to: string | null;
+    /** Set when response is scoped to one account or "unassigned". */
+    court_account_id: string | null;
+  };
+  /** Present when `court_account_id` filter is set (drill-down page). */
+  focus_account?: { id: string; name: string } | null;
+};
+
+export type CourtAccountDetailResponse = {
+  account: CourtAccount;
+  courts: Court[];
+  primaryAdmin: ManagedUser | null;
 };

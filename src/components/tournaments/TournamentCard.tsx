@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { formatPhpCompact } from "@/lib/format-currency";
 import type { Tournament } from "@/lib/types/courtly";
 
 const formatLabels: Record<string, string> = {
@@ -44,7 +45,7 @@ export default function TournamentCard({
           </div>
           <div className="shrink-0 text-right">
             <span className="font-heading text-2xl font-bold text-primary">
-              ${t.entry_fee}
+              {formatPhpCompact(t.entry_fee)}
             </span>
             <p className="text-xs text-muted-foreground">entry fee</p>
           </div>

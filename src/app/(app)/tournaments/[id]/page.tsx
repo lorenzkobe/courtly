@@ -36,6 +36,9 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatPhpCompact } from "@/lib/format-currency";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
+import { formatStatusLabel } from "@/lib/utils";
 
 const formatLabels: Record<string, string> = {
   singles: "Singles",
@@ -49,6 +52,7 @@ export default function TournamentDetailPage() {
   const tournamentId = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const selectedSport = useSelectedSport((s) => s.sport);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     player_name: "",
@@ -57,13 +61,16 @@ export default function TournamentDetailPage() {
     skill_level: "intermediate" as "beginner" | "intermediate" | "advanced",
   });
 
-  const { data: tournament, isLoading } = useQuery({
-    queryKey: ["tournament", tournamentId],
+  const { data: tournament, isLoading, isError } = useQuery({
+    queryKey: ["tournament", tournamentId, selectedSport],
     queryFn: async () => {
-      const { data } = await courtlyApi.tournaments.get(tournamentId);
+      const { data } = await courtlyApi.tournaments.get(tournamentId, {
+        sport: selectedSport,
+      });
       return data;
     },
     enabled: !!tournamentId,
+    retry: false,
   });
 
   const register = useMutation({
@@ -101,10 +108,14 @@ export default function TournamentDetailPage() {
     );
   }
 
-  if (!tournament) {
+  if (!isLoading && (isError || !tournament)) {
     return (
       <div className="px-6 py-8 text-center md:px-10">
-        <p className="text-muted-foreground">Tournament not found.</p>
+        <p className="text-muted-foreground">
+          {isError
+            ? "This tournament is not available for your selected sport."
+            : "Tournament not found."}
+        </p>
         <Button
           variant="outline"
           onClick={() => router.push("/tournaments")}
@@ -114,6 +125,10 @@ export default function TournamentDetailPage() {
         </Button>
       </div>
     );
+  }
+
+  if (!tournament) {
+    return null;
   }
 
   const t = tournament;
@@ -137,12 +152,12 @@ export default function TournamentDetailPage() {
 
       <div className="mb-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="capitalize">
+          <Badge variant="secondary">
             {formatLabels[t.format] ?? t.format}
           </Badge>
           <SkillBadge level={t.skill_level} />
-          <Badge variant="outline" className="capitalize">
-            {t.status?.replace("_", " ")}
+          <Badge variant="outline">
+            {formatStatusLabel(t.status)}
           </Badge>
         </div>
         <h1 className="font-heading text-3xl font-bold text-foreground md:text-4xl">
@@ -180,7 +195,9 @@ export default function TournamentDetailPage() {
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Trophy className="h-4 w-4" /> Entry Fee
               </div>
-              <p className="font-semibold text-primary">${t.entry_fee}</p>
+              <p className="font-semibold text-primary">
+                {formatPhpCompact(t.entry_fee)}
+              </p>
             </div>
           </div>
         </CardContent>

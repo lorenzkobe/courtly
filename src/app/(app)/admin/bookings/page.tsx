@@ -5,17 +5,24 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  DollarSign,
+  PhilippinePeso,
+  ExternalLink,
+  MapPin,
   Search,
-  Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -26,8 +33,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatPhp } from "@/lib/format-currency";
+import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
+import { formatAmenityLabel } from "@/lib/format-amenity";
 import { formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
@@ -42,6 +52,7 @@ export default function AdminBookingsPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],
@@ -50,6 +61,86 @@ export default function AdminBookingsPage() {
       return data;
     },
   });
+
+  const { data: detailBooking } = useQuery({
+    queryKey: ["admin-booking-detail", detailId],
+    queryFn: async () => {
+      const { data } = await courtlyApi.bookings.get(detailId!);
+      return data;
+    },
+    enabled: !!detailId,
+  });
+
+  const { data: detailCourt } = useQuery({
+    queryKey: ["admin-booking-court", detailBooking?.court_id],
+    queryFn: async () => {
+      const { data } = await courtlyApi.courts.get(detailBooking!.court_id);
+      return data;
+    },
+    enabled: !!detailBooking?.court_id,
+  });
+
+  const { data: detailGroup = [] } = useQuery({
+    queryKey: [
+      "admin-booking-group",
+      detailBooking?.booking_group_id,
+      detailId,
+    ],
+    queryFn: async () => {
+      const { data } = await courtlyApi.bookings.list({
+        manageable: true,
+        booking_group_id: detailBooking!.booking_group_id!,
+      });
+      return data.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    },
+    enabled: !!detailBooking?.booking_group_id,
+  });
+
+  const detailSegments = useMemo(() => {
+    if (!detailBooking) return [];
+    if (detailBooking.booking_group_id && detailGroup.length > 0) {
+      return detailGroup;
+    }
+    return [detailBooking];
+  }, [detailBooking, detailGroup]);
+
+  const adminBookingNotes = useMemo(() => {
+    const texts = new Set<string>();
+    for (const s of detailSegments) {
+      const t = s.notes?.trim();
+      if (t) texts.add(t);
+    }
+    return [...texts].join("\n\n");
+  }, [detailSegments]);
+
+  const adminSessionTotal = useMemo(
+    () => detailSegments.reduce((sum, s) => sum + (s.total_cost ?? 0), 0),
+    [detailSegments],
+  );
+
+  const hasMapPin =
+    detailCourt &&
+    detailCourt.map_latitude != null &&
+    detailCourt.map_longitude != null &&
+    Number.isFinite(detailCourt.map_latitude) &&
+    Number.isFinite(detailCourt.map_longitude);
+  const mapLat = detailCourt?.map_latitude ?? 0;
+  const mapLon = detailCourt?.map_longitude ?? 0;
+  const mapBboxPad = 0.018;
+  const mapEmbedSrc =
+    hasMapPin && detailCourt
+      ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - mapBboxPad},${mapLat - mapBboxPad},${mapLon + mapBboxPad},${mapLat + mapBboxPad}&layer=mapnik`
+      : null;
+  const mapOpenHref = detailCourt
+    ? hasMapPin
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(detailCourt.location)}`
+    : "#";
+  const directionsHref = detailCourt
+    ? hasMapPin
+      ? `https://www.google.com/maps/dir/?api=1&destination=${mapLat},${mapLon}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(detailCourt.location)}`
+    : "#";
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -65,6 +156,8 @@ export default function AdminBookingsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-booking-group"] });
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking updated");
     },
@@ -92,6 +185,140 @@ export default function AdminBookingsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
+      <Dialog open={!!detailId} onOpenChange={(o) => !o && setDetailId(null)}>
+        <DialogContent className="max-h-[min(90dvh,40rem)] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Booking details</DialogTitle>
+          </DialogHeader>
+          {detailBooking ? (
+            <div className="space-y-6 text-sm">
+              <section>
+                <h3 className="mb-2 font-heading font-semibold text-foreground">
+                  Reservation
+                </h3>
+                <dl className="grid gap-2 sm:grid-cols-[7rem_1fr]">
+                  <dt className="text-muted-foreground">Court</dt>
+                  <dd className="font-medium">{detailBooking.court_name ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Player</dt>
+                  <dd>{detailBooking.player_name ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd className="break-all">{detailBooking.player_email ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Date</dt>
+                  <dd>
+                    {detailBooking.date
+                      ? format(new Date(detailBooking.date), "MMM d, yyyy")
+                      : "—"}
+                  </dd>
+                  <dt className="text-muted-foreground">Reserved times</dt>
+                  <dd>
+                    <ul className="space-y-2">
+                      {detailSegments.map((s) => (
+                        <li
+                          key={s.id}
+                          className="flex flex-wrap items-center gap-2 text-foreground"
+                        >
+                          <span>
+                            {formatTimeShort(s.start_time)} –{" "}
+                            {formatTimeShort(s.end_time)}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${statusStyles[s.status] ?? ""}`}
+                          >
+                            {formatStatusLabel(s.status)}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {formatPhp(s.total_cost ?? 0)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                  <dt className="text-muted-foreground">Total</dt>
+                  <dd className="font-heading font-bold text-primary">
+                    {formatPhp(adminSessionTotal)}
+                  </dd>
+                  <dt className="text-muted-foreground">Status</dt>
+                  <dd>
+                    <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
+                      {formatStatusLabel(detailBooking.status)}
+                    </Badge>
+                  </dd>
+                  {adminBookingNotes ? (
+                    <>
+                      <dt className="text-muted-foreground">Booking notes</dt>
+                      <dd className="whitespace-pre-wrap text-foreground">
+                        {adminBookingNotes}
+                      </dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-muted-foreground">Booking notes</dt>
+                      <dd className="text-muted-foreground">—</dd>
+                    </>
+                  )}
+                  {detailBooking.created_date ? (
+                    <>
+                      <dt className="text-muted-foreground">Booked at</dt>
+                      <dd className="text-xs text-muted-foreground">
+                        {format(new Date(detailBooking.created_date), "PPpp")}
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </section>
+              {detailCourt ? (
+                <section className="border-t border-border/60 pt-4">
+                  <h3 className="mb-2 font-heading font-semibold text-foreground">
+                    Venue & directions
+                  </h3>
+                  <p className="font-medium text-foreground">{detailCourt.name}</p>
+                  <p className="mt-1 flex items-start gap-2 text-muted-foreground">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {detailCourt.location}
+                  </p>
+                  {detailCourt.amenities?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {detailCourt.amenities.map((a, i) => (
+                        <Badge key={`${i}-${a}`} variant="outline" className="font-normal">
+                          {formatAmenityLabel(a)}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {mapEmbedSrc ? (
+                    <iframe
+                      title={`Map — ${detailCourt.name}`}
+                      src={mapEmbedSrc}
+                      className="mt-3 aspect-video w-full max-h-48 rounded-xl border border-border"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
+                        <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                        Open in Map
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={directionsHref} target="_blank" rel="noopener noreferrer">
+                        Directions
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <PageHeader
         title={globalAdmin ? "Court bookings" : "My court bookings"}
         subtitle={
@@ -112,7 +339,7 @@ export default function AdminBookingsPage() {
           },
           {
             label: "Revenue",
-            value: `$${stats.revenue.toFixed(2)}`,
+            value: formatPhp(stats.revenue),
             color: "text-chart-3",
           },
         ].map((s) => (
@@ -191,19 +418,35 @@ export default function AdminBookingsPage() {
                         {b.date && format(new Date(b.date), "MMM d, yyyy")}
                       </div>
                       <div className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" /> {b.start_time} –{" "}
-                        {b.end_time}
+                        <Clock className="h-3.5 w-3.5" />{" "}
+                        {formatTimeShort(b.start_time)} –{" "}
+                        {formatTimeShort(b.end_time)}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Users className="h-3.5 w-3.5" /> {b.players_count}{" "}
-                        players
-                      </div>
+                      {b.notes?.trim() ? (
+                        <span
+                          className="max-w-full truncate text-xs text-muted-foreground"
+                          title={b.notes.trim()}
+                        >
+                          {b.notes.trim()}
+                        </span>
+                      ) : null}
                       <div className="flex items-center gap-1 font-semibold text-foreground">
-                        <DollarSign className="h-3.5 w-3.5" /> ${b.total_cost}
+                        <PhilippinePeso className="h-3.5 w-3.5" />{" "}
+                        {b.total_cost != null
+                          ? formatPhp(b.total_cost)
+                          : "—"}
                       </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="text-xs"
+                      onClick={() => setDetailId(b.id)}
+                    >
+                      Details
+                    </Button>
                     {b.status === "confirmed" ? (
                       <>
                         <Button

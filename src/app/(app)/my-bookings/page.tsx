@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  DollarSign,
+  PhilippinePeso,
   Users,
   X,
 } from "lucide-react";
@@ -20,11 +20,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatPhp } from "@/lib/format-currency";
 import {
   bookingDurationHours,
   formatTimeShort,
 } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 
@@ -41,25 +43,30 @@ type CourtDateGroup = {
   courtName: string;
   date: string;
   items: Booking[];
+  /** Use for /my-bookings/[id] so split segments open one combined detail. */
+  detailBookingId: string;
 };
 
 function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
   const map = new Map<string, Booking[]>();
   for (const b of list) {
-    const key = `${b.court_id}\0${b.date}`;
+    const key = b.booking_group_id
+      ? `grp:${b.booking_group_id}`
+      : `day:${b.court_id}\0${b.date}`;
     const arr = map.get(key);
     if (arr) arr.push(b);
     else map.set(key, [b]);
   }
   const groups: CourtDateGroup[] = [];
   for (const [key, items] of map) {
-    const [courtId, date] = key.split("\0");
     items.sort((a, c) => a.start_time.localeCompare(c.start_time));
+    const first = items[0];
     groups.push({
       key,
-      courtName: items[0]?.court_name ?? courtId ?? "Court",
-      date,
+      courtName: first?.court_name ?? "Court",
+      date: first?.date ?? "",
       items,
+      detailBookingId: first?.id ?? "",
     });
   }
   groups.sort((a, b) => {
@@ -74,12 +81,14 @@ export default function MyBookingsPage() {
   const [tab, setTab] = useState("bookings");
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
-    queryKey: ["my-bookings", user?.email],
+    queryKey: ["my-bookings", user?.email, selectedSport],
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.list({
         player_email: user?.email,
+        sport: selectedSport,
       });
       return data;
     },
@@ -170,7 +179,7 @@ export default function MyBookingsPage() {
                   className="border-border/50 transition-shadow hover:shadow-md"
                 >
                   <CardContent className="p-5">
-                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <h3 className="font-heading font-bold text-foreground">
                           {g.courtName}
@@ -182,14 +191,19 @@ export default function MyBookingsPage() {
                               format(new Date(`${g.date}T12:00:00`), "EEE, MMM d, yyyy")}
                           </span>
                         </div>
-                        {showSessionTotal ? (
+                        {g.items.length > 1 ? (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {g.items.length} reserved time
-                            {g.items.length === 1 ? "" : "s"} (gaps were not
-                            booked)
+                            {g.items[0]?.booking_group_id
+                              ? "One booking with multiple reserved times (unavailable hours in between were skipped)."
+                              : `${g.items.length} reserved times on this day.`}
                           </p>
                         ) : null}
                       </div>
+                      <Button size="sm" variant="outline" className="shrink-0" asChild>
+                        <Link href={`/my-bookings/${g.detailBookingId}`}>
+                          Details
+                        </Link>
+                      </Button>
                     </div>
 
                     <ul className="divide-y divide-border/60 border-t border-border/60">
@@ -219,21 +233,23 @@ export default function MyBookingsPage() {
                                   {formatStatusLabel(b.status)}
                                 </Badge>
                                 <span className="inline-flex items-center gap-0.5 text-sm font-semibold text-foreground">
-                                  <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                                  {(b.total_cost ?? 0).toFixed(2)}
+                                  <PhilippinePeso className="h-3.5 w-3.5 text-muted-foreground" />
+                                  {formatPhp(b.total_cost ?? 0)}
                                 </span>
                               </div>
                             </div>
                             {b.status === "confirmed" ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="shrink-0 border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                onClick={() => cancelBooking.mutate(b.id)}
-                                disabled={cancelBooking.isPending}
-                              >
-                                <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                              </Button>
+                              <div className="flex shrink-0 flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                  onClick={() => cancelBooking.mutate(b.id)}
+                                  disabled={cancelBooking.isPending}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" /> Cancel
+                                </Button>
+                              </div>
                             ) : null}
                           </li>
                         );
@@ -246,7 +262,7 @@ export default function MyBookingsPage() {
                           Session total
                         </span>
                         <span className="font-heading text-base font-bold text-primary">
-                          ${sessionTotal.toFixed(2)}
+                          {formatPhp(sessionTotal)}
                         </span>
                       </div>
                     ) : null}

@@ -1,6 +1,8 @@
 import type {
   Booking,
   Court,
+  CourtAccount,
+  ManagedUser,
   OpenPlaySession,
   Tournament,
   TournamentRegistration,
@@ -17,11 +19,59 @@ soon.setDate(soon.getDate() + 14);
 /** Demo court admin (see auth login route ids) */
 const DEMO_ADMIN_ID = "user-admin-1";
 
+const courtAccounts: CourtAccount[] = [
+  {
+    id: "acct-skyline-sports",
+    name: "Skyline Sports Group",
+    contact_email: "ops@skyline-sports.example",
+    status: "active",
+    primary_admin_user_id: DEMO_ADMIN_ID,
+    notes: "BGC + Makati venues",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "acct-cebu-bay",
+    name: "Cebu Bay Leisure",
+    contact_email: "frontdesk@cebubay.example",
+    status: "active",
+    primary_admin_user_id: null,
+    created_at: new Date().toISOString(),
+  },
+];
+
+const managedUsers: ManagedUser[] = [
+  {
+    id: "user-admin-1",
+    email: "admin@courtly.dev",
+    full_name: "Court Admin",
+    role: "admin",
+    court_account_id: "acct-skyline-sports",
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "user-superadmin-1",
+    email: "superadmin@courtly.dev",
+    full_name: "Platform Superadmin",
+    role: "superadmin",
+    court_account_id: null,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "user-player-1",
+    email: "player@courtly.dev",
+    full_name: "Alex Player",
+    role: "user",
+    court_account_id: null,
+    created_at: new Date().toISOString(),
+  },
+];
+
 const courts: Court[] = [
   {
     id: "court-bgcs-1",
     name: "BGC Skyline Court 1",
     location: "Bonifacio Global City, Taguig",
+    sport: "pickleball",
     type: "outdoor",
     surface: "sport_court",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
@@ -35,15 +85,20 @@ const courts: Court[] = [
     map_latitude: 14.5515,
     map_longitude: 121.0483,
     hourly_rate: 45,
+    hourly_rate_windows: [
+      { start: "17:00", end: "22:00", hourly_rate: 60 },
+    ],
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
     status: "active",
     managed_by_user_id: DEMO_ADMIN_ID,
+    court_account_id: "acct-skyline-sports",
   },
   {
     id: "court-makati-2",
     name: "Makati Social Club — Court A",
     location: "Makati City",
+    sport: "pickleball",
     type: "indoor",
     surface: "wood",
     image_url: "https://picsum.photos/seed/courtly-makati-cover/800/450",
@@ -61,11 +116,13 @@ const courts: Court[] = [
     available_hours: { open: "06:00", close: "23:00" },
     status: "active",
     managed_by_user_id: DEMO_ADMIN_ID,
+    court_account_id: "acct-skyline-sports",
   },
   {
     id: "court-cebu-3",
     name: "Cebu Bay Sports Hub — Court 3",
     location: "Cebu City",
+    sport: "pickleball",
     type: "indoor",
     surface: "sport_court",
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
@@ -82,12 +139,14 @@ const courts: Court[] = [
     available_hours: { open: "08:00", close: "21:00" },
     status: "active",
     managed_by_user_id: null,
+    court_account_id: "acct-cebu-bay",
   },
 ];
 
 const tournaments: Tournament[] = [
   {
     id: "tour-metro-smash",
+    sport: "pickleball",
     name: "Metro Smash Cup",
     description:
       "Doubles bracket with prizes for top 3 pairs. USA Pickleball rules.",
@@ -105,6 +164,7 @@ const tournaments: Tournament[] = [
   },
   {
     id: "tour-rookie",
+    sport: "pickleball",
     name: "Weekend Rookie Series",
     description: "Friendly round-robin for newer players. Coaching on site.",
     date: isoDate(new Date(soon.getTime() + 86400000 * 3)),
@@ -124,6 +184,7 @@ const tournaments: Tournament[] = [
 const openPlay: OpenPlaySession[] = [
   {
     id: "ops-sunset",
+    sport: "pickleball",
     title: "Sunset Social Doubles",
     date: isoDate(new Date(today.getTime() + 86400000)),
     start_time: "18:30",
@@ -141,6 +202,7 @@ const openPlay: OpenPlaySession[] = [
   },
   {
     id: "ops-beginner",
+    sport: "pickleball",
     title: "Beginner Social",
     date: isoDate(new Date(today.getTime() + 86400000 * 2)),
     start_time: "19:00",
@@ -157,19 +219,24 @@ const openPlay: OpenPlaySession[] = [
 ];
 
 const splitDemoDate = isoDate(new Date(today.getTime() + 86400000 * 5));
+/** One checkout split into two segments (unavailable hours in the middle). */
+const SPLIT_DEMO_GROUP = "grp-demo-split-makati";
 
 const bookings: Booking[] = [
   {
     id: "book-seed-1",
     court_id: "court-bgcs-1",
     court_name: "BGC Skyline Court 1",
+    sport: "pickleball",
     date: isoDate(new Date(today.getTime() + 86400000)),
     start_time: "10:00",
     end_time: "11:00",
     player_name: "Demo Player",
     player_email: "player@courtly.dev",
     players_count: 2,
-    total_cost: 45,
+    court_subtotal: 45,
+    platform_fee: 2.25,
+    total_cost: 47.25,
     status: "confirmed",
     created_date: new Date().toISOString(),
   },
@@ -177,42 +244,53 @@ const bookings: Booking[] = [
     id: "book-demo-split-a",
     court_id: "court-makati-2",
     court_name: "Makati Social Club — Court A",
+    sport: "pickleball",
+    booking_group_id: SPLIT_DEMO_GROUP,
     date: splitDemoDate,
     start_time: "09:00",
     end_time: "14:00",
     player_name: "Alex Player",
     player_email: "player@courtly.dev",
-    total_cost: 275,
+    court_subtotal: 275,
+    platform_fee: 13.75,
+    total_cost: 288.75,
     status: "confirmed",
     notes:
-      "Demo: same visit split across unavailable hours (9:00–14:00 segment).",
+      "Requested 9:00–18:00; 14:00–16:00 was unavailable so this became two reservations in one booking.",
     created_date: new Date().toISOString(),
   },
   {
     id: "book-demo-split-b",
     court_id: "court-makati-2",
     court_name: "Makati Social Club — Court A",
+    sport: "pickleball",
+    booking_group_id: SPLIT_DEMO_GROUP,
     date: splitDemoDate,
     start_time: "16:00",
     end_time: "18:00",
     player_name: "Alex Player",
     player_email: "player@courtly.dev",
-    total_cost: 110,
+    court_subtotal: 110,
+    platform_fee: 5.5,
+    total_cost: 115.5,
     status: "confirmed",
     notes:
-      "Demo: second segment same day after blocked slots (16:00–18:00).",
+      "Requested 9:00–18:00; 14:00–16:00 was unavailable so this became two reservations in one booking.",
     created_date: new Date().toISOString(),
   },
   {
     id: "book-demo-completed",
     court_id: "court-bgcs-1",
     court_name: "BGC Skyline Court 1",
+    sport: "pickleball",
     date: isoDate(new Date(today.getTime() - 86400000)),
     start_time: "08:00",
     end_time: "09:00",
     player_name: "Alex Player",
     player_email: "player@courtly.dev",
-    total_cost: 45,
+    court_subtotal: 45,
+    platform_fee: 2.25,
+    total_cost: 47.25,
     status: "completed",
     notes: "Demo: past session to show Completed status.",
     created_date: new Date().toISOString(),
@@ -221,13 +299,16 @@ const bookings: Booking[] = [
     id: "book-seed-2",
     court_id: "court-cebu-3",
     court_name: "Cebu Bay Sports Hub — Court 3",
+    sport: "pickleball",
     date: isoDate(new Date(today.getTime() + 86400000 * 2)),
     start_time: "14:00",
     end_time: "16:00",
     player_name: "River Guest",
     player_email: "guest@example.com",
     players_count: 4,
-    total_cost: 80,
+    court_subtotal: 80,
+    platform_fee: 4,
+    total_cost: 84,
     status: "confirmed",
     created_date: new Date().toISOString(),
   },
@@ -237,6 +318,8 @@ const registrations: TournamentRegistration[] = [];
 
 /** In-memory store for mock API route handlers (persists for dev server lifetime). */
 export const mockDb = {
+  courtAccounts,
+  managedUsers,
   courts,
   bookings,
   tournaments,

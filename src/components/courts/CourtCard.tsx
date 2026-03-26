@@ -1,14 +1,12 @@
 import Link from "next/link";
-import { Heart, MapPin, Clock, DollarSign } from "lucide-react";
+import { Heart, MapPin, Clock, PhilippinePeso } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { formatCourtRateSummary } from "@/lib/court-pricing";
+import { formatAmenityLabel } from "@/lib/format-amenity";
+import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
-
-function formatAmenityLabel(value: string) {
-  return value.replace(/_/g, " ");
-}
 
 export default function CourtCard({
   court,
@@ -31,11 +29,11 @@ export default function CourtCard({
           }}
         />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-wrap gap-2">
-          <Badge className="bg-secondary/90 capitalize text-secondary-foreground backdrop-blur-sm">
-            {court.type}
+          <Badge className="bg-secondary/90 text-secondary-foreground backdrop-blur-sm">
+            {formatStatusLabel(court.type)}
           </Badge>
-          <Badge className="bg-secondary/90 capitalize text-secondary-foreground backdrop-blur-sm">
-            {court.surface?.replace("_", " ")}
+          <Badge className="bg-secondary/90 text-secondary-foreground backdrop-blur-sm">
+            {formatAmenityLabel(court.surface)}
           </Badge>
         </div>
         {onToggleFavorite ? (
@@ -77,9 +75,9 @@ export default function CourtCard({
             {court.available_hours?.open} – {court.available_hours?.close}
           </div>
           <div className="flex items-center gap-2">
-            <DollarSign className="h-3.5 w-3.5" />
+            <PhilippinePeso className="h-3.5 w-3.5" />
             <span className="font-semibold text-foreground">
-              ${court.hourly_rate}/hr
+              {formatCourtRateSummary(court)}
             </span>
           </div>
         </div>
@@ -89,7 +87,7 @@ export default function CourtCard({
               <Badge
                 key={a}
                 variant="outline"
-                className="text-xs font-normal capitalize"
+                className="text-xs font-normal"
               >
                 {formatAmenityLabel(a)}
               </Badge>

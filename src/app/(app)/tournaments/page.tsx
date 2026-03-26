@@ -15,15 +15,20 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
 
 export default function TournamentsPage() {
   const [skillFilter, setSkillFilter] = useState("all");
   const [formatFilter, setFormatFilter] = useState("all");
+  const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: tournaments = [], isLoading } = useQuery({
-    queryKey: ["tournaments"],
+    queryKey: ["tournaments", selectedSport],
     queryFn: async () => {
-      const { data } = await courtlyApi.tournaments.list({ sort: "-date" });
+      const { data } = await courtlyApi.tournaments.list({
+        sort: "-date",
+        sport: selectedSport,
+      });
       return data;
     },
   });

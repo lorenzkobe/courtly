@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatPhpCompact } from "@/lib/format-currency";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { OpenPlaySession } from "@/lib/types/courtly";
 
 export default function OpenPlayPage() {
@@ -42,11 +44,12 @@ export default function OpenPlayPage() {
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const queryClient = useQueryClient();
+  const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: sessions = [], isLoading } = useQuery({
-    queryKey: ["open-play"],
+    queryKey: ["open-play", selectedSport],
     queryFn: async () => {
-      const { data } = await courtlyApi.openPlay.list();
+      const { data } = await courtlyApi.openPlay.list({ sport: selectedSport });
       return data;
     },
   });
@@ -178,7 +181,7 @@ export default function OpenPlayPage() {
 
                   <div className="flex items-center justify-between">
                     <span className="font-heading font-bold text-primary">
-                      {s.fee > 0 ? `$${s.fee}` : "Free"}
+                      {s.fee > 0 ? formatPhpCompact(s.fee) : "Free"}
                     </span>
                     <Button
                       size="sm"

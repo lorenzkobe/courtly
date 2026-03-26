@@ -3,14 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Clock,
-  DollarSign,
   MapPin,
   Pencil,
+  PhilippinePeso,
   Plus,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,20 +33,30 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatCourtRateSummary } from "@/lib/court-pricing";
+import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
 import type { Court } from "@/lib/types/courtly";
+import { useAdminCustomAmenities } from "@/lib/stores/admin-custom-amenities";
+import { formatStatusLabel } from "@/lib/utils";
+
+type RateRow = { start: string; end: string; rate: string };
 
 const defaultForm = {
   name: "",
   location: "",
+  sport: "pickleball" as Court["sport"],
   type: "indoor" as Court["type"],
   surface: "sport_court" as Court["surface"],
   hourly_rate: "",
+  hourly_rate_windows: [] as RateRow[],
   image_url: "",
   status: "active" as Court["status"],
   available_hours: { open: "07:00", close: "22:00" },
   amenities: [] as string[],
+  customAmenityDraft: "",
+  court_account_id: "" as string,
 };
 
 const amenityOptions = [
@@ -58,6 +69,17 @@ const amenityOptions = [
   "seating",
 ];
 
+function isPresetAmenity(raw: string) {
+  return amenityOptions.includes(raw);
+}
+
+function normAmenity(s: string) {
+  return s.trim().toLowerCase();
+}
+
+/** Stable fallback for Zustand selectors — inline `[]` breaks useSyncExternalStore (infinite loop). */
+const EMPTY_SAVED_AMENITIES: string[] = [];
+
 export default function AdminCourtsPage() {
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
@@ -65,6 +87,27 @@ export default function AdminCourtsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Court | null>(null);
   const [form, setForm] = useState(defaultForm);
+
+  const accountEmail = user?.email ?? "";
+  const savedCustomAmenities = useAdminCustomAmenities((s) =>
+    accountEmail
+      ? (s.byEmail[accountEmail] ?? EMPTY_SAVED_AMENITIES)
+      : EMPTY_SAVED_AMENITIES,
+  );
+  const customAmenityPills = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of savedCustomAmenities) {
+      map.set(normAmenity(s), s);
+    }
+    for (const a of form.amenities) {
+      if (isPresetAmenity(a)) continue;
+      const k = normAmenity(a);
+      if (!map.has(k)) map.set(k, a);
+    }
+    return [...map.values()].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [savedCustomAmenities, form.amenities]);
 
   const { data: courts = [], isLoading } = useQuery({
     queryKey: ["admin-courts", globalAdmin ? "all" : "managed"],
@@ -74,12 +117,50 @@ export default function AdminCourtsPage() {
     },
   });
 
+  const { data: courtAccounts = [] } = useQuery({
+    queryKey: ["court-accounts"],
+    queryFn: async () => {
+      const { data } = await courtlyApi.courtAccounts.list();
+      return data;
+    },
+    enabled: globalAdmin,
+  });
+
+  const buildPayload = () => {
+    const hourly_rate_windows = form.hourly_rate_windows
+      .filter((w) => w.start && w.end && w.rate.trim())
+      .map((w) => ({
+        start: w.start,
+        end: w.end,
+        hourly_rate: Number.parseFloat(w.rate) || 0,
+      }));
+    const base = {
+      name: form.name,
+      location: form.location,
+      sport: "pickleball" as Court["sport"],
+      type: form.type,
+      surface: form.surface,
+      hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
+      hourly_rate_windows,
+      image_url: form.image_url,
+      status: form.status,
+      available_hours: form.available_hours,
+      amenities: form.amenities,
+    };
+    if (globalAdmin) {
+      return {
+        ...base,
+        court_account_id: form.court_account_id.trim()
+          ? form.court_account_id.trim()
+          : null,
+      };
+    }
+    return base;
+  };
+
   const upsert = useMutation({
     mutationFn: async () => {
-      const payload = {
-        ...form,
-        hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
-      };
+      const payload = buildPayload();
       if (editing) {
         await courtlyApi.courts.update(editing.id, payload);
       } else {
@@ -109,16 +190,33 @@ export default function AdminCourtsPage() {
 
   const openEdit = (court: Court) => {
     setEditing(court);
+    if (accountEmail) {
+      useAdminCustomAmenities
+        .getState()
+        .mergeCourtAmenitiesForEmail(
+          accountEmail,
+          court.amenities ?? [],
+          isPresetAmenity,
+        );
+    }
     setForm({
       name: court.name || "",
       location: court.location || "",
+      sport: "pickleball",
       type: court.type || "indoor",
       surface: court.surface || "sport_court",
       hourly_rate: String(court.hourly_rate ?? ""),
+      hourly_rate_windows: (court.hourly_rate_windows ?? []).map((w) => ({
+        start: w.start,
+        end: w.end,
+        rate: String(w.hourly_rate),
+      })),
       image_url: court.image_url || "",
       status: court.status || "active",
       available_hours: court.available_hours || { open: "07:00", close: "22:00" },
-      amenities: court.amenities || [],
+      amenities: [...(court.amenities || [])],
+      customAmenityDraft: "",
+      court_account_id: court.court_account_id ?? "",
     });
     setOpen(true);
   };
@@ -136,6 +234,63 @@ export default function AdminCourtsPage() {
         ? f.amenities.filter((x) => x !== a)
         : [...f.amenities, a],
     }));
+  };
+
+  const toggleCustomAmenityOnCourt = (canonical: string) => {
+    const k = normAmenity(canonical);
+    setForm((f) => {
+      const has = f.amenities.some((a) => normAmenity(a) === k);
+      if (has) {
+        return {
+          ...f,
+          amenities: f.amenities.filter((a) => normAmenity(a) !== k),
+        };
+      }
+      return {
+        ...f,
+        amenities: [...f.amenities, canonical],
+      };
+    });
+  };
+
+  const removeCustomFromAccountAndCourt = (canonical: string) => {
+    if (accountEmail) {
+      useAdminCustomAmenities.getState().removeSavedForEmail(accountEmail, canonical);
+    }
+    const k = normAmenity(canonical);
+    setForm((f) => ({
+      ...f,
+      amenities: f.amenities.filter((a) => normAmenity(a) !== k),
+    }));
+  };
+
+  const addCustomAmenity = () => {
+    const t = form.customAmenityDraft.trim();
+    if (!t) return;
+    if (!accountEmail) {
+      toast.error("Sign in to save custom amenities to your account.");
+      return;
+    }
+    if (amenityOptions.some((p) => normAmenity(p) === normAmenity(t))) {
+      toast.info("That matches a preset — use the preset button above.");
+      return;
+    }
+    useAdminCustomAmenities.getState().addUniqueForEmail(accountEmail, t);
+    const saved = useAdminCustomAmenities
+      .getState()
+      .getSavedForEmail(accountEmail);
+    const canonical =
+      saved.find((s) => normAmenity(s) === normAmenity(t)) ?? t;
+    setForm((f) => {
+      if (f.amenities.some((a) => normAmenity(a) === normAmenity(t))) {
+        return { ...f, customAmenityDraft: "" };
+      }
+      return {
+        ...f,
+        amenities: [...f.amenities, canonical],
+        customAmenityDraft: "",
+      };
+    });
   };
 
   const statusColors: Record<string, string> = {
@@ -193,7 +348,7 @@ export default function AdminCourtsPage() {
                     variant="outline"
                     className={statusColors[court.status] ?? ""}
                   >
-                    {court.status}
+                    {formatStatusLabel(court.status)}
                   </Badge>
                 </div>
                 <div className="mb-4 space-y-1 text-sm text-muted-foreground">
@@ -205,9 +360,9 @@ export default function AdminCourtsPage() {
                     {court.available_hours?.open} – {court.available_hours?.close}
                   </div>
                   <div className="flex items-center gap-2">
-                    <DollarSign className="h-3.5 w-3.5" />{" "}
+                    <PhilippinePeso className="h-3.5 w-3.5" />{" "}
                     <span className="font-semibold text-foreground">
-                      ${court.hourly_rate}/hr
+                      {formatCourtRateSummary(court)}
                     </span>
                   </div>
                 </div>
@@ -247,6 +402,7 @@ export default function AdminCourtsPage() {
               <div className="col-span-2">
                 <Label>Court Name *</Label>
                 <Input
+                  className="mt-1.5"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Court 1 - Main"
@@ -255,6 +411,7 @@ export default function AdminCourtsPage() {
               <div className="col-span-2">
                 <Label>Location *</Label>
                 <Input
+                  className="mt-1.5"
                   value={form.location}
                   onChange={(e) =>
                     setForm({ ...form, location: e.target.value })
@@ -262,52 +419,216 @@ export default function AdminCourtsPage() {
                   placeholder="Address or venue name"
                 />
               </div>
-              <div>
-                <Label>Type</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(v) =>
-                    setForm({ ...form, type: v as Court["type"] })
-                  }
-                >
-                  <SelectTrigger>
+              {globalAdmin ? (
+                <div className="col-span-2">
+                  <Label>Court account</Label>
+                  <p className="mb-1.5 text-xs text-muted-foreground">
+                    Links this court to a venue operator account for reporting and
+                    payouts.
+                  </p>
+                  <Select
+                    value={form.court_account_id || "__none__"}
+                    onValueChange={(v) =>
+                      setForm({
+                        ...form,
+                        court_account_id: v === "__none__" ? "" : v,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="mt-0.5">
+                      <SelectValue placeholder="Select account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {courtAccounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <div className="col-span-2">
+                <Label>Sport</Label>
+                <p className="mb-1.5 text-xs text-muted-foreground">
+                  Only pickleball is available when creating or editing courts
+                  for now.
+                </p>
+                <Select value="pickleball" disabled>
+                  <SelectTrigger className="mt-0.5 bg-muted/50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="indoor">Indoor</SelectItem>
-                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                    <SelectItem value="pickleball">Pickleball</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Surface</Label>
-                <Select
-                  value={form.surface}
-                  onValueChange={(v) =>
-                    setForm({ ...form, surface: v as Court["surface"] })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="concrete">Concrete</SelectItem>
-                    <SelectItem value="asphalt">Asphalt</SelectItem>
-                    <SelectItem value="wood">Wood</SelectItem>
-                    <SelectItem value="sport_court">Sport Court</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Hourly Rate ($)</Label>
+              <fieldset className="col-span-2 space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                <legend className="px-1 font-heading text-sm font-semibold text-foreground">
+                  Court type
+                </legend>
+                <p className="text-xs text-muted-foreground">
+                  Environment and playing surface for this court.
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Environment</Label>
+                    <Select
+                      value={form.type}
+                      onValueChange={(v) =>
+                        setForm({ ...form, type: v as Court["type"] })
+                      }
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue placeholder="Indoor or outdoor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="indoor">Indoor</SelectItem>
+                        <SelectItem value="outdoor">Outdoor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Playing surface</Label>
+                    <Select
+                      value={form.surface}
+                      onValueChange={(v) =>
+                        setForm({ ...form, surface: v as Court["surface"] })
+                      }
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="concrete">Concrete</SelectItem>
+                        <SelectItem value="asphalt">Asphalt</SelectItem>
+                        <SelectItem value="wood">Wood</SelectItem>
+                        <SelectItem value="sport_court">Sport Court</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </fieldset>
+              <div className="col-span-2">
+                <Label>Default hourly rate (₱)</Label>
+                <p className="mb-1.5 text-xs text-muted-foreground">
+                  Used outside any time ranges you add below.
+                </p>
                 <Input
                   type="number"
                   value={form.hourly_rate}
                   onChange={(e) =>
                     setForm({ ...form, hourly_rate: e.target.value })
                   }
-                  placeholder="25"
+                  placeholder="45"
                 />
+              </div>
+              <div className="col-span-2 space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <Label className="text-foreground">Rates by time range</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Whole hours from start up to end (e.g. evening premium).
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        hourly_rate_windows: [
+                          ...f.hourly_rate_windows,
+                          { start: "17:00", end: "22:00", rate: "" },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add range
+                  </Button>
+                </div>
+                {form.hourly_rate_windows.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No extra ranges — only the default rate applies.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {form.hourly_rate_windows.map((row, i) => (
+                      <li
+                        key={i}
+                        className="space-y-3 rounded-lg border border-border/50 bg-card p-3"
+                      >
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div>
+                            <Label className="text-xs">From</Label>
+                            <VenueTimeInput
+                              className="mt-1"
+                              value={row.start}
+                              onChange={(v) =>
+                                setForm((f) => {
+                                  const next = [...f.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, start: v };
+                                  return { ...f, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">To</Label>
+                            <VenueTimeInput
+                              className="mt-1"
+                              value={row.end}
+                              onChange={(v) =>
+                                setForm((f) => {
+                                  const next = [...f.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, end: v };
+                                  return { ...f, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+                          <div className="min-w-0 flex-1">
+                            <Label className="text-xs">Rate (₱ / hour)</Label>
+                            <Input
+                              type="number"
+                              className="mt-1 h-10 w-full min-w-0"
+                              value={row.rate}
+                              onChange={(e) =>
+                                setForm((f) => {
+                                  const next = [...f.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, rate: e.target.value };
+                                  return { ...f, hourly_rate_windows: next };
+                                })
+                              }
+                              placeholder="60"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-10 w-10 shrink-0 self-end text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Remove range"
+                            onClick={() =>
+                              setForm((f) => ({
+                                ...f,
+                                hourly_rate_windows: f.hourly_rate_windows.filter(
+                                  (_, j) => j !== i,
+                                ),
+                              }))
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
                 <Label>Status</Label>
@@ -317,7 +638,7 @@ export default function AdminCourtsPage() {
                     setForm({ ...form, status: v as Court["status"] })
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -327,41 +648,40 @@ export default function AdminCourtsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Opens At</Label>
-                <Input
-                  type="time"
-                  value={form.available_hours.open}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      available_hours: {
-                        ...form.available_hours,
-                        open: e.target.value,
-                      },
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Closes At</Label>
-                <Input
-                  type="time"
-                  value={form.available_hours.close}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      available_hours: {
-                        ...form.available_hours,
-                        close: e.target.value,
-                      },
-                    })
-                  }
-                />
+              <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="venue-open">Opens</Label>
+                  <VenueTimeInput
+                    id="venue-open"
+                    className="mt-1.5"
+                    value={form.available_hours.open}
+                    onChange={(v) =>
+                      setForm({
+                        ...form,
+                        available_hours: { ...form.available_hours, open: v },
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="venue-close">Closes</Label>
+                  <VenueTimeInput
+                    id="venue-close"
+                    className="mt-1.5"
+                    value={form.available_hours.close}
+                    onChange={(v) =>
+                      setForm({
+                        ...form,
+                        available_hours: { ...form.available_hours, close: v },
+                      })
+                    }
+                  />
+                </div>
               </div>
               <div className="col-span-2">
                 <Label>Image URL</Label>
                 <Input
+                  className="mt-1.5"
                   value={form.image_url}
                   onChange={(e) =>
                     setForm({ ...form, image_url: e.target.value })
@@ -372,7 +692,11 @@ export default function AdminCourtsPage() {
             </div>
             <div>
               <Label className="mb-2 block">Amenities</Label>
-              <div className="flex flex-wrap gap-2">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Tap presets to toggle. Custom labels are saved to your account for
+                reuse; delete removes them from your list and this court.
+              </p>
+              <div className="mb-3 flex flex-wrap gap-2">
                 {amenityOptions.map((a) => (
                   <button
                     key={a}
@@ -384,9 +708,63 @@ export default function AdminCourtsPage() {
                         : "border-border bg-background text-muted-foreground hover:border-primary/40"
                     }`}
                   >
-                    {a.replace("_", " ")}
+                    {formatAmenityLabel(a)}
                   </button>
                 ))}
+              </div>
+              {customAmenityPills.length > 0 ? (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {customAmenityPills.map((canonical) => {
+                    const selected = form.amenities.some(
+                      (x) => normAmenity(x) === normAmenity(canonical),
+                    );
+                    return (
+                      <div
+                        key={normAmenity(canonical)}
+                        className="inline-flex overflow-hidden rounded-lg border border-border bg-background text-xs font-medium shadow-sm"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleCustomAmenityOnCourt(canonical)}
+                          className={`px-3 py-1.5 transition-colors ${
+                            selected
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          {formatAmenityLabel(canonical)}
+                        </button>
+                        <button
+                          type="button"
+                          className="border-l border-border bg-muted/40 px-2 py-1.5 text-destructive hover:bg-destructive/10"
+                          aria-label={`Remove ${canonical} from your saved amenities`}
+                          onClick={() => removeCustomFromAccountAndCourt(canonical)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={form.customAmenityDraft}
+                  onChange={(e) =>
+                    setForm({ ...form, customAmenityDraft: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomAmenity();
+                    }
+                  }}
+                  placeholder="Add custom amenity (saved to your account)"
+                  className="flex-1"
+                />
+                <Button type="button" variant="secondary" onClick={addCustomAmenity}>
+                  Add
+                </Button>
               </div>
             </div>
             <Button

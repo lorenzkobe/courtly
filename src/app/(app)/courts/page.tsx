@@ -27,14 +27,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatTimeShort } from "@/lib/booking-range";
+import { courtRateRange } from "@/lib/court-pricing";
+import { formatPhpCompact } from "@/lib/format-currency";
+import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useFavoriteCourtIds } from "@/hooks/use-favorite-court-ids";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
 import { cn } from "@/lib/utils";
 
 const ANY_VALUE = "__any__";
-
-function formatAmenityLabel(value: string) {
-  return value.replace(/_/g, " ");
-}
 
 function buildTimeOptions(courts: { available_hours: { open: string; close: string } }[]) {
   const tokens = new Set<string>();
@@ -123,11 +123,15 @@ export default function CourtsPage() {
   }, [dialogOpen]);
 
   const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteCourtIds();
+  const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["courts"],
+    queryKey: ["courts", selectedSport],
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.list({ status: "active" });
+      const { data } = await courtlyApi.courts.list({
+        status: "active",
+        sport: selectedSport,
+      });
       return data;
     },
   });
@@ -151,10 +155,14 @@ export default function CourtsPage() {
   }, [courts]);
 
   const sortedRates = useMemo(() => {
-    const rates = [...new Set(courts.map((c) => c.hourly_rate))].sort(
-      (a, b) => a - b,
-    );
-    return rates.length ? rates : [40, 45, 50, 55];
+    const s = new Set<number>();
+    for (const c of courts) {
+      const { min, max } = courtRateRange(c);
+      s.add(min);
+      s.add(max);
+    }
+    const list = [...s].sort((a, b) => a - b);
+    return list.length ? list : [40, 45, 50, 55];
   }, [courts]);
 
   const {
@@ -192,8 +200,9 @@ export default function CourtsPage() {
       let rLo = rateMin;
       let rHi = rateMax;
       if (rLo != null && rHi != null && rLo > rHi) [rLo, rHi] = [rHi, rLo];
-      if (rLo != null && c.hourly_rate < rLo) return false;
-      if (rHi != null && c.hourly_rate > rHi) return false;
+      const { min: cRMin, max: cRMax } = courtRateRange(c);
+      if (rLo != null && cRMax < rLo) return false;
+      if (rHi != null && cRMin > rHi) return false;
 
       if (amenityPick.size > 0) {
         for (const a of amenityPick) {
@@ -280,10 +289,10 @@ export default function CourtsPage() {
     if (applied.rateMin != null || applied.rateMax != null) {
       const label =
         applied.rateMin != null && applied.rateMax != null
-          ? `Rate: $${Math.min(applied.rateMin, applied.rateMax)}–$${Math.max(applied.rateMin, applied.rateMax)}/hr`
+          ? `Rate: ${formatPhpCompact(Math.min(applied.rateMin, applied.rateMax))}–${formatPhpCompact(Math.max(applied.rateMin, applied.rateMax))}/hr`
           : applied.rateMin != null
-            ? `Rate: ≥$${applied.rateMin}/hr`
-            : `Rate: ≤$${applied.rateMax}/hr`;
+            ? `Rate: ≥${formatPhpCompact(applied.rateMin)}/hr`
+            : `Rate: ≤${formatPhpCompact(applied.rateMax!)}/hr`;
       chips.push({
         id: "rate",
         label,
@@ -610,7 +619,7 @@ export default function CourtsPage() {
                   <p className="text-sm font-medium">Hourly rate</p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-normal">Min ($/hr)</Label>
+                      <Label className="text-xs font-normal">Min (₱/hr)</Label>
                       <Select
                         value={
                           draft.rateMin == null ? ANY_VALUE : String(draft.rateMin)
@@ -629,14 +638,14 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {sortedRates.map((r) => (
                             <SelectItem key={`min-${r}`} value={String(r)}>
-                              ${r}
+                              {formatPhpCompact(r)}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-normal">Max ($/hr)</Label>
+                      <Label className="text-xs font-normal">Max (₱/hr)</Label>
                       <Select
                         value={
                           draft.rateMax == null ? ANY_VALUE : String(draft.rateMax)
@@ -655,7 +664,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {sortedRates.map((r) => (
                             <SelectItem key={`max-${r}`} value={String(r)}>
-                              ${r}
+                              {formatPhpCompact(r)}
                             </SelectItem>
                           ))}
                         </SelectContent>

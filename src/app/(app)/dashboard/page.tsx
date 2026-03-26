@@ -9,7 +9,7 @@ import {
   BookOpen,
   Calendar,
   Clock,
-  DollarSign,
+  PhilippinePeso,
   MapPin,
   Trophy,
   Users,
@@ -20,8 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
+import type { Booking } from "@/lib/types/courtly";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useSelectedSport } from "@/lib/stores/selected-sport";
 import { formatStatusLabel } from "@/lib/utils";
 
 const bookingStatusStyles: Record<string, string> = {
@@ -63,15 +66,22 @@ const quickActions = [
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const selectedSport = useSelectedSport((s) => s.sport);
   const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
   const { data: todaysBookingsRaw = [], isLoading: loadingTodayBookings } =
     useQuery({
-      queryKey: ["dashboard-bookings-today", user?.email, todayIso],
+      queryKey: [
+        "dashboard-bookings-today",
+        user?.email,
+        todayIso,
+        selectedSport,
+      ],
       queryFn: async () => {
         const { data } = await courtlyApi.bookings.list({
           player_email: user?.email,
           date: todayIso,
+          sport: selectedSport,
         });
         return data;
       },
@@ -84,24 +94,39 @@ export default function DashboardPage() {
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }, [todaysBookingsRaw]);
 
+  const todayBookingCards = useMemo(() => {
+    const map = new Map<string, Booking[]>();
+    for (const b of todaysBookings) {
+      const k = b.booking_group_id ?? `solo:${b.id}`;
+      const arr = map.get(k) ?? [];
+      arr.push(b);
+      map.set(k, arr);
+    }
+    return [...map.values()].map((items) =>
+      [...items].sort((a, c) => a.start_time.localeCompare(c.start_time)),
+    );
+  }, [todaysBookings]);
+
   const { data: tournaments = [] } = useQuery({
-    queryKey: ["tournaments-dashboard"],
+    queryKey: ["tournaments-dashboard", selectedSport],
     queryFn: async () => {
       const { data } = await courtlyApi.tournaments.list({
         status: "registration_open",
         limit: 2,
         sort: "-date",
+        sport: selectedSport,
       });
       return data;
     },
   });
 
   const { data: sessions = [] } = useQuery({
-    queryKey: ["sessions-dashboard"],
+    queryKey: ["sessions-dashboard", selectedSport],
     queryFn: async () => {
       const { data } = await courtlyApi.openPlay.list({
         status: "open",
         limit: 3,
+        sport: selectedSport,
       });
       return data;
     },
@@ -194,7 +219,7 @@ export default function DashboardPage() {
               <Skeleton className="h-24 rounded-xl" />
               <Skeleton className="h-24 rounded-xl" />
             </div>
-          ) : todaysBookings.length === 0 ? (
+          ) : todayBookingCards.length === 0 ? (
             <Card className="border-border/50 border-dashed">
               <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                 <Calendar className="h-10 w-10 text-muted-foreground/60" />
@@ -213,43 +238,84 @@ export default function DashboardPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {todaysBookings.map((b) => (
-                <Card
-                  key={b.id}
-                  className="border-border/50 transition-shadow hover:shadow-sm"
-                >
-                  <CardContent className="p-5">
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-heading font-semibold text-foreground">
-                          {b.court_name ?? "Court"}
-                        </h3>
-                        <Badge
-                          variant="outline"
-                          className={
-                            bookingStatusStyles[b.status] ?? ""
-                          }
-                        >
-                          {formatStatusLabel(b.status)}
-                        </Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 shrink-0" />
-                          {formatTimeShort(b.start_time)} –{" "}
-                          {formatTimeShort(b.end_time)}
-                        </span>
-                        {b.total_cost != null ? (
-                          <span className="inline-flex items-center gap-1 font-semibold text-foreground">
-                            <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                            {(b.total_cost ?? 0).toFixed(2)}
-                          </span>
+              {todayBookingCards.map((items) => {
+                const first = items[0]!;
+                const detailId = first.id;
+                const sessionTotal = items.reduce(
+                  (s, x) => s + (x.total_cost ?? 0),
+                  0,
+                );
+                const multi = items.length > 1;
+                return (
+                  <Card
+                    key={detailId}
+                    className="border-border/50 transition-shadow hover:shadow-sm"
+                  >
+                    <CardContent className="p-5">
+                      <div className="min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-heading font-semibold text-foreground">
+                            {first.court_name ?? "Court"}
+                          </h3>
+                          <Badge
+                            variant="outline"
+                            className={
+                              bookingStatusStyles[first.status] ?? ""
+                            }
+                          >
+                            {formatStatusLabel(first.status)}
+                          </Badge>
+                        </div>
+                        {multi ? (
+                          <p className="text-xs text-muted-foreground">
+                            {first.booking_group_id
+                              ? "Multiple reserved times from one checkout."
+                              : `${items.length} reservations today.`}
+                          </p>
                         ) : null}
+                        <ul className="space-y-1.5 text-sm text-muted-foreground">
+                          {items.map((b) => (
+                            <li
+                              key={b.id}
+                              className="flex flex-wrap items-center gap-x-3 gap-y-0.5"
+                            >
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5 shrink-0" />
+                                {formatTimeShort(b.start_time)} –{" "}
+                                {formatTimeShort(b.end_time)}
+                              </span>
+                              {b.total_cost != null ? (
+                                <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                                  <PhilippinePeso className="h-3.5 w-3.5 text-muted-foreground" />
+                                  {formatPhp(b.total_cost ?? 0)}
+                                </span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                        {multi ? (
+                          <p className="text-sm font-semibold text-foreground">
+                            Total{" "}
+                            <span className="text-primary">
+                              {formatPhp(sessionTotal)}
+                            </span>
+                          </p>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 w-full sm:w-auto"
+                          asChild
+                        >
+                          <Link href={`/my-bookings/${detailId}`}>
+                            View details
+                          </Link>
+                        </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </section>
@@ -292,7 +358,7 @@ export default function DashboardPage() {
                           <MapPin className="h-3.5 w-3.5" /> {t.location}
                         </div>
                         <span className="font-heading font-bold text-primary">
-                          ${t.entry_fee}
+                          {formatPhpCompact(t.entry_fee)}
                         </span>
                       </div>
                     </CardContent>
@@ -347,7 +413,7 @@ export default function DashboardPage() {
                         {s.current_players}/{s.max_players} players
                       </span>
                       <span className="font-heading text-sm font-bold text-primary">
-                        {s.fee > 0 ? `$${s.fee}` : "Free"}
+                        {s.fee > 0 ? formatPhpCompact(s.fee) : "Free"}
                       </span>
                     </div>
                   </CardContent>

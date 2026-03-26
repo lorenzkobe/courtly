@@ -6,7 +6,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
+  PhilippinePeso,
   ExternalLink,
   Heart,
   MapPin,
@@ -32,6 +32,15 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import {
+  segmentTotalCost,
+  segmentsTotalCost,
+  formatCourtRateSummary,
+} from "@/lib/court-pricing";
+import {
+  PLATFORM_TRANSACTION_FEE_PERCENT,
+  splitBookingAmounts,
+} from "@/lib/platform-fee";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
   availableSegmentsInRange,
@@ -44,7 +53,10 @@ import {
   totalBillableHours,
   type BookingSegment,
 } from "@/lib/booking-range";
+import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
+import { formatAmenityLabel } from "@/lib/format-amenity";
 import type { Booking, Court } from "@/lib/types/courtly";
+import { formatStatusLabel } from "@/lib/utils";
 import { useFavoriteCourtIds } from "@/hooks/use-favorite-court-ids";
 import { cn } from "@/lib/utils";
 
@@ -72,28 +84,35 @@ function timeSlotsFromVenueHours(open: string, close: string): string[] {
 
 function buildBookingPayloads(
   segments: BookingSegment[],
+  court: Court,
   ctx: {
-    courtId: string;
-    courtName: string;
     date: string;
     playerName: string;
     playerEmail: string;
-    hourlyRate: number;
     notes: string;
+    bookingGroupId: string;
   },
 ): Partial<Booking>[] {
-  return segments.map((seg) => ({
-    court_id: ctx.courtId,
-    court_name: ctx.courtName,
-    date: ctx.date,
-    start_time: seg.start_time,
-    end_time: seg.end_time,
-    player_name: ctx.playerName,
-    player_email: ctx.playerEmail,
-    total_cost: seg.hours * ctx.hourlyRate,
-    notes: ctx.notes || undefined,
-    status: "confirmed" as const,
-  }));
+  return segments.map((seg) => {
+    const court_subtotal = segmentTotalCost(court, seg);
+    const { platform_fee, total_cost } = splitBookingAmounts(court_subtotal);
+    return {
+      court_id: court.id,
+      court_name: court.name,
+      sport: court.sport,
+      booking_group_id: ctx.bookingGroupId,
+      date: ctx.date,
+      start_time: seg.start_time,
+      end_time: seg.end_time,
+      player_name: ctx.playerName,
+      player_email: ctx.playerEmail,
+      court_subtotal,
+      platform_fee,
+      total_cost,
+      notes: ctx.notes || undefined,
+      status: "confirmed" as const,
+    };
+  });
 }
 
 function courtGalleryUrls(court: Court): string[] {
@@ -288,20 +307,26 @@ export default function BookCourtPage() {
     }
   };
 
-  const hourlyRate = court?.hourly_rate ?? 0;
-  const totalCost = billableHours * hourlyRate;
+  const courtSubtotal =
+    court && segments.length > 0
+      ? segmentsTotalCost(court, segments)
+      : 0;
+  const bookingTotals =
+    courtSubtotal > 0 ? splitBookingAmounts(courtSubtotal) : null;
 
   const runBooking = (toBook: BookingSegment[]) => {
     if (!user || !court) return;
     const displayName = user.full_name?.trim() || user.email;
-    const payloads = buildBookingPayloads(toBook, {
-      courtId,
-      courtName: court.name,
+    const bookingGroupId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `grp-${Date.now()}`;
+    const payloads = buildBookingPayloads(toBook, court, {
       date: format(selectedDate, "yyyy-MM-dd"),
       playerName: displayName,
       playerEmail: user.email,
-      hourlyRate,
       notes,
+      bookingGroupId,
     });
     createBookings.mutate(payloads);
   };
@@ -500,13 +525,26 @@ export default function BookCourtPage() {
                     ) : null}
                   </dd>
                 </div>
-                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
+                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
                   <dt className="text-muted-foreground">Rate</dt>
-                  <dd className="font-medium sm:text-right">
+                  <dd className="space-y-1 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
-                      <DollarSign className="h-3.5 w-3.5 shrink-0" />
-                      {court.hourly_rate}/hr
+                      <PhilippinePeso className="h-3.5 w-3.5 shrink-0" />
+                      {formatCourtRateSummary(court)}
                     </span>
+                    {(court.hourly_rate_windows?.length ?? 0) > 0 ? (
+                      <ul className="ml-auto max-w-[14rem] list-inside list-disc text-xs font-normal text-muted-foreground">
+                        {court.hourly_rate_windows!.map((w) => (
+                          <li key={`${w.start}-${w.end}-${w.hourly_rate}`}>
+                            {formatTimeShort(w.start)}–{formatTimeShort(w.end)}:{" "}
+                            {formatPhpCompact(w.hourly_rate)}/hr
+                          </li>
+                        ))}
+                        <li>
+                          Other hours: {formatPhpCompact(court.hourly_rate)}/hr
+                        </li>
+                      </ul>
+                    ) : null}
                   </dd>
                 </div>
                 {notes.trim() ? (
@@ -517,10 +555,28 @@ export default function BookCourtPage() {
                     </dd>
                   </div>
                 ) : null}
+                {bookingTotals ? (
+                  <>
+                    <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
+                      <dt className="text-muted-foreground">Court subtotal</dt>
+                      <dd className="font-medium sm:text-right">
+                        {formatPhp(bookingTotals.court_subtotal)}
+                      </dd>
+                    </div>
+                    <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
+                      <dt className="text-muted-foreground">
+                        Platform fee ({PLATFORM_TRANSACTION_FEE_PERCENT}%)
+                      </dt>
+                      <dd className="font-medium sm:text-right">
+                        {formatPhp(bookingTotals.platform_fee)}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
                 <div className="grid grid-cols-1 gap-2 pt-4 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                  <dt className="font-heading text-base font-bold">Total</dt>
+                  <dt className="font-heading text-base font-bold">You pay</dt>
                   <dd className="font-heading text-xl font-bold text-primary sm:text-right">
-                    ${totalCost.toFixed(2)}
+                    {formatPhp(bookingTotals?.total_cost ?? 0)}
                   </dd>
                 </div>
               </>
@@ -606,14 +662,14 @@ export default function BookCourtPage() {
               <dl className="grid gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">Type</dt>
-                  <dd className="mt-0.5 capitalize text-foreground">
-                    {court.type}
+                  <dd className="mt-0.5 text-foreground">
+                    {formatStatusLabel(court.type)}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Surface</dt>
-                  <dd className="mt-0.5 capitalize text-foreground">
-                    {court.surface.replace(/_/g, " ")}
+                  <dd className="mt-0.5 text-foreground">
+                    {formatAmenityLabel(court.surface)}
                   </dd>
                 </div>
                 <div>
@@ -625,7 +681,7 @@ export default function BookCourtPage() {
                 <div>
                   <dt className="text-muted-foreground">Rate</dt>
                   <dd className="mt-0.5 font-medium text-foreground">
-                    ${court.hourly_rate}/hr
+                    {formatCourtRateSummary(court)}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
@@ -636,9 +692,9 @@ export default function BookCourtPage() {
                         <Badge
                           key={a}
                           variant="outline"
-                          className="font-normal capitalize"
+                          className="font-normal"
                         >
-                          {a.replace(/_/g, " ")}
+                          {formatAmenityLabel(a)}
                         </Badge>
                       ))
                     ) : (

@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { mockDb } from "@/lib/mock/db";
-import type { Tournament } from "@/lib/types/courtly";
+import type { CourtSport, Tournament } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
+  const { searchParams } = new URL(req.url);
+  const sport = searchParams.get("sport") as CourtSport | null;
   const { id } = await ctx.params;
   const t = mockDb.tournaments.find((x) => x.id === id);
   if (!t) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (sport && t.sport !== sport) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json(t);
 }
 

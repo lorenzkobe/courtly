@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Calendar, Layers } from "lucide-react";
+import { ArrowRight, Building2, PhilippinePeso, UserCog } from "lucide-react";
 import PageHeader from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,16 +14,25 @@ import {
 
 const links = [
   {
-    href: "/admin/courts",
-    title: "Courts",
-    description: "Create and assign courts, or update availability and pricing across the network.",
-    icon: Layers,
+    href: "/superadmin/court-accounts",
+    title: "Court accounts",
+    description:
+      "Create and manage venue operator accounts, assign primary admins, and review linked courts.",
+    icon: Building2,
   },
   {
-    href: "/admin/bookings",
-    title: "Bookings",
-    description: "Review and update reservations on any court.",
-    icon: Calendar,
+    href: "/superadmin/users",
+    title: "User accounts",
+    description:
+      "Add or edit players, court admins, and platform staff; link admins to court accounts.",
+    icon: UserCog,
+  },
+  {
+    href: "/superadmin/revenue",
+    title: "Platform revenue",
+    description:
+      "Filter by date, review income by court account, and drill into each account’s courts.",
+    icon: PhilippinePeso,
   },
 ] as const;
 
@@ -31,13 +40,18 @@ export default function SuperadminHomePage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <PageHeader
-        title="Superadmin"
-        subtitle="Platform-wide tools. Player-facing areas stay unchanged; use this hub to operate the whole directory."
+        title="Platform overview"
+        subtitle="Superadmin focuses on court accounts, user accounts, and network revenue. Venues manage their own courts and bookings from the venue admin console."
       />
 
       <div className="mb-8 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-        Full superadmin workflows (users, billing, impersonation, audit logs) will land here as the
-        product grows. Today, courts and bookings are fully manageable from the links below.
+        Onboard organizations under{" "}
+        <strong className="font-medium text-foreground">Court accounts</strong>, manage people under{" "}
+        <strong className="font-medium text-foreground">User accounts</strong>, and use{" "}
+        <strong className="font-medium text-foreground">Platform revenue</strong> for date-filtered
+        payouts and fees. Venue operators use{" "}
+        <strong className="font-medium text-foreground">Revenue</strong> under their own admin login
+        for the same date filters on their courts.
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

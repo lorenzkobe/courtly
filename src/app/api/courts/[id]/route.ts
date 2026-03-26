@@ -28,6 +28,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (user.role !== "superadmin" && "managed_by_user_id" in patch) {
     delete patch.managed_by_user_id;
   }
+  if (user.role !== "superadmin" && "court_account_id" in patch) {
+    delete patch.court_account_id;
+  }
 
   mockDb.courts[idx] = { ...mockDb.courts[idx], ...patch };
   return NextResponse.json(mockDb.courts[idx]);

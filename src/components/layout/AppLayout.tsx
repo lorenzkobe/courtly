@@ -3,20 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
+  Building2,
   Calendar,
   Crown,
+  PhilippinePeso,
   LayoutDashboard,
   Layers,
   LogOut,
   Menu,
   Trophy,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
+import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { SessionUser } from "@/lib/types/courtly";
 
@@ -31,30 +36,33 @@ const PLAYER_NAV = [
 type NavEntry = (typeof PLAYER_NAV)[number] | {
   path: string;
   label: string;
-  icon: typeof Layers;
+  icon: LucideIcon;
 };
 
-function courtAdminNav(role: "admin" | "superadmin"): NavEntry[] {
-  const global = role === "superadmin";
+function venueAdminNav(): NavEntry[] {
   return [
-    {
-      path: "/admin/courts",
-      label: global ? "Manage courts" : "My courts",
-      icon: Layers,
-    },
-    {
-      path: "/admin/bookings",
-      label: global ? "All court bookings" : "Court bookings",
-      icon: Calendar,
-    },
+    { path: "/admin/courts", label: "My courts", icon: Layers },
+    { path: "/admin/bookings", label: "Court bookings", icon: Calendar },
+    { path: "/admin/revenue", label: "Revenue", icon: PhilippinePeso },
   ];
 }
 
-const SUPERADMIN_NAV: NavEntry = {
-  path: "/superadmin",
-  label: "Superadmin",
-  icon: Crown,
-};
+function platformSuperadminNav(): NavEntry[] {
+  return [
+    { path: "/superadmin", label: "Overview", icon: Crown },
+    {
+      path: "/superadmin/court-accounts",
+      label: "Court accounts",
+      icon: Building2,
+    },
+    { path: "/superadmin/users", label: "User accounts", icon: UserCog },
+    {
+      path: "/superadmin/revenue",
+      label: "Platform revenue",
+      icon: PhilippinePeso,
+    },
+  ];
+}
 
 type SidebarModel = {
   /** When set, sidebar shows only this section (admin / superadmin consoles). */
@@ -62,18 +70,29 @@ type SidebarModel = {
   items: NavEntry[];
 };
 
+/** Longest matching nav path wins so `/superadmin` does not stay active on `/superadmin/court-accounts`. */
+function activeNavPath(pathname: string, paths: readonly string[]) {
+  let best: string | null = null;
+  for (const p of paths) {
+    if (pathname === p || pathname.startsWith(`${p}/`)) {
+      if (!best || p.length > best.length) best = p;
+    }
+  }
+  return best;
+}
+
 /** Sidebar by role: players get booking UI; staff get only venue or operations — no player tabs. */
 function sidebarForRole(role: SessionUser["role"] | undefined): SidebarModel {
   switch (role) {
     case "admin":
       return {
         sectionLabel: "Your venue",
-        items: courtAdminNav("admin"),
+        items: venueAdminNav(),
       };
     case "superadmin":
       return {
-        sectionLabel: "Operations",
-        items: [...courtAdminNav("superadmin"), SUPERADMIN_NAV],
+        sectionLabel: "Platform",
+        items: platformSuperadminNav(),
       };
     case "user":
     default:
@@ -92,6 +111,13 @@ export default function AppLayout({
 
   const sidebar = useMemo(() => sidebarForRole(user?.role), [user?.role]);
   const navItems = sidebar.items;
+  const showSportPicker = sidebar.sectionLabel === null;
+
+  const navPaths = useMemo(() => navItems.map((i) => i.path), [navItems]);
+  const currentNavPath = useMemo(
+    () => activeNavPath(pathname, navPaths),
+    [pathname, navPaths],
+  );
 
   const signOut = () => {
     void logout();
@@ -99,8 +125,7 @@ export default function AppLayout({
   };
 
   const linkClass = (itemPath: string) => {
-    const isActive =
-      pathname === itemPath || pathname.startsWith(`${itemPath}/`);
+    const isActive = currentNavPath === itemPath;
     return cn(
       "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
       isActive
@@ -153,8 +178,8 @@ export default function AppLayout({
                 <p className="truncate text-xs text-muted-foreground">
                   {user.email}
                 </p>
-                <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-primary/90">
-                  {user.role}
+                <p className="mt-1 text-[10px] font-medium tracking-wide text-primary/90">
+                  {formatStatusLabel(user.role)}
                 </p>
               </div>
             ) : null}
@@ -195,8 +220,7 @@ export default function AppLayout({
         {mobileOpen ? (
           <nav className="max-h-[calc(100vh-8rem)] space-y-1 overflow-y-auto px-3 pb-3">
             {navItems.map((item) => {
-              const isActive =
-                pathname === item.path || pathname.startsWith(`${item.path}/`);
+              const isActive = currentNavPath === item.path;
               return (
                 <Link
                   key={item.path}
@@ -226,7 +250,14 @@ export default function AppLayout({
       </div>
 
       <main className="lg:pl-64">
-        <div className="min-h-screen pt-16 lg:pt-0">{children}</div>
+        <div className="min-h-screen pt-16 lg:pt-0">
+          {showSportPicker ? (
+            <div className="flex items-center justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-[backdrop-filter]:lg:bg-background/80">
+              <SportPicker layout="toolbar" id="app-shell-sport" />
+            </div>
+          ) : null}
+          {children}
+        </div>
       </main>
     </div>
   );

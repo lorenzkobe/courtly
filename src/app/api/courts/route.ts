@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
-import type { Court } from "@/lib/types/courtly";
+import type { Court, CourtRateWindow, CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
   const manageable = searchParams.get("manageable") === "true";
+  const sport = searchParams.get("sport") as CourtSport | null;
 
   let list = [...mockDb.courts];
 
@@ -22,6 +23,10 @@ export async function GET(req: Request) {
 
   if (status) {
     list = list.filter((c) => c.status === status);
+  }
+
+  if (sport) {
+    list = list.filter((c) => c.sport === sport);
   }
 
   return NextResponse.json(list);
@@ -46,10 +51,20 @@ export async function POST(req: Request) {
     managed_by_user_id = user.id;
   }
 
+  let court_account_id: string | null = null;
+  if (user.role === "superadmin") {
+    court_account_id =
+      typeof body.court_account_id === "string" ? body.court_account_id : null;
+  } else if (user.role === "admin") {
+    const mu = mockDb.managedUsers.find((m) => m.id === user.id);
+    court_account_id = mu?.court_account_id ?? null;
+  }
+
   const court: Court = {
     id,
     name: body.name ?? "New court",
     location: body.location ?? "",
+    sport: (body.sport as Court["sport"]) ?? "pickleball",
     type: (body.type as Court["type"]) ?? "indoor",
     surface: (body.surface as Court["surface"]) ?? "sport_court",
     image_url: body.image_url ?? "",
@@ -58,7 +73,18 @@ export async function POST(req: Request) {
     available_hours: body.available_hours ?? { open: "07:00", close: "22:00" },
     status: (body.status as Court["status"]) ?? "active",
     managed_by_user_id,
+    court_account_id,
   };
+  if (Array.isArray(body.hourly_rate_windows)) {
+    court.hourly_rate_windows = body.hourly_rate_windows.filter(
+      (w): w is CourtRateWindow =>
+        w != null &&
+        typeof w === "object" &&
+        typeof (w as { start?: string }).start === "string" &&
+        typeof (w as { end?: string }).end === "string" &&
+        typeof (w as { hourly_rate?: number }).hourly_rate === "number",
+    );
+  }
   if (typeof body.description === "string") {
     court.description = body.description;
   }
