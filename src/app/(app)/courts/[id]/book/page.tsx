@@ -137,7 +137,7 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
       />
       {n > 1 ? (
         <>
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+          <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/25 to-transparent" />
           <Button
             type="button"
             size="icon"
@@ -662,7 +662,7 @@ export default function BookCourtPage() {
                   <iframe
                     title={`Map — ${court.name}`}
                     src={mapEmbedSrc}
-                    className="aspect-[16/10] w-full max-h-64 rounded-xl border border-border"
+                    className="aspect-16/10 w-full max-h-64 rounded-xl border border-border"
                     loading="lazy"
                     referrerPolicy="no-referrer-when-downgrade"
                   />
@@ -797,7 +797,7 @@ export default function BookCourtPage() {
                         className={cn(
                           "relative flex items-center justify-center px-1.5 text-sm font-medium tabular-nums",
                           showMarker
-                            ? "min-h-[2.75rem] flex-col gap-0.5 py-1"
+                            ? "min-h-11 flex-col gap-0.5 py-1"
                             : "h-10 shrink-0",
                           isBooked &&
                             pickingEnd &&
