@@ -40,7 +40,6 @@ const emptyForm = {
   hourly_rate: "",
   opens_at: "07:00",
   closes_at: "22:00",
-  status: "active" as Venue["status"],
   amenities: [] as string[],
   customAmenityDraft: "",
   image_url: "",
@@ -99,7 +98,6 @@ export default function SuperadminVenuesPage() {
         hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
         opens_at: form.opens_at,
         closes_at: form.closes_at,
-        status: form.status,
         amenities: [...new Set(form.amenities.map((a) => a.trim()).filter(Boolean))],
         image_url: form.image_url.trim(),
         initial_admin_user_id:
@@ -175,7 +173,6 @@ export default function SuperadminVenuesPage() {
       hourly_rate: String(a.hourly_rate),
       opens_at: a.opens_at,
       closes_at: a.closes_at,
-      status: a.status,
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
       image_url: a.image_url ?? "",
@@ -374,26 +371,6 @@ export default function SuperadminVenuesPage() {
                   placeholder="22:00"
                 />
               </div>
-            </div>
-            <div>
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    status: v as Venue["status"],
-                  })
-                }
-              >
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <Label className="mb-2 block">Amenities</Label>

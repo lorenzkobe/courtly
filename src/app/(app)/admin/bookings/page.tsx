@@ -2,15 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import {
-  Calendar,
-  Clock,
-  ExternalLink,
-  MapPin,
-  Search,
-  X,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Calendar, Clock, ListFilter, Search, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -20,6 +13,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -35,13 +30,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
-import { formatAmenityLabel } from "@/lib/format-amenity";
 import type { Booking } from "@/lib/types/courtly";
-import { formatStatusLabel } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
 
 function mutationErrorMessage(error: unknown, fallback: string) {
   if (typeof error === "object" && error && "response" in error) {
@@ -58,20 +53,110 @@ const statusStyles: Record<string, string> = {
   completed: "bg-muted text-muted-foreground border-border",
 };
 
+type AdminBookingFilters = {
+  status: "all" | Booking["status"];
+  venueId: string;
+  dateFrom: string;
+  dateTo: string;
+  timeFrom: string;
+  timeTo: string;
+};
+
+function defaultAdminBookingFilters(): AdminBookingFilters {
+  return {
+    status: "confirmed",
+    venueId: "",
+    dateFrom: "",
+    dateTo: "",
+    timeFrom: "",
+    timeTo: "",
+  };
+}
+
+function cloneAdminBookingFilters(s: AdminBookingFilters): AdminBookingFilters {
+  return { ...s };
+}
+
+type AppliedFilterChip = {
+  id: string;
+  label: string;
+  onRemove: () => void;
+};
+
+function AdminBookingNoteFields({
+  booking,
+  onSave,
+  onRequestClear,
+  savePending,
+  clearPending,
+}: {
+  booking: Booking;
+  onSave: (note: string) => void;
+  onRequestClear: () => void;
+  savePending: boolean;
+  clearPending: boolean;
+}) {
+  const [draft, setDraft] = useState(booking.admin_note ?? "");
+
+  return (
+    <section className="border-t border-border/60 pt-4">
+      <Label htmlFor="admin-booking-note">Admin note</Label>
+      <Textarea
+        id="admin-booking-note"
+        className="mt-1.5"
+        rows={3}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Add internal note/comment for this booking"
+      />
+      {booking.admin_note_updated_at ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Last updated by{" "}
+          {booking.admin_note_updated_by_name ?? "Admin"} on{" "}
+          {format(new Date(booking.admin_note_updated_at), "PPpp")}
+        </p>
+      ) : null}
+      <div className="mt-2 flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onSave(draft)}
+          disabled={savePending}
+        >
+          Save note
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onRequestClear}
+          disabled={clearPending}
+        >
+          Delete note
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 export default function AdminBookingsPage() {
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState("confirmed");
+  const [appliedFilters, setAppliedFilters] = useState<AdminBookingFilters>(() =>
+    defaultAdminBookingFilters(),
+  );
+  const [draftFilters, setDraftFilters] = useState<AdminBookingFilters>(() =>
+    defaultAdminBookingFilters(),
+  );
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [sortBy, setSortBy] = useState<
     "latest_date" | "oldest_date" | "amount_high" | "amount_low"
   >("latest_date");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [adminNoteDraft, setAdminNoteDraft] = useState("");
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
   const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
-  const currentUserId = user?.id ?? "";
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],
@@ -81,6 +166,40 @@ export default function AdminBookingsPage() {
     },
   });
 
+  const openFilterDialog = useCallback(() => {
+    if (!filterDialogOpen) {
+      setDraftFilters(cloneAdminBookingFilters(appliedFilters));
+    }
+    setFilterDialogOpen(true);
+  }, [appliedFilters, filterDialogOpen]);
+
+  const applyFilterDraft = useCallback(() => {
+    setAppliedFilters(cloneAdminBookingFilters(draftFilters));
+    setFilterDialogOpen(false);
+  }, [draftFilters]);
+
+  const resetFilterDraft = useCallback(() => {
+    setDraftFilters(defaultAdminBookingFilters());
+  }, []);
+
+  const clearAllBookingFilters = useCallback(() => {
+    const empty = defaultAdminBookingFilters();
+    setAppliedFilters(empty);
+    if (filterDialogOpen) {
+      setDraftFilters(cloneAdminBookingFilters(empty));
+    }
+  }, [filterDialogOpen]);
+
+  const venueFilterOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of bookings) {
+      const id = b.venue_id;
+      const name = (b.establishment_name ?? "").trim();
+      if (id && name) m.set(id, name);
+    }
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [bookings]);
+
   const { data: detailBooking } = useQuery({
     queryKey: ["admin-booking-detail", detailId],
     queryFn: async () => {
@@ -88,15 +207,6 @@ export default function AdminBookingsPage() {
       return data;
     },
     enabled: !!detailId,
-  });
-
-  const { data: detailCourt } = useQuery({
-    queryKey: ["admin-booking-court", detailBooking?.court_id],
-    queryFn: async () => {
-      const { data } = await courtlyApi.courts.get(detailBooking!.court_id);
-      return data;
-    },
-    enabled: !!detailBooking?.court_id,
   });
 
   const { data: detailGroup = [] } = useQuery({
@@ -137,30 +247,6 @@ export default function AdminBookingsPage() {
     [detailSegments],
   );
 
-  const hasMapPin =
-    detailCourt &&
-    detailCourt.map_latitude != null &&
-    detailCourt.map_longitude != null &&
-    Number.isFinite(detailCourt.map_latitude) &&
-    Number.isFinite(detailCourt.map_longitude);
-  const mapLat = detailCourt?.map_latitude ?? 0;
-  const mapLon = detailCourt?.map_longitude ?? 0;
-  const mapBboxPad = 0.018;
-  const mapEmbedSrc =
-    hasMapPin && detailCourt
-      ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - mapBboxPad},${mapLat - mapBboxPad},${mapLon + mapBboxPad},${mapLat + mapBboxPad}&layer=mapnik`
-      : null;
-  const mapOpenHref = detailCourt
-    ? hasMapPin
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(detailCourt.location)}`
-    : "#";
-  const directionsHref = detailCourt
-    ? hasMapPin
-      ? `https://www.google.com/maps/dir/?api=1&destination=${mapLat},${mapLon}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(detailCourt.location)}`
-    : "#";
-
   const updateStatus = useMutation({
     mutationFn: async ({
       id,
@@ -193,10 +279,10 @@ export default function AdminBookingsPage() {
   });
 
   const saveAdminNote = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (note: string) => {
       if (!detailBooking) throw new Error("No booking selected");
       await courtlyApi.bookings.setAdminNote(detailBooking.id, {
-        admin_note: adminNoteDraft,
+        admin_note: note,
       });
     },
     onSuccess: () => {
@@ -217,7 +303,6 @@ export default function AdminBookingsPage() {
       });
     },
     onSuccess: () => {
-      setAdminNoteDraft("");
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note deleted");
@@ -229,14 +314,42 @@ export default function AdminBookingsPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
+    const {
+      status: statusFilter,
+      venueId,
+      dateFrom,
+      dateTo,
+      timeFrom,
+      timeTo,
+    } = appliedFilters;
+
     const list = bookings.filter((b) => {
       const statusMatch = statusFilter === "all" || b.status === statusFilter;
+      const venueMatch = !venueId || b.venue_id === venueId;
+      const fromOk = !dateFrom || b.date >= dateFrom;
+      const toOk = !dateTo || b.date <= dateTo;
+
+      let timeOk = true;
+      if (timeFrom && timeTo) {
+        timeOk = timeRangesOverlap(
+          b.start_time,
+          b.end_time,
+          timeFrom,
+          timeTo,
+        );
+      } else if (timeFrom) {
+        timeOk = b.end_time > timeFrom;
+      } else if (timeTo) {
+        timeOk = b.start_time < timeTo;
+      }
+
       const searchMatch =
         !search ||
         b.player_name?.toLowerCase().includes(q) ||
         b.player_email?.toLowerCase().includes(q) ||
-        b.court_name?.toLowerCase().includes(q);
-      return statusMatch && searchMatch;
+        b.court_name?.toLowerCase().includes(q) ||
+        b.establishment_name?.toLowerCase().includes(q);
+      return statusMatch && venueMatch && fromOk && toOk && timeOk && searchMatch;
     });
     list.sort((a, b) => {
       if (sortBy === "oldest_date") {
@@ -255,7 +368,61 @@ export default function AdminBookingsPage() {
       return b.start_time.localeCompare(a.start_time);
     });
     return list;
-  }, [bookings, search, sortBy, statusFilter]);
+  }, [appliedFilters, bookings, search, sortBy]);
+
+  const appliedBookingFilterChips = useMemo((): AppliedFilterChip[] => {
+    const chips: AppliedFilterChip[] = [];
+    const f = appliedFilters;
+
+    if (f.status !== "all") {
+      chips.push({
+        id: "status",
+        label: `Status: ${formatStatusLabel(f.status)}`,
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, status: "all" })),
+      });
+    }
+    if (f.venueId) {
+      const name =
+        venueFilterOptions.find(([id]) => id === f.venueId)?.[1] ?? "Venue";
+      chips.push({
+        id: "venue",
+        label: `Venue: ${name}`,
+        onRemove: () => setAppliedFilters((p) => ({ ...p, venueId: "" })),
+      });
+    }
+    if (f.dateFrom) {
+      chips.push({
+        id: "date-from",
+        label: `From ${f.dateFrom}`,
+        onRemove: () => setAppliedFilters((p) => ({ ...p, dateFrom: "" })),
+      });
+    }
+    if (f.dateTo) {
+      chips.push({
+        id: "date-to",
+        label: `Through ${f.dateTo}`,
+        onRemove: () => setAppliedFilters((p) => ({ ...p, dateTo: "" })),
+      });
+    }
+    if (f.timeFrom || f.timeTo) {
+      const label =
+        f.timeFrom && f.timeTo
+          ? `Time: ${formatTimeShort(f.timeFrom)} – ${formatTimeShort(f.timeTo)}`
+          : f.timeFrom
+            ? `From ${formatTimeShort(f.timeFrom)}`
+            : `Before ${formatTimeShort(f.timeTo!)}`;
+      chips.push({
+        id: "time",
+        label,
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, timeFrom: "", timeTo: "" })),
+      });
+    }
+    return chips;
+  }, [appliedFilters, venueFilterOptions]);
+
+  const activeBookingFilterCount = appliedBookingFilterChips.length;
 
   const stats = {
     total: bookings.length,
@@ -265,10 +432,6 @@ export default function AdminBookingsPage() {
       .filter((b) => b.status !== "cancelled")
       .reduce((sum, b) => sum + (b.total_cost || 0), 0),
   };
-
-  useEffect(() => {
-    setAdminNoteDraft(detailBooking?.admin_note ?? "");
-  }, [detailBooking?.id, detailBooking?.admin_note, currentUserId]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -311,6 +474,10 @@ export default function AdminBookingsPage() {
                   Reservation
                 </h3>
                 <dl className="grid gap-2 sm:grid-cols-[7rem_1fr]">
+                  <dt className="text-muted-foreground">Venue</dt>
+                  <dd className="font-medium">
+                    {detailBooking.establishment_name ?? "—"}
+                  </dd>
                   <dt className="text-muted-foreground">Court</dt>
                   <dd className="font-medium">{detailBooking.court_name ?? "—"}</dd>
                   <dt className="text-muted-foreground">Player</dt>
@@ -406,43 +573,14 @@ export default function AdminBookingsPage() {
                   </div>
                 ) : null}
               </section>
-              <section className="border-t border-border/60 pt-4">
-                <Label htmlFor="admin-booking-note">Admin note</Label>
-                <Textarea
-                  id="admin-booking-note"
-                  className="mt-1.5"
-                  rows={3}
-                  value={adminNoteDraft}
-                  onChange={(e) => setAdminNoteDraft(e.target.value)}
-                  placeholder="Add internal note/comment for this booking"
-                />
-                {detailBooking.admin_note_updated_at ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Last updated by{" "}
-                    {detailBooking.admin_note_updated_by_name ?? "Admin"} on{" "}
-                    {format(new Date(detailBooking.admin_note_updated_at), "PPpp")}
-                  </p>
-                ) : null}
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => saveAdminNote.mutate()}
-                    disabled={saveAdminNote.isPending}
-                  >
-                    Save note
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setConfirmDeleteNoteOpen(true)}
-                    disabled={clearAdminNote.isPending}
-                  >
-                    Delete note
-                  </Button>
-                </div>
-              </section>
+              <AdminBookingNoteFields
+                key={`${detailBooking.id}-${detailBooking.admin_note_updated_at ?? ""}`}
+                booking={detailBooking}
+                onSave={(note) => saveAdminNote.mutate(note)}
+                onRequestClear={() => setConfirmDeleteNoteOpen(true)}
+                savePending={saveAdminNote.isPending}
+                clearPending={clearAdminNote.isPending}
+              />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -485,44 +623,219 @@ export default function AdminBookingsPage() {
         ))}
       </div>
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, court..."
-            className="pl-9"
-          />
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, email, court, venue..."
+              className="pl-9"
+            />
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            <Select
+              value={sortBy}
+              onValueChange={(v) =>
+                setSortBy(v as "latest_date" | "oldest_date" | "amount_high" | "amount_low")
+              }
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="latest_date">Latest date (default)</SelectItem>
+                <SelectItem value="oldest_date">Oldest date</SelectItem>
+                <SelectItem value="amount_high">Amount: high to low</SelectItem>
+                <SelectItem value="amount_low">Amount: low to high</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="relative shrink-0"
+              aria-label="Open booking filters"
+              onClick={openFilterDialog}
+            >
+              <ListFilter className="h-4 w-4" />
+              {activeBookingFilterCount > 0 ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
+                  {activeBookingFilterCount}
+                </span>
+              ) : null}
+            </Button>
+          </div>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={sortBy}
-          onValueChange={(v) =>
-            setSortBy(v as "latest_date" | "oldest_date" | "amount_high" | "amount_low")
-          }
+
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap items-center gap-2",
+            appliedBookingFilterChips.length > 0 && "rounded-lg border border-border/60 bg-muted/20 p-2",
+          )}
         >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="latest_date">Latest date (default)</SelectItem>
-            <SelectItem value="oldest_date">Oldest date</SelectItem>
-            <SelectItem value="amount_high">Amount: high to low</SelectItem>
-            <SelectItem value="amount_low">Amount: low to high</SelectItem>
-          </SelectContent>
-        </Select>
+          {appliedBookingFilterChips.map((chip) => (
+            <Badge
+              key={chip.id}
+              variant="secondary"
+              className="h-7 shrink-0 gap-0.5 rounded-full pr-0.5 pl-2.5 font-normal"
+            >
+              <span className="max-w-[220px] truncate sm:max-w-[320px]">
+                {chip.label}
+              </span>
+              <button
+                type="button"
+                onClick={chip.onRemove}
+                className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={`Remove filter ${chip.label}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+          {activeBookingFilterCount > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={clearAllBookingFilters}
+            >
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+        <DialogContent className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Filters</DialogTitle>
+            <DialogDescription>
+              Narrow bookings by status, venue, reservation date, or time window. Apply to update the
+              list; filter chips above can be removed individually.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="admin-booking-filter-status">Status</Label>
+              <Select
+                value={draftFilters.status}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    status: v as AdminBookingFilters["status"],
+                  }))
+                }
+              >
+                <SelectTrigger id="admin-booking-filter-status" className="mt-1.5">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="admin-booking-filter-venue">Venue</Label>
+              <Select
+                value={draftFilters.venueId || "__all_venues__"}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    venueId: v === "__all_venues__" ? "" : v,
+                  }))
+                }
+              >
+                <SelectTrigger id="admin-booking-filter-venue" className="mt-1.5">
+                  <SelectValue placeholder="All venues" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all_venues__">All venues</SelectItem>
+                  {venueFilterOptions.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="admin-booking-filter-date-from">Reservation from</Label>
+                <Input
+                  id="admin-booking-filter-date-from"
+                  type="date"
+                  className="mt-1.5"
+                  value={draftFilters.dateFrom}
+                  onChange={(e) =>
+                    setDraftFilters((d) => ({ ...d, dateFrom: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="admin-booking-filter-date-to">Reservation through</Label>
+                <Input
+                  id="admin-booking-filter-date-to"
+                  type="date"
+                  className="mt-1.5"
+                  value={draftFilters.dateTo}
+                  onChange={(e) =>
+                    setDraftFilters((d) => ({ ...d, dateTo: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="admin-booking-filter-time-from">Time from (HH:mm)</Label>
+                <Input
+                  id="admin-booking-filter-time-from"
+                  className="mt-1.5"
+                  placeholder="09:00"
+                  value={draftFilters.timeFrom}
+                  onChange={(e) =>
+                    setDraftFilters((d) => ({ ...d, timeFrom: e.target.value.trim() }))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="admin-booking-filter-time-to">Time through (HH:mm)</Label>
+                <Input
+                  id="admin-booking-filter-time-to"
+                  className="mt-1.5"
+                  placeholder="18:00"
+                  value={draftFilters.timeTo}
+                  onChange={(e) =>
+                    setDraftFilters((d) => ({ ...d, timeTo: e.target.value.trim() }))
+                  }
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Time filters match any booking segment that overlaps the window (24-hour clock, same as
+              listings).
+            </p>
+          </div>
+          <DialogFooter className="flex-row flex-wrap gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={resetFilterDraft}
+            >
+              Reset
+            </Button>
+            <Button type="button" className="font-heading" onClick={applyFilterDraft}>
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -564,6 +877,11 @@ export default function AdminBookingsPage() {
                         {formatStatusLabel(b.status)}
                       </Badge>
                     </div>
+                    {b.establishment_name?.trim() ? (
+                      <p className="mb-1 text-xs text-muted-foreground">
+                        {b.establishment_name.trim()}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                       <span className="font-medium text-foreground">
                         {b.player_name}

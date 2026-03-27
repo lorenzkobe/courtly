@@ -89,8 +89,8 @@ export async function POST(req: Request) {
     available_hours: { open: venue.opens_at, close: venue.closes_at },
     type: "indoor",
     surface: "sport_court",
-    status: (body.status as Court["status"]) ?? "active",
-  }
+    status: "active",
+  };
   mockDb.courts.push(court);
   // TODO(notifications): emit placeholder event hook for "court created"
   // to superadmin recipients when Supabase notifications are wired.

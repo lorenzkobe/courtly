@@ -39,9 +39,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
     ...(typeof patch.name === "string" && patch.name.trim()
       ? { name: patch.name.trim() }
       : {}),
-    ...(patch.status === "active" || patch.status === "closed"
-      ? { status: patch.status }
-      : {}),
   };
   return NextResponse.json(withReviewSummary(mockDb.courts[idx]!));
 }

@@ -4,6 +4,16 @@ import { canMutateCourt } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
 import type { Booking } from "@/lib/types/courtly";
 
+function hydrateBooking(b: Booking): Booking {
+  const court = mockDb.courts.find((c) => c.id === b.court_id);
+  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : undefined;
+  return {
+    ...b,
+    venue_id: venue?.id,
+    establishment_name: b.establishment_name ?? venue?.name,
+  };
+}
+
 type Ctx = { params: Promise<{ id: string }> };
 
 function canReadBooking(
@@ -31,7 +41,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (!canReadBooking(user, booking)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(booking);
+  return NextResponse.json(hydrateBooking(booking));
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
@@ -100,5 +110,5 @@ export async function PATCH(req: Request, ctx: Ctx) {
   mockDb.bookings[idx] = { ...mockDb.bookings[idx], ...patch };
   // TODO(notifications): emit placeholder event hook for booking changes/completion
   // when Supabase notifications are wired.
-  return NextResponse.json(mockDb.bookings[idx]);
+  return NextResponse.json(hydrateBooking(mockDb.bookings[idx]!));
 }

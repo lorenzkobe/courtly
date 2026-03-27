@@ -126,6 +126,8 @@ export type Booking = {
   id: string;
   court_id: string;
   court_name?: string;
+  /** Hydrated from the court’s venue on read APIs. */
+  venue_id?: string;
   establishment_name?: string;
   sport?: CourtSport;
   /** Same id on segments created in one checkout (e.g. split around unavailable hours). */

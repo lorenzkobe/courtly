@@ -94,7 +94,7 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
 
 export default function MyBookingsPage() {
   const [tab, setTab] = useState("bookings");
-  const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("confirmed");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
   const { user } = useAuth();

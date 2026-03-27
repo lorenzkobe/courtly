@@ -142,7 +142,6 @@ export default function SuperadminVenueDetailPage() {
                   <TableRow>
                     <TableHead>Court</TableHead>
                     <TableHead>Location</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -154,11 +153,6 @@ export default function SuperadminVenueDetailPage() {
                           <MapPin className="h-3.5 w-3.5 shrink-0" />
                           {c.location}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="outline" className="font-normal">
-                          {formatStatusLabel(c.status)}
-                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}

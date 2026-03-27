@@ -60,6 +60,25 @@ export async function PATCH(req: Request, ctx: Ctx) {
     };
   };
   const cur = mockDb.venues[idx];
+
+  if (patch.status === "closed") {
+    const courtIds = new Set(
+      mockDb.courts.filter((c) => c.venue_id === venueId).map((c) => c.id),
+    );
+    const hasConfirmed = mockDb.bookings.some(
+      (b) => courtIds.has(b.court_id) && b.status === "confirmed",
+    );
+    if (hasConfirmed) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot set this venue inactive while it has confirmed bookings. Cancel or complete those bookings first.",
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const next: Venue = {
     ...cur,
     ...(typeof patch.name === "string" && patch.name.trim()

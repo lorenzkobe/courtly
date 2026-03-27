@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
+import { timeRangesOverlap } from "@/lib/booking-overlap";
 import type { VenueClosure } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string }> };
@@ -64,6 +65,26 @@ export async function POST(req: Request, ctx: Ctx) {
   }
   if (!reason) {
     return NextResponse.json({ error: "Reason is required" }, { status: 400 });
+  }
+
+  const courtIds = new Set(
+    mockDb.courts.filter((c) => c.venue_id === venueId).map((c) => c.id),
+  );
+  const conflicts = mockDb.bookings.some(
+    (b) =>
+      courtIds.has(b.court_id) &&
+      b.date === date &&
+      b.status === "confirmed" &&
+      timeRangesOverlap(b.start_time, b.end_time, start_time, end_time),
+  );
+  if (conflicts) {
+    return NextResponse.json(
+      {
+        error:
+          "Cannot mark this time unavailable — a confirmed booking on one of this venue’s courts overlaps it. Cancel or reschedule the booking first.",
+      },
+      { status: 409 },
+    );
   }
 
   const row: VenueClosure = {

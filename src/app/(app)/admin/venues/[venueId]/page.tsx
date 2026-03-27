@@ -42,7 +42,6 @@ import { cn, formatStatusLabel } from "@/lib/utils";
 
 const defaultForm = {
   name: "",
-  status: "active" as Court["status"],
 };
 
 const defaultClosureForm = {
@@ -104,14 +103,6 @@ export default function AdminVenueCourtsPage() {
   const [selectedClosureTimes, setSelectedClosureTimes] = useState<string[]>([]);
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
-  const [venueWideOpen, setVenueWideOpen] = useState(false);
-  const [venueWideForm, setVenueWideForm] = useState({
-    date: format(addDays(new Date(), 1), "yyyy-MM-dd"),
-    start_time: "09:00",
-    end_time: "17:00",
-    reason: "special_event",
-    note: "",
-  });
 
   const { data: courts = [], isLoading } = useQuery({
     queryKey: ["admin-venues"],
@@ -137,53 +128,10 @@ export default function AdminVenueCourtsPage() {
   const venue = venueDetail?.venue;
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
 
-  const { data: venueWideClosures = [] } = useQuery({
-    queryKey: ["venue-closures-admin", venueId],
-    queryFn: async () => {
-      const { data } = await courtlyApi.venueClosures.list(venueId);
-      return data;
-    },
-    enabled: !!venueId,
-  });
-
-  const addVenueWideClosure = useMutation({
-    mutationFn: async () => {
-      await courtlyApi.venueClosures.create(venueId, {
-        date: venueWideForm.date.trim(),
-        start_time: venueWideForm.start_time.trim(),
-        end_time: venueWideForm.end_time.trim(),
-        reason: venueWideForm.reason.trim(),
-        note: venueWideForm.note.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["venue-closures-admin", venueId] });
-      toast.success("Venue-wide block added — all courts unavailable for that window.");
-      setVenueWideOpen(false);
-    },
-    onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not add venue closure"));
-    },
-  });
-
-  const removeVenueWideClosure = useMutation({
-    mutationFn: async (closureId: string) => {
-      await courtlyApi.venueClosures.remove(venueId, closureId);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["venue-closures-admin", venueId] });
-      toast.success("Venue-wide block removed");
-    },
-    onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not remove block"));
-    },
-  });
-
   const upsert = useMutation({
     mutationFn: async () => {
       const payload = {
         name: form.name.trim(),
-        status: form.status,
         venue_id: venueId,
       };
       if (editing) {
@@ -316,7 +264,6 @@ export default function AdminVenueCourtsPage() {
     setEditing(court);
     setForm({
       name: court.name || "",
-      status: court.status || "active",
     });
     setOpen(true);
   };
@@ -348,11 +295,6 @@ export default function AdminVenueCourtsPage() {
       })),
     });
     setVenueOpen(true);
-  };
-
-  const statusColors: Record<string, string> = {
-    active: "bg-primary/10 text-primary",
-    closed: "bg-destructive/10 text-destructive",
   };
 
   const closureTimeSlots = useMemo(() => {
@@ -422,9 +364,6 @@ export default function AdminVenueCourtsPage() {
       >
         <Button variant="outline" onClick={() => setClosureOpen(true)}>
           Set unavailability
-        </Button>
-        <Button variant="outline" onClick={() => setVenueWideOpen(true)}>
-          Close entire venue
         </Button>
         <Button variant="outline" onClick={openVenueEdit}>
           Edit venue
@@ -497,59 +436,6 @@ export default function AdminVenueCourtsPage() {
         </Card>
       ) : null}
 
-      {venue ? (
-        <Card className="mb-6 border-border/50">
-          <CardContent className="p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-heading font-semibold text-foreground">
-                  Whole-venue closures
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Blocks every court at this venue for the time window (e.g. holiday, full facility event).
-                </p>
-              </div>
-              <Button type="button" size="sm" variant="outline" onClick={() => setVenueWideOpen(true)}>
-                Add block
-              </Button>
-            </div>
-            {venueWideClosures.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No venue-wide blocks scheduled.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {venueWideClosures
-                  .slice()
-                  .sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time))
-                  .map((c) => (
-                    <li
-                      key={c.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
-                    >
-                      <span>
-                        <span className="font-medium">{c.date}</span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          {c.start_time}–{c.end_time} · {c.reason}
-                        </span>
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        disabled={removeVenueWideClosure.isPending}
-                        onClick={() => removeVenueWideClosure.mutate(c.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -577,12 +463,6 @@ export default function AdminVenueCourtsPage() {
                   <h3 className="font-heading font-bold text-foreground">
                     {court.name}
                   </h3>
-                  <Badge
-                    variant="outline"
-                    className={statusColors[court.status] ?? ""}
-                  >
-                    {formatStatusLabel(court.status)}
-                  </Badge>
                 </div>
                 <div className="shrink-0 text-xs text-muted-foreground">Click to edit</div>
               </CardContent>
@@ -607,21 +487,6 @@ export default function AdminVenueCourtsPage() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
-              </div>
-              <div className="col-span-2">
-                <Label>Availability *</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm({ ...form, status: v as Court["status"] })}
-                >
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="closed">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
             </div>
             {editing ? (
@@ -906,79 +771,6 @@ export default function AdminVenueCourtsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={venueWideOpen} onOpenChange={setVenueWideOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-heading">Close entire venue</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Date *</Label>
-              <Input
-                type="date"
-                className="mt-1.5"
-                value={venueWideForm.date}
-                onChange={(e) =>
-                  setVenueWideForm((prev) => ({ ...prev, date: e.target.value }))
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Start *</Label>
-                <Input
-                  className="mt-1.5"
-                  placeholder="HH:mm"
-                  value={venueWideForm.start_time}
-                  onChange={(e) =>
-                    setVenueWideForm((prev) => ({ ...prev, start_time: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>End *</Label>
-                <Input
-                  className="mt-1.5"
-                  placeholder="HH:mm"
-                  value={venueWideForm.end_time}
-                  onChange={(e) =>
-                    setVenueWideForm((prev) => ({ ...prev, end_time: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Reason *</Label>
-              <Input
-                className="mt-1.5"
-                value={venueWideForm.reason}
-                onChange={(e) =>
-                  setVenueWideForm((prev) => ({ ...prev, reason: e.target.value }))
-                }
-              />
-            </div>
-            <div>
-              <Label>Note</Label>
-              <Textarea
-                className="mt-1.5"
-                value={venueWideForm.note}
-                onChange={(e) =>
-                  setVenueWideForm((prev) => ({ ...prev, note: e.target.value }))
-                }
-              />
-            </div>
-            <Button
-              type="button"
-              className="w-full"
-              disabled={addVenueWideClosure.isPending}
-              onClick={() => addVenueWideClosure.mutate()}
-            >
-              {addVenueWideClosure.isPending ? "Saving…" : "Save venue-wide block"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={closureOpen} onOpenChange={setClosureOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -1029,9 +821,22 @@ export default function AdminVenueCourtsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <Label>Time slots *</Label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Time slots *</Label>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={closureTimeSlots.length === 0}
+                    onClick={() => setSelectedClosureTimes([...closureTimeSlots])}
+                  >
+                    Select all hours
+                  </Button>
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Toggle one or more hours to mark unavailable.
+                  Toggle one or more hours to mark unavailable (same as closing the whole venue for that day
+                  when all courts and all hours are selected).
                 </p>
                 <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {closureTimeSlots.map((time) => {

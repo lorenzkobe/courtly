@@ -5,6 +5,16 @@ import { splitBookingAmounts } from "@/lib/platform-fee";
 import { mockDb } from "@/lib/mock/db";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
+function hydrateBooking(b: Booking): Booking {
+  const court = mockDb.courts.find((c) => c.id === b.court_id);
+  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : undefined;
+  return {
+    ...b,
+    venue_id: venue?.id,
+    establishment_name: b.establishment_name ?? venue?.name,
+  };
+}
+
 function bookingSport(b: Booking): CourtSport | undefined {
   if (b.sport) return b.sport;
   const court = mockDb.courts.find((c) => c.id === b.court_id);
@@ -45,7 +55,7 @@ export async function GET(req: Request) {
   list.sort((a, b) =>
     String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),
   );
-  return NextResponse.json(list);
+  return NextResponse.json(list.map(hydrateBooking));
 }
 
 export async function POST(req: Request) {
@@ -116,5 +126,5 @@ export async function POST(req: Request) {
   mockDb.bookings.push(booking);
   // TODO(notifications): emit placeholder event hook for "booking created"
   // when Supabase notifications are wired.
-  return NextResponse.json(booking);
+  return NextResponse.json(hydrateBooking(booking));
 }
