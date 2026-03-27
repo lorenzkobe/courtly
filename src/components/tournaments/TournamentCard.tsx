@@ -21,11 +21,10 @@ export default function TournamentCard({
 }: {
   tournament: Tournament;
 }) {
-  const t = tournament;
   const spotsLeft =
-    (t.max_participants || 0) - (t.current_participants || 0);
-  const fillPct = t.max_participants
-    ? ((t.current_participants || 0) / t.max_participants) * 100
+    (tournament.max_participants || 0) - (tournament.current_participants || 0);
+  const fillPct = tournament.max_participants
+    ? ((tournament.current_participants || 0) / tournament.max_participants) * 100
     : 0;
 
   return (
@@ -34,35 +33,35 @@ export default function TournamentCard({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-heading text-xl font-bold text-foreground transition-colors group-hover:text-primary">
-              {t.name}
+              {tournament.name}
             </h3>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="font-medium capitalize">
-                {formatLabels[t.format] ?? t.format}
+                {formatLabels[tournament.format] ?? tournament.format}
               </Badge>
-              <SkillBadge level={t.skill_level} />
+              <SkillBadge level={tournament.skill_level} />
             </div>
           </div>
           <div className="shrink-0 text-right">
             <span className="font-heading text-2xl font-bold text-primary">
-              {formatPhpCompact(t.entry_fee)}
+              {formatPhpCompact(tournament.entry_fee)}
             </span>
             <p className="text-xs text-muted-foreground">entry fee</p>
           </div>
         </div>
 
         <p className="mb-4 line-clamp-2 text-sm text-muted-foreground">
-          {t.description}
+          {tournament.description}
         </p>
 
         <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar className="h-4 w-4" />
-            {format(new Date(t.date), "MMM d, yyyy")}
+            {format(new Date(tournament.date), "MMM d, yyyy")}
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
             <MapPin className="h-4 w-4" />
-            {t.location}
+            {tournament.location}
           </div>
         </div>
 
@@ -70,7 +69,7 @@ export default function TournamentCard({
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="flex items-center gap-1 text-muted-foreground">
               <Users className="h-3.5 w-3.5" />
-              {t.current_participants || 0}/{t.max_participants} registered
+              {tournament.current_participants || 0}/{tournament.max_participants} registered
             </span>
             <span
               className={`font-medium ${spotsLeft <= 3 ? "text-destructive" : "text-primary"}`}
@@ -81,19 +80,21 @@ export default function TournamentCard({
           <Progress value={fillPct} className="h-2" />
         </div>
 
-        {t.prize ? (
+        {tournament.prize ? (
           <div className="mb-4 rounded-lg bg-accent/20 p-2.5 text-sm">
-            <span className="font-semibold">Prize:</span> {t.prize}
+            <span className="font-semibold">Prize:</span> {tournament.prize}
           </div>
         ) : null}
 
         <Button
           className="w-full font-heading font-semibold"
-          variant={t.status === "registration_open" ? "default" : "secondary"}
+          variant={
+            tournament.status === "registration_open" ? "default" : "secondary"
+          }
           asChild
         >
-          <Link href={`/tournaments/${t.id}`}>
-            {t.status === "registration_open"
+          <Link href={`/tournaments/${tournament.id}`}>
+            {tournament.status === "registration_open"
               ? "Register Now"
               : "View Details"}
           </Link>

@@ -64,17 +64,19 @@ type CourtDateGroup = {
 
 function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
   const map = new Map<string, Booking[]>();
-  for (const b of list) {
-    const key = b.booking_group_id
-      ? `grp:${b.booking_group_id}`
-      : `day:${b.court_id}\0${b.date}`;
+  for (const booking of list) {
+    const key = booking.booking_group_id
+      ? `grp:${booking.booking_group_id}`
+      : `day:${booking.court_id}\0${booking.date}`;
     const arr = map.get(key);
-    if (arr) arr.push(b);
-    else map.set(key, [b]);
+    if (arr) arr.push(booking);
+    else map.set(key, [booking]);
   }
   const groups: CourtDateGroup[] = [];
   for (const [key, items] of map) {
-    items.sort((a, c) => a.start_time.localeCompare(c.start_time));
+    items.sort((left, right) =>
+      left.start_time.localeCompare(right.start_time),
+    );
     const first = items[0];
     groups.push({
       key,
@@ -114,14 +116,19 @@ export default function MyBookingsPage() {
   });
 
   const bookingGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = bookings.filter((b) => {
-      if (statusFilter !== "all" && b.status !== statusFilter) return false;
-      if (!q) return true;
-      const court = (b.court_name ?? "").toLowerCase();
-      const date = b.date.toLowerCase();
-      const status = b.status.toLowerCase();
-      return court.includes(q) || date.includes(q) || status.includes(q);
+    const searchQuery = query.trim().toLowerCase();
+    const filtered = bookings.filter((booking) => {
+      if (statusFilter !== "all" && booking.status !== statusFilter)
+        return false;
+      if (!searchQuery) return true;
+      const court = (booking.court_name ?? "").toLowerCase();
+      const date = booking.date.toLowerCase();
+      const status = booking.status.toLowerCase();
+      return (
+        court.includes(searchQuery) ||
+        date.includes(searchQuery) ||
+        status.includes(searchQuery)
+      );
     });
 
     const groups = groupCourtBookings(filtered);
@@ -230,60 +237,63 @@ export default function MyBookingsPage() {
                 title="No bookings match your filters"
                 description="Try changing search, status, or sort options."
               />
-            ) : bookingGroups.map((g) => {
-              const sessionTotal = g.items.reduce(
-                (sum, b) => sum + (b.total_cost ?? 0),
+            ) : bookingGroups.map((group) => {
+              const sessionTotal = group.items.reduce(
+                (sum, booking) => sum + (booking.total_cost ?? 0),
                 0,
               );
-              const showSessionTotal = g.items.length > 1;
+              const showSessionTotal = group.items.length > 1;
 
               return (
                 <Card
-                  key={g.key}
+                  key={group.key}
                   className="border-border/50 transition-shadow hover:shadow-md"
                 >
                   <CardContent className="p-5">
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <h3 className="font-heading font-bold text-foreground">
-                          {g.courtName}
+                          {group.courtName}
                         </h3>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                           <span className="inline-flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 shrink-0" />
-                            {g.date &&
-                              format(new Date(`${g.date}T12:00:00`), "EEE, MMM d, yyyy")}
+                            {group.date &&
+                              format(
+                                new Date(`${group.date}T12:00:00`),
+                                "EEE, MMM d, yyyy",
+                              )}
                           </span>
                         </div>
-                        {g.items.length > 1 ? (
+                        {group.items.length > 1 ? (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {g.items[0]?.booking_group_id
+                            {group.items[0]?.booking_group_id
                               ? "One booking with multiple reserved times (unavailable hours in between were skipped)."
-                              : `${g.items.length} reserved times on this day.`}
+                              : `${group.items.length} reserved times on this day.`}
                           </p>
                         ) : null}
                       </div>
                       <Button size="sm" variant="outline" className="shrink-0" asChild>
-                        <Link href={`/my-bookings/${g.detailBookingId}`}>
+                        <Link href={`/my-bookings/${group.detailBookingId}`}>
                           Details
                         </Link>
                       </Button>
                     </div>
 
                     <ul className="divide-y divide-border/60 border-t border-border/60">
-                      {g.items.map((b) => {
-                        const hours = bookingDurationHours(b);
+                      {group.items.map((booking) => {
+                        const hours = bookingDurationHours(booking);
                         return (
                           <li
-                            key={b.id}
+                            key={booking.id}
                             className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                           >
                             <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                 <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
                                   <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                  {formatTimeShort(b.start_time)} –{" "}
-                                  {formatTimeShort(b.end_time)}
+                                  {formatTimeShort(booking.start_time)} –{" "}
+                                  {formatTimeShort(booking.end_time)}
                                 </span>
                                 <span className="text-sm text-muted-foreground">
                                   ({hours} {hours === 1 ? "hr" : "hrs"} booked)
@@ -292,12 +302,12 @@ export default function MyBookingsPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge
                                   variant="outline"
-                                  className={statusStyles[b.status] ?? ""}
+                                  className={statusStyles[booking.status] ?? ""}
                                 >
-                                  {formatStatusLabel(b.status)}
+                                  {formatStatusLabel(booking.status)}
                                 </Badge>
                                 <span className="text-sm font-semibold text-foreground tabular-nums">
-                                  {formatPhp(b.total_cost ?? 0)}
+                                  {formatPhp(booking.total_cost ?? 0)}
                                 </span>
                               </div>
                             </div>
@@ -334,9 +344,9 @@ export default function MyBookingsPage() {
         </EmptyState>
       ) : (
         <div className="space-y-4">
-          {registrations.map((r) => (
+          {registrations.map((registration) => (
             <Card
-              key={r.id}
+              key={registration.id}
               className="border-border/50 transition-shadow hover:shadow-md"
             >
               <CardContent className="p-5">
@@ -344,18 +354,20 @@ export default function MyBookingsPage() {
                   <div>
                     <div className="mb-1 flex items-center gap-2">
                       <h3 className="font-heading font-bold text-foreground">
-                        {r.tournament_name || "Tournament"}
+                        {registration.tournament_name || "Tournament"}
                       </h3>
                       <Badge
                         variant="outline"
-                        className={statusStyles[r.status] ?? ""}
+                        className={statusStyles[registration.status] ?? ""}
                       >
-                        {formatStatusLabel(r.status)}
+                        {formatStatusLabel(registration.status)}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {r.player_name}{" "}
-                      {r.partner_name ? `& ${r.partner_name}` : ""}
+                      {registration.player_name}{" "}
+                      {registration.partner_name
+                        ? `& ${registration.partner_name}`
+                        : ""}
                     </p>
                   </div>
                 </div>

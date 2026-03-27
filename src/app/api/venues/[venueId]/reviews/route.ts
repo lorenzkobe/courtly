@@ -8,10 +8,10 @@ type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { venueId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const courtsAtVenue = mockDb.courts.filter((c) => c.venue_id === venueId);
+  const courtsAtVenue = mockDb.courts.filter((court) => court.venue_id === venueId);
   const displayCourt = courtsAtVenue[0];
   if (!displayCourt) {
     return NextResponse.json({
@@ -21,7 +21,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   }
 
   const list = mockDb.courtReviews
-    .filter((r) => r.venue_id === venueId)
+    .filter((review) => review.venue_id === venueId)
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
   return NextResponse.json({
@@ -37,7 +37,7 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const { venueId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as {
@@ -62,9 +62,9 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "rating must be 1–5" }, { status: 400 });
   }
 
-  const booking = mockDb.bookings.find((b) => b.id === bookingId);
+  const booking = mockDb.bookings.find((row) => row.id === bookingId);
   const bookingCourt = booking
-    ? mockDb.courts.find((c) => c.id === booking.court_id)
+    ? mockDb.courts.find((row) => row.id === booking.court_id)
     : undefined;
   if (!booking || !bookingCourt || bookingCourt.venue_id !== venueId) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -81,7 +81,7 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (mockDb.courtReviews.some((r) => r.booking_id === bookingId)) {
+  if (mockDb.courtReviews.some((review) => review.booking_id === bookingId)) {
     return NextResponse.json(
       { error: "This booking already has a review" },
       { status: 409 },

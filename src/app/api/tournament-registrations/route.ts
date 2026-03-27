@@ -7,7 +7,7 @@ export async function GET(req: Request) {
 
   let list = [...mockDb.registrations];
   if (email) {
-    list = list.filter((r) => r.player_email === email);
+    list = list.filter((registration) => registration.player_email === email);
   }
   list.sort((a, b) =>
     String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),

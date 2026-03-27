@@ -9,13 +9,13 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   return NextResponse.json(
-    mockDb.managedUsers.map((u) => ({
-      ...u,
+    mockDb.managedUsers.map((managedUser) => ({
+      ...managedUser,
       venue_ids:
-        u.role === "admin"
+        managedUser.role === "admin"
           ? mockDb.venueAdminAssignments
-              .filter((a) => a.admin_user_id === u.id)
-              .map((a) => a.venue_id)
+              .filter((assignment) => assignment.admin_user_id === managedUser.id)
+              .map((assignment) => assignment.venue_id)
           : [],
     })),
   );
@@ -43,7 +43,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
   }
 
-  if (mockDb.managedUsers.some((u) => u.email.toLowerCase() === email)) {
+  if (
+    mockDb.managedUsers.some(
+      (managedUser) => managedUser.email.toLowerCase() === email,
+    )
+  ) {
     return NextResponse.json({ error: "Email already in use" }, { status: 409 });
   }
 
@@ -61,7 +65,7 @@ export async function POST(req: Request) {
   mockDb.managedUsers.push(managed);
   if (role === "admin" && Array.isArray(body.venue_ids)) {
     for (const venueId of body.venue_ids) {
-      if (!mockDb.venues.some((v) => v.id === venueId)) continue;
+      if (!mockDb.venues.some((venue) => venue.id === venueId)) continue;
       mockDb.venueAdminAssignments.push({
         id: `va-${crypto.randomUUID().slice(0, 8)}`,
         venue_id: venueId,

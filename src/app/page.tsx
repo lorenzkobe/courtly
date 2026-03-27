@@ -230,26 +230,29 @@ export default function HomePage() {
             </p>
           </div>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((f) => (
+            {features.map((feature) => {
+              const FeatureIcon = feature.icon;
+              return (
               <Card
-                key={f.title}
+                key={feature.title}
                 className="group border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <CardContent className="p-7">
                   <div
-                    className={`mb-5 flex h-12 w-12 items-center justify-center rounded-2xl ${f.color}`}
+                    className={`mb-5 flex h-12 w-12 items-center justify-center rounded-2xl ${feature.color}`}
                   >
-                    <f.icon className="h-6 w-6" />
+                    <FeatureIcon className="h-6 w-6" />
                   </div>
                   <h3 className="mb-2 font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
-                    {f.title}
+                    {feature.title}
                   </h3>
                   <p className="text-sm leading-relaxed text-muted-foreground">
-                    {f.description}
+                    {feature.description}
                   </p>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -279,15 +282,15 @@ export default function HomePage() {
                 title: "Play!",
                 desc: "Show up and enjoy. Your booking is confirmed instantly.",
               },
-            ].map((s) => (
-              <div key={s.step} className="relative">
+            ].map((step) => (
+              <div key={step.step} className="relative">
                 <div className="mb-3 font-heading text-6xl font-black text-primary/20">
-                  {s.step}
+                  {step.step}
                 </div>
                 <h3 className="mb-2 font-heading text-xl font-bold text-secondary-foreground">
-                  {s.title}
+                  {step.title}
                 </h3>
-                <p className="text-sm text-muted-foreground">{s.desc}</p>
+                <p className="text-sm text-muted-foreground">{step.desc}</p>
               </div>
             ))}
           </div>
@@ -300,26 +303,26 @@ export default function HomePage() {
             Loved by players
           </h2>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {testimonials.map((t) => (
-              <Card key={t.name} className="border-border/50">
+            {testimonials.map((testimonial) => (
+              <Card key={testimonial.name} className="border-border/50">
                 <CardContent className="p-6">
                   <div className="mb-4 flex gap-0.5">
-                    {[...Array(5)].map((_, i) => (
+                    {[...Array(5)].map((_, starIndex) => (
                       <Star
-                        key={i}
+                        key={starIndex}
                         className="h-4 w-4 fill-chart-3 text-chart-3"
                       />
                     ))}
                   </div>
                   <p className="mb-4 text-sm leading-relaxed text-foreground">
-                    &ldquo;{t.text}&rdquo;
+                    &ldquo;{testimonial.text}&rdquo;
                   </p>
                   <div>
                     <p className="font-heading text-sm font-semibold text-foreground">
-                      {t.name}
+                      {testimonial.name}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {t.sport} Player
+                      {testimonial.sport} Player
                     </p>
                   </div>
                 </CardContent>

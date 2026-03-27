@@ -88,7 +88,7 @@ export default function SuperadminUsersPage() {
   const visibleUsers = useMemo(() => {
     let list = [...users];
     if (roleFilter !== "all") {
-      list = list.filter((u) => u.role === roleFilter);
+      list = list.filter((managedUser) => managedUser.role === roleFilter);
     }
     list.sort((a, b) => {
       switch (sortBy) {
@@ -189,7 +189,9 @@ export default function SuperadminUsersPage() {
   const venueLabels = (ids: string[]) => {
     if (!ids.length) return "—";
     return ids
-      .map((id) => accounts.find((a) => a.id === id)?.name ?? id)
+      .map(
+        (id) => accounts.find((venue) => venue.id === id)?.name ?? id,
+      )
       .join(", ");
   };
 
@@ -279,17 +281,17 @@ export default function SuperadminUsersPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {visibleUsers.map((u) => (
+          {visibleUsers.map((user) => (
             <Card
-              key={u.id}
+              key={user.id}
               className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
-              onClick={() => openEdit(u)}
+              onClick={() => openEdit(user)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  openEdit(u);
+                  openEdit(user);
                 }
               }}
             >
@@ -297,29 +299,30 @@ export default function SuperadminUsersPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-heading font-semibold text-foreground">
-                      {u.full_name}
+                      {user.full_name}
                     </span>
                     <Badge
                       variant="outline"
-                      className={roleBadgeClass(u.role)}
+                      className={roleBadgeClass(user.role)}
                     >
-                      {formatStatusLabel(u.role)}
+                      {formatStatusLabel(user.role)}
                     </Badge>
-                    {u.is_active === false ? (
+                    {user.is_active === false ? (
                       <Badge variant="outline" className="bg-destructive/10 text-destructive">
                         Inactive
                       </Badge>
                     ) : null}
                   </div>
-                  <p className="text-sm text-muted-foreground">{u.email}</p>
+                  <p className="text-sm text-muted-foreground">{user.email}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Venues:{" "}
                     <span className="font-medium text-foreground">
-                      {u.role === "admin"
+                      {user.role === "admin"
                         ? venueLabels(
-                            ((u as ManagedUser & { venue_ids?: string[] }).venue_ids ?? []).filter(
-                              Boolean,
-                            ),
+                            (
+                              (user as ManagedUser & { venue_ids?: string[] })
+                                .venue_ids ?? []
+                            ).filter(Boolean),
                           )
                         : "—"}
                     </span>
@@ -409,10 +412,10 @@ export default function SuperadminUsersPage() {
               <div>
                 <Label>Venue assignments</Label>
                 <div className="mt-1.5 space-y-2 rounded-md border border-border/60 p-3">
-                  {accounts.map((a) => {
-                    const checked = form.venue_ids.includes(a.id);
+                  {accounts.map((venue) => {
+                    const checked = form.venue_ids.includes(venue.id);
                     return (
-                      <label key={a.id} className="flex items-center gap-2 text-sm">
+                      <label key={venue.id} className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -420,12 +423,12 @@ export default function SuperadminUsersPage() {
                             setForm((prev) => ({
                               ...prev,
                               venue_ids: e.target.checked
-                                ? [...prev.venue_ids, a.id]
-                                : prev.venue_ids.filter((id) => id !== a.id),
+                                ? [...prev.venue_ids, venue.id]
+                                : prev.venue_ids.filter((id) => id !== venue.id),
                             }))
                           }
                         />
-                        <span>{a.name}</span>
+                        <span>{venue.name}</span>
                       </label>
                     );
                   })}

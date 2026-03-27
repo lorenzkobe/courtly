@@ -12,7 +12,9 @@ function parse(raw: string | null): Set<string> {
   try {
     const arr = JSON.parse(raw) as unknown;
     if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.filter((x): x is string => typeof x === "string"));
+    return new Set(
+      arr.filter((element): element is string => typeof element === "string"),
+    );
   } catch {
     return new Set();
   }

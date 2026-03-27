@@ -4,7 +4,9 @@ import { mockDb } from "@/lib/mock/db";
 import type { SessionUser } from "@/lib/types/courtly";
 
 function userForRole(role: SessionUser["role"]): SessionUser | null {
-  const managed = mockDb.managedUsers.find((u) => u.role === role);
+  const managed = mockDb.managedUsers.find(
+    (managedUser) => managedUser.role === role,
+  );
   if (!managed) return null;
   return {
     id: managed.id,

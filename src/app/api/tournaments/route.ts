@@ -11,10 +11,10 @@ export async function GET(req: Request) {
 
   let list = [...mockDb.tournaments];
   if (sport) {
-    list = list.filter((t) => t.sport === sport);
+    list = list.filter((tournament) => tournament.sport === sport);
   }
   if (status) {
-    list = list.filter((t) => t.status === status);
+    list = list.filter((tournament) => tournament.status === status);
   }
   list.sort((a, b) => {
     const cmp = a.date.localeCompare(b.date);

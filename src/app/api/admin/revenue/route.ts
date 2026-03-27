@@ -15,7 +15,7 @@ function attachVenueNames(
 ): ReturnType<typeof aggregateRevenueByCourt> {
   return rows.map((row) => {
     const name = row.venue_id
-      ? mockDb.venues.find((v) => v.id === row.venue_id)?.name ?? null
+      ? mockDb.venues.find((venue) => venue.id === row.venue_id)?.name ?? null
       : null;
     return { ...row, venue_name: name };
   });
@@ -48,11 +48,11 @@ function platformVenueRows(
     agg.set(key, cur);
   }
 
-  const out: RevenueByAccountRow[] = venues.map((v) => {
-    const hit = agg.get(v.id);
+  const out: RevenueByAccountRow[] = venues.map((venue) => {
+    const hit = agg.get(venue.id);
     return {
-      venue_id: v.id,
-      venue_name: v.name,
+      venue_id: venue.id,
+      venue_name: venue.name,
       court_net: hit?.court_net ?? 0,
       booking_fees: hit?.booking_fees ?? 0,
       customer_total: hit?.customer_total ?? 0,
@@ -60,7 +60,7 @@ function platformVenueRows(
     };
   });
 
-  if (mockDb.courts.some((c) => !c.venue_id)) {
+  if (mockDb.courts.some((court) => !court.venue_id)) {
     const hit = agg.get("");
     out.push({
       venue_id: "",
@@ -101,7 +101,7 @@ export async function GET(req: Request) {
   if (
     venueFilter &&
     venueFilter !== "unassigned" &&
-    !mockDb.venues.some((v) => v.id === venueFilter)
+    !mockDb.venues.some((venue) => venue.id === venueFilter)
   ) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
@@ -111,27 +111,29 @@ export async function GET(req: Request) {
     const ids = new Set(
       manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
     );
-    courts = courts.filter((c) => ids.has(c.id));
+    courts = courts.filter((court) => ids.has(court.id));
   }
 
   if (venueFilter === "unassigned") {
-    courts = courts.filter((c) => !c.venue_id);
+    courts = courts.filter((court) => !court.venue_id);
   } else if (venueFilter) {
-    courts = courts.filter((c) => c.venue_id === venueFilter);
+    courts = courts.filter((court) => court.venue_id === venueFilter);
   }
 
-  const courtIds = new Set(courts.map((c) => c.id));
-  let bookings = mockDb.bookings.filter((b) => courtIds.has(b.court_id));
+  const courtIds = new Set(courts.map((court) => court.id));
+  let bookings = mockDb.bookings.filter((booking) =>
+    courtIds.has(booking.court_id),
+  );
   bookings = filterBookingsByDateRange(bookings, dateFrom, dateTo);
 
   const byCourt = attachVenueNames(aggregateRevenueByCourt(bookings, courts));
 
   const totals = byCourt.reduce(
-    (acc, r) => ({
-      court_net: acc.court_net + r.court_net,
-      booking_fees: acc.booking_fees + r.booking_fees,
-      customer_total: acc.customer_total + r.customer_total,
-      booking_count: acc.booking_count + r.booking_count,
+    (acc, row) => ({
+      court_net: acc.court_net + row.court_net,
+      booking_fees: acc.booking_fees + row.booking_fees,
+      customer_total: acc.customer_total + row.customer_total,
+      booking_count: acc.booking_count + row.booking_count,
     }),
     { court_net: 0, booking_fees: 0, customer_total: 0, booking_count: 0 },
   );
@@ -152,8 +154,8 @@ export async function GET(req: Request) {
   if (venueFilter === "unassigned") {
     focus_venue = { id: "unassigned", name: "Unassigned venue" };
   } else if (venueFilter) {
-    const v = mockDb.venues.find((x) => x.id === venueFilter);
-    focus_venue = v ? { id: v.id, name: v.name } : null;
+    const venue = mockDb.venues.find((row) => row.id === venueFilter);
+    focus_venue = venue ? { id: venue.id, name: venue.name } : null;
   }
 
   const body: import("@/lib/types/courtly").RevenueSummaryResponse = {

@@ -11,10 +11,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { venueId, reviewId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === venueId,
+    (review) => review.id === reviewId && review.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -80,10 +80,10 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { venueId, reviewId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === venueId,
+    (review) => review.id === reviewId && review.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

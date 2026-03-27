@@ -6,7 +6,7 @@ import { withVenueHydration } from "@/lib/court-response";
 import type { Court, CourtSport, Venue } from "@/lib/types/courtly";
 
 function venueById(venueId: string): Venue | undefined {
-  return mockDb.venues.find((v) => v.id === venueId);
+  return mockDb.venues.find((venue) => venue.id === venueId);
 }
 
 function hydrateCourt(court: Court): Court {
@@ -29,18 +29,21 @@ export async function GET(req: Request) {
     const ids = new Set(
       manageableCourtIds(user, list, mockDb.venueAdminAssignments),
     );
-    list = list.filter((c) => ids.has(c.id));
+    list = list.filter((court) => ids.has(court.id));
   } else {
     // Public listings: only active courts under active venues are bookable.
-    list = list.filter((c) => c.status === "active" && venueById(c.venue_id)?.status === "active");
+    list = list.filter(
+      (court) =>
+        court.status === "active" && venueById(court.venue_id)?.status === "active",
+    );
   }
 
   if (status) {
-    list = list.filter((c) => c.status === status);
+    list = list.filter((court) => court.status === status);
   }
 
   if (sport) {
-    list = list.filter((c) => venueById(c.venue_id)?.sport === sport);
+    list = list.filter((court) => venueById(court.venue_id)?.sport === sport);
   }
 
   return NextResponse.json(list.map(hydrateCourt));
@@ -67,7 +70,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
   const isAssigned = mockDb.venueAdminAssignments.some(
-    (a) => a.admin_user_id === user.id && a.venue_id === venue_id,
+    (assignment) =>
+      assignment.admin_user_id === user.id && assignment.venue_id === venue_id,
   );
   if (!isAssigned) {
     return NextResponse.json(

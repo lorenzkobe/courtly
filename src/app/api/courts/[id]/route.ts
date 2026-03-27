@@ -13,7 +13,7 @@ function withReviewSummary(court: Court) {
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === id);
+  const court = mockDb.courts.find((row) => row.id === id);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(withReviewSummary(court));
 }
@@ -21,7 +21,7 @@ export async function GET(_req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.courts.findIndex((c) => c.id === id);
+  const idx = mockDb.courts.findIndex((row) => row.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const court = mockDb.courts[idx];
@@ -46,7 +46,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.courts.findIndex((c) => c.id === id);
+  const idx = mockDb.courts.findIndex((row) => row.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const court = mockDb.courts[idx];
@@ -55,7 +55,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   const hasActiveBookings = mockDb.bookings.some(
-    (b) => b.court_id === court.id && b.status === "confirmed",
+    (booking) => booking.court_id === court.id && booking.status === "confirmed",
   );
   if (hasActiveBookings) {
     return NextResponse.json(

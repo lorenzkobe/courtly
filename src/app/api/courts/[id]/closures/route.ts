@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Public: `?date=yyyy-MM-dd` for that day. Authenticated venue/superadmin: all blocks for the court. */
 export async function GET(req: Request, ctx: Ctx) {
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
+  const court = mockDb.courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
@@ -18,7 +18,7 @@ export async function GET(req: Request, ctx: Ctx) {
 
   if (date) {
     const list = mockDb.courtClosures.filter(
-      (c) => c.court_id === courtId && c.date === date,
+      (closure) => closure.court_id === courtId && closure.date === date,
     );
     return NextResponse.json(list);
   }
@@ -29,7 +29,7 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const list = mockDb.courtClosures
-    .filter((c) => c.court_id === courtId)
+    .filter((closure) => closure.court_id === courtId)
     .sort((a, b) => {
       const d = a.date.localeCompare(b.date);
       return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
@@ -40,7 +40,7 @@ export async function GET(req: Request, ctx: Ctx) {
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
+  const court = mockDb.courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -69,11 +69,16 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const conflicts = mockDb.bookings.some(
-    (b) =>
-      b.court_id === courtId &&
-      b.date === date &&
-      b.status === "confirmed" &&
-      timeRangesOverlap(b.start_time, b.end_time, start_time, end_time),
+    (booking) =>
+      booking.court_id === courtId &&
+      booking.date === date &&
+      booking.status === "confirmed" &&
+      timeRangesOverlap(
+        booking.start_time,
+        booking.end_time,
+        start_time,
+        end_time,
+      ),
   );
   if (conflicts) {
     return NextResponse.json(

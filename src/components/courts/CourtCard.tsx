@@ -96,13 +96,13 @@ export default function CourtCard({
         </div>
         {court.amenities?.length ? (
           <div className="mb-4 flex flex-wrap gap-1.5">
-            {court.amenities.map((a) => (
+            {court.amenities.map((amenity) => (
               <Badge
-                key={a}
+                key={amenity}
                 variant="outline"
                 className="text-xs font-normal"
               >
-                {formatAmenityLabel(a)}
+                {formatAmenityLabel(amenity)}
               </Badge>
             ))}
           </div>

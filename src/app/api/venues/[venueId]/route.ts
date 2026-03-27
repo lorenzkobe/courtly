@@ -7,21 +7,22 @@ type Ctx = { params: Promise<{ venueId: string }> };
 
 function isAssignedVenueAdmin(userId: string, venueId: string): boolean {
   return mockDb.venueAdminAssignments.some(
-    (a) => a.admin_user_id === userId && a.venue_id === venueId,
+    (assignment) =>
+      assignment.admin_user_id === userId && assignment.venue_id === venueId,
   );
 }
 
 function venueDetail(venueId: string) {
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return null;
-  const courts: Court[] = mockDb.courts.filter((c) => c.venue_id === venueId);
+  const courts: Court[] = mockDb.courts.filter((court) => court.venue_id === venueId);
   const adminIds = new Set(
     mockDb.venueAdminAssignments
-      .filter((a) => a.venue_id === venueId)
-      .map((a) => a.admin_user_id),
+      .filter((assignment) => assignment.venue_id === venueId)
+      .map((assignment) => assignment.admin_user_id),
   );
   const admins = mockDb.managedUsers.filter(
-    (u) => u.role === "admin" && adminIds.has(u.id),
+    (managedUser) => managedUser.role === "admin" && adminIds.has(managedUser.id),
   );
   return { venue, courts, admins };
 }
@@ -49,7 +50,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!canWrite) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const idx = mockDb.venues.findIndex((a) => a.id === venueId);
+  const idx = mockDb.venues.findIndex((venue) => venue.id === venueId);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const patch = (await req.json()) as Partial<Venue> & {
@@ -63,10 +64,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   if (patch.status === "closed") {
     const courtIds = new Set(
-      mockDb.courts.filter((c) => c.venue_id === venueId).map((c) => c.id),
+      mockDb.courts
+        .filter((court) => court.venue_id === venueId)
+        .map((court) => court.id),
     );
     const hasConfirmed = mockDb.bookings.some(
-      (b) => courtIds.has(b.court_id) && b.status === "confirmed",
+      (booking) => courtIds.has(booking.court_id) && booking.status === "confirmed",
     );
     if (hasConfirmed) {
       return NextResponse.json(
@@ -116,13 +119,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     if (existingAdminId) {
       const assignedAdmin = mockDb.managedUsers.find(
-        (u) => u.id === existingAdminId && u.role === "admin",
+        (managedUser) =>
+          managedUser.id === existingAdminId && managedUser.role === "admin",
       );
       if (!assignedAdmin) {
         return NextResponse.json({ error: "Selected admin user was not found" }, { status: 404 });
       }
       const exists = mockDb.venueAdminAssignments.some(
-        (a) => a.venue_id === venueId && a.admin_user_id === assignedAdmin.id,
+        (assignment) =>
+          assignment.venue_id === venueId &&
+          assignment.admin_user_id === assignedAdmin.id,
       );
       if (!exists) {
         mockDb.venueAdminAssignments.push({
@@ -144,10 +150,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
         );
       }
       let assignedAdmin = mockDb.managedUsers.find(
-        (u) => u.email.toLowerCase() === email && u.role === "admin",
+        (managedUser) =>
+          managedUser.email.toLowerCase() === email && managedUser.role === "admin",
       );
       if (!assignedAdmin) {
-        if (mockDb.managedUsers.some((u) => u.email.toLowerCase() === email)) {
+        if (
+          mockDb.managedUsers.some(
+            (managedUser) => managedUser.email.toLowerCase() === email,
+          )
+        ) {
           return NextResponse.json(
             { error: "Email already belongs to a non-admin account" },
             { status: 409 },
@@ -164,7 +175,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
         mockDb.managedUsers.push(assignedAdmin);
       }
       const exists = mockDb.venueAdminAssignments.some(
-        (a) => a.venue_id === venueId && a.admin_user_id === assignedAdmin.id,
+        (assignment) =>
+          assignment.venue_id === venueId &&
+          assignment.admin_user_id === assignedAdmin.id,
       );
       if (!exists) {
         mockDb.venueAdminAssignments.push({
@@ -186,14 +199,17 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { venueId } = await ctx.params;
-  const idx = mockDb.venues.findIndex((a) => a.id === venueId);
+  const idx = mockDb.venues.findIndex((venue) => venue.id === venueId);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const venueCourtIds = new Set(
-    mockDb.courts.filter((c) => c.venue_id === venueId).map((c) => c.id),
+    mockDb.courts
+      .filter((court) => court.venue_id === venueId)
+      .map((court) => court.id),
   );
   const hasActiveBookings = mockDb.bookings.some(
-    (b) => venueCourtIds.has(b.court_id) && b.status === "confirmed",
+    (booking) =>
+      venueCourtIds.has(booking.court_id) && booking.status === "confirmed",
   );
   if (hasActiveBookings) {
     return NextResponse.json(
@@ -205,7 +221,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     );
   }
 
-  const linked = mockDb.courts.some((c) => c.venue_id === venueId);
+  const linked = mockDb.courts.some((court) => court.venue_id === venueId);
   if (linked) {
     return NextResponse.json(
       {
@@ -218,7 +234,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
 
   mockDb.venues.splice(idx, 1);
   mockDb.venueAdminAssignments = mockDb.venueAdminAssignments.filter(
-    (a) => a.venue_id !== venueId,
+    (assignment) => assignment.venue_id !== venueId,
   );
   return NextResponse.json({ ok: true });
 }

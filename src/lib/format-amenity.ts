@@ -4,6 +4,6 @@ export function formatAmenityLabel(value: string): string {
   if (!cleaned) return "";
   return cleaned
     .split(/\s+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }

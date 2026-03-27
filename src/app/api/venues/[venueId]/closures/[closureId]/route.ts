@@ -9,14 +9,14 @@ type Ctx = { params: Promise<{ venueId: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!user || !canMutateVenue(user, venueId, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const idx = mockDb.venueClosures.findIndex(
-    (c) => c.id === closureId && c.venue_id === venueId,
+    (closure) => closure.id === closureId && closure.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -68,14 +68,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!user || !canMutateVenue(user, venueId, mockDb.venueAdminAssignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const idx = mockDb.venueClosures.findIndex(
-    (c) => c.id === closureId && c.venue_id === venueId,
+    (closure) => closure.id === closureId && closure.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
   mockDb.venueClosures.splice(idx, 1);

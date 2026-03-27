@@ -31,13 +31,13 @@ export const useAdminCustomAmenities = create<State>()(
       },
 
       addUniqueForEmail: (email, label) => {
-        const t = label.trim();
-        if (!email || !t) return false;
-        const k = norm(t);
+        const trimmedLabel = label.trim();
+        if (!email || !trimmedLabel) return false;
+        const normalizedKey = norm(trimmedLabel);
         const cur = get().byEmail[email] ?? EMPTY_LIST;
-        if (cur.some((x) => norm(x) === k)) return false;
+        if (cur.some((amenity) => norm(amenity) === normalizedKey)) return false;
         set({
-          byEmail: { ...get().byEmail, [email]: [...cur, t] },
+          byEmail: { ...get().byEmail, [email]: [...cur, trimmedLabel] },
         });
         return true;
       },
@@ -52,9 +52,9 @@ export const useAdminCustomAmenities = create<State>()(
 
       removeSavedForEmail: (email, label) => {
         if (!email) return;
-        const k = norm(label);
+        const normalizedKey = norm(label);
         const cur = get().byEmail[email] ?? EMPTY_LIST;
-        const next = cur.filter((x) => norm(x) !== k);
+        const next = cur.filter((amenity) => norm(amenity) !== normalizedKey);
         set({
           byEmail: { ...get().byEmail, [email]: next },
         });

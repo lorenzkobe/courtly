@@ -11,7 +11,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;
-  const idx = mockDb.managedUsers.findIndex((u) => u.id === id);
+  const idx = mockDb.managedUsers.findIndex((managedUser) => managedUser.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const patch = (await req.json()) as Partial<ManagedUser> & {
@@ -28,7 +28,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (typeof patch.email === "string" && patch.email.includes("@")) {
     const next = patch.email.trim().toLowerCase();
     const taken = mockDb.managedUsers.some(
-      (u, i) => i !== idx && u.email.toLowerCase() === next,
+      (managedUser, index) =>
+        index !== idx && managedUser.email.toLowerCase() === next,
     );
     if (taken) {
       return NextResponse.json({ error: "Email already in use" }, { status: 409 });
@@ -51,14 +52,18 @@ export async function PATCH(req: Request, ctx: Ctx) {
   mockDb.managedUsers[idx] = next;
   if (Array.isArray(patch.venue_ids) && role === "admin") {
     const allowedVenueIds = new Set(
-      patch.venue_ids.filter((venueId) => mockDb.venues.some((v) => v.id === venueId)),
+      patch.venue_ids.filter((venueId) =>
+        mockDb.venues.some((venue) => venue.id === venueId),
+      ),
     );
     mockDb.venueAdminAssignments = mockDb.venueAdminAssignments.filter(
-      (a) => a.admin_user_id !== id || allowedVenueIds.has(a.venue_id),
+      (assignment) =>
+        assignment.admin_user_id !== id || allowedVenueIds.has(assignment.venue_id),
     );
     for (const venueId of allowedVenueIds) {
       const exists = mockDb.venueAdminAssignments.some(
-        (a) => a.admin_user_id === id && a.venue_id === venueId,
+        (assignment) =>
+          assignment.admin_user_id === id && assignment.venue_id === venueId,
       );
       if (!exists) {
         mockDb.venueAdminAssignments.push({
@@ -72,7 +77,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   if (role !== "admin") {
     mockDb.venueAdminAssignments = mockDb.venueAdminAssignments.filter(
-      (a) => a.admin_user_id !== id,
+      (assignment) => assignment.admin_user_id !== id,
     );
   }
   return NextResponse.json({
@@ -80,8 +85,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
     venue_ids:
       role === "admin"
         ? mockDb.venueAdminAssignments
-            .filter((a) => a.admin_user_id === id)
-            .map((a) => a.venue_id)
+            .filter((assignment) => assignment.admin_user_id === id)
+            .map((assignment) => assignment.venue_id)
         : [],
   });
 }
@@ -95,15 +100,17 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (id === user.id) {
     return NextResponse.json({ error: "You cannot delete your own account" }, { status: 400 });
   }
-  const idx = mockDb.managedUsers.findIndex((u) => u.id === id);
+  const idx = mockDb.managedUsers.findIndex((managedUser) => managedUser.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const assignedVenueIds = new Set(
     mockDb.venueAdminAssignments
-      .filter((a) => a.admin_user_id === id)
-      .map((a) => a.venue_id),
+      .filter((assignment) => assignment.admin_user_id === id)
+      .map((assignment) => assignment.venue_id),
   );
-  const referenced = mockDb.courts.some((c) => assignedVenueIds.has(c.venue_id));
+  const referenced = mockDb.courts.some((court) =>
+    assignedVenueIds.has(court.venue_id),
+  );
   if (referenced) {
     return NextResponse.json(
       {
@@ -115,7 +122,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   mockDb.venueAdminAssignments = mockDb.venueAdminAssignments.filter(
-    (a) => a.admin_user_id !== id,
+    (assignment) => assignment.admin_user_id !== id,
   );
 
   mockDb.managedUsers.splice(idx, 1);

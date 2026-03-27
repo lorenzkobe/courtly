@@ -6,7 +6,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, ctx: Ctx) {
   const { id: tournamentId } = await ctx.params;
-  const tournament = mockDb.tournaments.find((t) => t.id === tournamentId);
+  const tournament = mockDb.tournaments.find((row) => row.id === tournamentId);
   if (!tournament) {
     return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   }
@@ -31,7 +31,7 @@ export async function POST(req: Request, ctx: Ctx) {
   };
   mockDb.registrations.push(reg);
 
-  const idx = mockDb.tournaments.findIndex((t) => t.id === tournamentId);
+  const idx = mockDb.tournaments.findIndex((row) => row.id === tournamentId);
   if (idx !== -1) {
     mockDb.tournaments[idx] = {
       ...mockDb.tournaments[idx],

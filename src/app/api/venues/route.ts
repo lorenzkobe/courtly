@@ -66,7 +66,8 @@ export async function POST(req: Request) {
   let assignedAdmin: ManagedUser | undefined;
   if (existingAdminId) {
     assignedAdmin = mockDb.managedUsers.find(
-      (u) => u.id === existingAdminId && u.role === "admin",
+      (managedUser) =>
+        managedUser.id === existingAdminId && managedUser.role === "admin",
     );
     if (!assignedAdmin) {
       return NextResponse.json({ error: "Selected admin user was not found" }, { status: 404 });
@@ -82,7 +83,11 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    if (mockDb.managedUsers.some((u) => u.email.toLowerCase() === email)) {
+    if (
+      mockDb.managedUsers.some(
+        (managedUser) => managedUser.email.toLowerCase() === email,
+      )
+    ) {
       return NextResponse.json({ error: "Email already in use" }, { status: 409 });
     }
     const adminId = `user-${crypto.randomUUID().slice(0, 8)}`;

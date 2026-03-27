@@ -8,17 +8,17 @@ export async function GET(req: Request, ctx: Ctx) {
   const { searchParams } = new URL(req.url);
   const sport = searchParams.get("sport") as CourtSport | null;
   const { id } = await ctx.params;
-  const t = mockDb.tournaments.find((x) => x.id === id);
-  if (!t) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (sport && t.sport !== sport) {
+  const tournament = mockDb.tournaments.find((row) => row.id === id);
+  if (!tournament) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (sport && tournament.sport !== sport) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json(t);
+  return NextResponse.json(tournament);
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const idx = mockDb.tournaments.findIndex((x) => x.id === id);
+  const idx = mockDb.tournaments.findIndex((row) => row.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const patch = (await req.json()) as Partial<Tournament>;
   mockDb.tournaments[idx] = { ...mockDb.tournaments[idx], ...patch };

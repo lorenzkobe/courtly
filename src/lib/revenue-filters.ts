@@ -1,11 +1,11 @@
 import type { Booking } from "@/lib/types/courtly";
 
 /** Validate YYYY-MM-DD for booking.date comparisons. */
-export function parseIsoDateParam(s: string | null): string | null {
-  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const t = Date.parse(`${s}T12:00:00`);
-  if (Number.isNaN(t)) return null;
-  return s;
+export function parseIsoDateParam(dateParam: string | null): string | null {
+  if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return null;
+  const parsedMs = Date.parse(`${dateParam}T12:00:00`);
+  if (Number.isNaN(parsedMs)) return null;
+  return dateParam;
 }
 
 export function normalizeDateRange(
@@ -34,5 +34,7 @@ export function filterBookingsByDateRange(
   from: string | null,
   to: string | null,
 ): Booking[] {
-  return bookings.filter((b) => bookingInDateRange(b.date, from, to));
+  return bookings.filter((booking) =>
+    bookingInDateRange(booking.date, from, to),
+  );
 }

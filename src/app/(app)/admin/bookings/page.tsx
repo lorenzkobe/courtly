@@ -270,7 +270,11 @@ export default function AdminBookingsPage() {
       queryClient.setQueriesData(
         { queryKey: ["admin-bookings"] },
         (old: Booking[] | undefined) =>
-          old?.map((b) => (b.id === id ? { ...b, status: status as typeof b.status } : b)),
+          old?.map((booking) =>
+            booking.id === id
+              ? { ...booking, status: status as typeof booking.status }
+              : booking,
+          ),
       );
     },
     onError: (error) => {
@@ -313,7 +317,7 @@ export default function AdminBookingsPage() {
   });
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
+    const searchLower = search.toLowerCase();
     const {
       status: statusFilter,
       venueId,
@@ -323,32 +327,33 @@ export default function AdminBookingsPage() {
       timeTo,
     } = appliedFilters;
 
-    const list = bookings.filter((b) => {
-      const statusMatch = statusFilter === "all" || b.status === statusFilter;
-      const venueMatch = !venueId || b.venue_id === venueId;
-      const fromOk = !dateFrom || b.date >= dateFrom;
-      const toOk = !dateTo || b.date <= dateTo;
+    const list = bookings.filter((booking) => {
+      const statusMatch =
+        statusFilter === "all" || booking.status === statusFilter;
+      const venueMatch = !venueId || booking.venue_id === venueId;
+      const fromOk = !dateFrom || booking.date >= dateFrom;
+      const toOk = !dateTo || booking.date <= dateTo;
 
       let timeOk = true;
       if (timeFrom && timeTo) {
         timeOk = timeRangesOverlap(
-          b.start_time,
-          b.end_time,
+          booking.start_time,
+          booking.end_time,
           timeFrom,
           timeTo,
         );
       } else if (timeFrom) {
-        timeOk = b.end_time > timeFrom;
+        timeOk = booking.end_time > timeFrom;
       } else if (timeTo) {
-        timeOk = b.start_time < timeTo;
+        timeOk = booking.start_time < timeTo;
       }
 
       const searchMatch =
         !search ||
-        b.player_name?.toLowerCase().includes(q) ||
-        b.player_email?.toLowerCase().includes(q) ||
-        b.court_name?.toLowerCase().includes(q) ||
-        b.establishment_name?.toLowerCase().includes(q);
+        booking.player_name?.toLowerCase().includes(searchLower) ||
+        booking.player_email?.toLowerCase().includes(searchLower) ||
+        booking.court_name?.toLowerCase().includes(searchLower) ||
+        booking.establishment_name?.toLowerCase().includes(searchLower);
       return statusMatch && venueMatch && fromOk && toOk && timeOk && searchMatch;
     });
     list.sort((a, b) => {
@@ -426,11 +431,13 @@ export default function AdminBookingsPage() {
 
   const stats = {
     total: bookings.length,
-    confirmed: bookings.filter((b) => b.status === "confirmed").length,
-    cancelled: bookings.filter((b) => b.status === "cancelled").length,
+    confirmed: bookings.filter((booking) => booking.status === "confirmed")
+      .length,
+    cancelled: bookings.filter((booking) => booking.status === "cancelled")
+      .length,
     revenue: bookings
-      .filter((b) => b.status !== "cancelled")
-      .reduce((sum, b) => sum + (b.total_cost || 0), 0),
+      .filter((booking) => booking.status !== "cancelled")
+      .reduce((sum, booking) => sum + (booking.total_cost || 0), 0),
   };
 
   return (
@@ -493,23 +500,23 @@ export default function AdminBookingsPage() {
                   <dt className="text-muted-foreground">Reserved times</dt>
                   <dd>
                     <ul className="space-y-2">
-                      {detailSegments.map((s) => (
+                      {detailSegments.map((segment) => (
                         <li
-                          key={s.id}
+                          key={segment.id}
                           className="flex flex-wrap items-center gap-2 text-foreground"
                         >
                           <span>
-                            {formatTimeShort(s.start_time)} –{" "}
-                            {formatTimeShort(s.end_time)}
+                            {formatTimeShort(segment.start_time)} –{" "}
+                            {formatTimeShort(segment.end_time)}
                           </span>
                           <Badge
                             variant="outline"
-                            className={`text-xs ${statusStyles[s.status] ?? ""}`}
+                            className={`text-xs ${statusStyles[segment.status] ?? ""}`}
                           >
-                            {formatStatusLabel(s.status)}
+                            {formatStatusLabel(segment.status)}
                           </Badge>
                           <span className="text-muted-foreground">
-                            {formatPhp(s.total_cost ?? 0)}
+                            {formatPhp(segment.total_cost ?? 0)}
                           </span>
                         </li>
                       ))}
@@ -611,12 +618,12 @@ export default function AdminBookingsPage() {
             value: formatPhp(stats.revenue),
             color: "text-chart-3",
           },
-        ].map((s) => (
-          <Card key={s.label} className="border-border/50">
+        ].map((stat) => (
+          <Card key={stat.label} className="border-border/50">
             <CardContent className="p-5">
-              <p className="mb-1 text-sm text-muted-foreground">{s.label}</p>
-              <p className={`font-heading text-2xl font-bold ${s.color}`}>
-                {s.value}
+              <p className="mb-1 text-sm text-muted-foreground">{stat.label}</p>
+              <p className={`font-heading text-2xl font-bold ${stat.color}`}>
+                {stat.value}
               </p>
             </CardContent>
           </Card>
@@ -849,17 +856,17 @@ export default function AdminBookingsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((b) => (
+          {filtered.map((booking) => (
             <Card
-              key={b.id}
+              key={booking.id}
               className="cursor-pointer border-border/50 transition-shadow hover:shadow-sm"
-              onClick={() => setDetailId(b.id)}
+              onClick={() => setDetailId(booking.id)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  setDetailId(b.id);
+                  setDetailId(booking.id);
                 }
               }}
             >
@@ -868,46 +875,49 @@ export default function AdminBookingsPage() {
                   <div className="flex flex-1 flex-col justify-between">
                     <div className="mb-1.5 flex items-center gap-2">
                       <span className="font-heading font-bold text-foreground">
-                        {b.court_name || "Court"}
+                        {booking.court_name || "Court"}
                       </span>
                       <Badge
                         variant="outline"
-                        className={statusStyles[b.status] ?? ""}
+                        className={statusStyles[booking.status] ?? ""}
                       >
-                        {formatStatusLabel(b.status)}
+                        {formatStatusLabel(booking.status)}
                       </Badge>
                     </div>
-                    {b.establishment_name?.trim() ? (
+                    {booking.establishment_name?.trim() ? (
                       <p className="mb-1 text-xs text-muted-foreground">
-                        {b.establishment_name.trim()}
+                        {booking.establishment_name.trim()}
                       </p>
                     ) : null}
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                       <span className="font-medium text-foreground">
-                        {b.player_name}
+                        {booking.player_name}
                       </span>
-                      <span>{b.player_email}</span>
+                      <span>{booking.player_email}</span>
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3.5 w-3.5" />{" "}
-                        {b.date && format(new Date(b.date), "MMM d, yyyy")}
+                        {booking.date &&
+                          format(new Date(booking.date), "MMM d, yyyy")}
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />{" "}
-                        {formatTimeShort(b.start_time)} –{" "}
-                        {formatTimeShort(b.end_time)}
+                        {formatTimeShort(booking.start_time)} –{" "}
+                        {formatTimeShort(booking.end_time)}
                       </div>
-                      {b.notes?.trim() ? (
+                      {booking.notes?.trim() ? (
                         <span
                           className="max-w-full truncate text-xs text-muted-foreground"
-                          title={b.notes.trim()}
+                          title={booking.notes.trim()}
                         >
-                          {b.notes.trim()}
+                          {booking.notes.trim()}
                         </span>
                       ) : (
                         <span className="invisible max-w-full truncate text-xs">No note</span>
                       )}
                       <div className="font-semibold text-foreground tabular-nums">
-                        {b.total_cost != null ? formatPhp(b.total_cost) : "—"}
+                        {booking.total_cost != null
+                          ? formatPhp(booking.total_cost)
+                          : "—"}
                       </div>
                     </div>
                   </div>

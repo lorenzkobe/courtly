@@ -44,7 +44,7 @@ export default function OpenPlayPage() {
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const queryClient = useQueryClient();
-  const selectedSport = useSelectedSport((s) => s.sport);
+  const selectedSport = useSelectedSport((state) => state.sport);
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["open-play", selectedSport],
@@ -83,7 +83,7 @@ export default function OpenPlayPage() {
   const filtered =
     skillFilter === "all"
       ? sessions
-      : sessions.filter((s) => s.skill_level === skillFilter);
+      : sessions.filter((session) => session.skill_level === skillFilter);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -119,56 +119,56 @@ export default function OpenPlayPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((s) => {
+          {filtered.map((session) => {
             const spotsLeft =
-              (s.max_players || 0) - (s.current_players || 0);
-            const fillPct = s.max_players
-              ? ((s.current_players || 0) / s.max_players) * 100
+              (session.max_players || 0) - (session.current_players || 0);
+            const fillPct = session.max_players
+              ? ((session.current_players || 0) / session.max_players) * 100
               : 0;
-            const isFull = s.status === "full" || spotsLeft <= 0;
+            const isFull = session.status === "full" || spotsLeft <= 0;
 
             return (
               <Card
-                key={s.id}
+                key={session.id}
                 className="group overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
                 <CardContent className="p-6">
                   <div className="mb-3 flex items-start justify-between">
                     <h3 className="font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
-                      {s.title}
+                      {session.title}
                     </h3>
-                    <SkillBadge level={s.skill_level} />
+                    <SkillBadge level={session.skill_level} />
                   </div>
 
                   <div className="mb-4 space-y-2 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
-                      {format(new Date(s.date), "EEE, MMM d")}
+                      {format(new Date(session.date), "EEE, MMM d")}
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      {s.start_time} – {s.end_time}
+                      {session.start_time} – {session.end_time}
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin className="h-4 w-4" />
-                      {s.location}
+                      {session.location}
                     </div>
                     <div className="flex items-center gap-2">
                       <UserPlus className="h-4 w-4" />
-                      Hosted by {s.host_name}
+                      Hosted by {session.host_name}
                     </div>
                   </div>
 
-                  {s.description ? (
+                  {session.description ? (
                     <p className="mb-4 line-clamp-2 text-sm text-muted-foreground">
-                      {s.description}
+                      {session.description}
                     </p>
                   ) : null}
 
                   <div className="mb-4">
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">
-                        {s.current_players}/{s.max_players} players
+                        {session.current_players}/{session.max_players} players
                       </span>
                       <span
                         className={`font-medium ${spotsLeft <= 2 ? "text-destructive" : "text-primary"}`}
@@ -181,12 +181,12 @@ export default function OpenPlayPage() {
 
                   <div className="flex items-center justify-between">
                     <span className="font-heading font-bold text-primary">
-                      {s.fee > 0 ? formatPhpCompact(s.fee) : "Free"}
+                      {session.fee > 0 ? formatPhpCompact(session.fee) : "Free"}
                     </span>
                     <Button
                       size="sm"
                       disabled={isFull}
-                      onClick={() => setJoinSession(s)}
+                      onClick={() => setJoinSession(session)}
                       className="font-heading font-semibold"
                     >
                       {isFull ? "Full" : "Join Session"}

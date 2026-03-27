@@ -17,5 +17,5 @@ export const SPORT_OPTIONS: SportOption[] = [
 export const DEFAULT_SPORT: CourtSport = "pickleball";
 
 export function isSportAvailable(id: CourtSport): boolean {
-  return SPORT_OPTIONS.find((s) => s.id === id)?.comingSoon !== true;
+  return SPORT_OPTIONS.find((option) => option.id === id)?.comingSoon !== true;
 }

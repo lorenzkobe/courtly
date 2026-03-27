@@ -4,13 +4,15 @@ import { canMutateCourt } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
 import type { Booking } from "@/lib/types/courtly";
 
-function hydrateBooking(b: Booking): Booking {
-  const court = mockDb.courts.find((c) => c.id === b.court_id);
-  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : undefined;
+function hydrateBooking(booking: Booking): Booking {
+  const court = mockDb.courts.find((row) => row.id === booking.court_id);
+  const venue = court
+    ? mockDb.venues.find((row) => row.id === court.venue_id)
+    : undefined;
   return {
-    ...b,
+    ...booking,
     venue_id: venue?.id,
-    establishment_name: b.establishment_name ?? venue?.name,
+    establishment_name: booking.establishment_name ?? venue?.name,
   };
 }
 
@@ -22,11 +24,17 @@ function canReadBooking(
 ): boolean {
   if (!user) return false;
   if (user.email) {
-    const a = user.email.trim().toLowerCase();
-    const b = (booking.player_email ?? "").trim().toLowerCase();
-    if (a && b && a === b) return true;
+    const userEmailNormalized = user.email.trim().toLowerCase();
+    const playerEmailNormalized = (booking.player_email ?? "").trim().toLowerCase();
+    if (
+      userEmailNormalized &&
+      playerEmailNormalized &&
+      userEmailNormalized === playerEmailNormalized
+    ) {
+      return true;
+    }
   }
-  const court = mockDb.courts.find((c) => c.id === booking.court_id);
+  const court = mockDb.courts.find((row) => row.id === booking.court_id);
   if (court && canMutateCourt(user, court, mockDb.venueAdminAssignments)) return true;
   return false;
 }
@@ -34,7 +42,7 @@ function canReadBooking(
 export async function GET(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const booking = mockDb.bookings.find((b) => b.id === id);
+  const booking = mockDb.bookings.find((row) => row.id === id);
   if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -47,13 +55,13 @@ export async function GET(_req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.bookings.findIndex((b) => b.id === id);
+  const idx = mockDb.bookings.findIndex((row) => row.id === id);
   if (idx === -1) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const booking = mockDb.bookings[idx];
-  const court = mockDb.courts.find((c) => c.id === booking.court_id);
+  const court = mockDb.courts.find((row) => row.id === booking.court_id);
   const body = (await req.json()) as Partial<Booking> & {
     admin_note?: string;
     clear_admin_note?: boolean;

@@ -131,14 +131,13 @@ export default function TournamentDetailPage() {
     return null;
   }
 
-  const t = tournament;
   const spotsLeft =
-    (t.max_participants || 0) - (t.current_participants || 0);
-  const fillPct = t.max_participants
-    ? ((t.current_participants || 0) / t.max_participants) * 100
+    (tournament.max_participants || 0) - (tournament.current_participants || 0);
+  const fillPct = tournament.max_participants
+    ? ((tournament.current_participants || 0) / tournament.max_participants) * 100
     : 0;
   const isDoubles =
-    t.format === "doubles" || t.format === "mixed_doubles";
+    tournament.format === "doubles" || tournament.format === "mixed_doubles";
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
@@ -153,28 +152,28 @@ export default function TournamentDetailPage() {
       <div className="mb-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">
-            {formatLabels[t.format] ?? t.format}
+            {formatLabels[tournament.format] ?? tournament.format}
           </Badge>
-          <SkillBadge level={t.skill_level} />
+          <SkillBadge level={tournament.skill_level} />
           <Badge variant="outline">
-            {formatStatusLabel(t.status)}
+            {formatStatusLabel(tournament.status)}
           </Badge>
         </div>
         <h1 className="font-heading text-3xl font-bold text-foreground md:text-4xl">
-          {t.name}
+          {tournament.name}
         </h1>
       </div>
 
       <Card className="mb-6 border-border/50">
         <CardContent className="p-6">
-          <p className="mb-6 text-muted-foreground">{t.description}</p>
+          <p className="mb-6 text-muted-foreground">{tournament.description}</p>
           <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Calendar className="h-4 w-4" /> Date
               </div>
               <p className="font-semibold">
-                {format(new Date(t.date), "MMM d, yyyy")}
+                {format(new Date(tournament.date), "MMM d, yyyy")}
               </p>
             </div>
             <div className="space-y-1">
@@ -182,32 +181,32 @@ export default function TournamentDetailPage() {
                 <Clock className="h-4 w-4" /> Time
               </div>
               <p className="font-semibold">
-                {t.start_time} – {t.end_time}
+                {tournament.start_time} – {tournament.end_time}
               </p>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <MapPin className="h-4 w-4" /> Location
               </div>
-              <p className="font-semibold">{t.location}</p>
+              <p className="font-semibold">{tournament.location}</p>
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Trophy className="h-4 w-4" /> Entry Fee
               </div>
               <p className="font-semibold text-primary">
-                {formatPhpCompact(t.entry_fee)}
+                {formatPhpCompact(tournament.entry_fee)}
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {t.prize ? (
+      {tournament.prize ? (
         <Card className="mb-6 border-accent/30 bg-accent/10">
           <CardContent className="p-5">
             <h3 className="mb-1 font-heading font-bold">Prize</h3>
-            <p className="text-sm">{t.prize}</p>
+            <p className="text-sm">{tournament.prize}</p>
           </CardContent>
         </Card>
       ) : null}
@@ -226,12 +225,13 @@ export default function TournamentDetailPage() {
           </div>
           <Progress value={fillPct} className="mb-2 h-3" />
           <p className="text-right text-xs text-muted-foreground">
-            {t.current_participants || 0} of {t.max_participants} registered
+            {tournament.current_participants || 0} of {tournament.max_participants}{" "}
+            registered
           </p>
         </CardContent>
       </Card>
 
-      {t.status === "registration_open" && spotsLeft > 0 ? (
+      {tournament.status === "registration_open" && spotsLeft > 0 ? (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
@@ -244,7 +244,7 @@ export default function TournamentDetailPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="font-heading">
-                Register for {t.name}
+                Register for {tournament.name}
               </DialogTitle>
             </DialogHeader>
             <div className="mt-2 space-y-4">

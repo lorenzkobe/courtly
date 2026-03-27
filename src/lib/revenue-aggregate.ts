@@ -14,23 +14,23 @@ export type BookingFinancials = {
 
 /** Normalize stored or legacy booking amounts for dashboards. */
 export function bookingFinancials(
-  b: Booking,
+  booking: Booking,
   fallbackCourtBookingFee: number | undefined,
 ): BookingFinancials {
   const hasSplit =
-    typeof b.court_subtotal === "number" &&
-    typeof b.booking_fee === "number" &&
-    typeof b.total_cost === "number";
+    typeof booking.court_subtotal === "number" &&
+    typeof booking.booking_fee === "number" &&
+    typeof booking.total_cost === "number";
 
   if (hasSplit) {
     return {
-      court_subtotal: b.court_subtotal!,
-      booking_fee: b.booking_fee!,
-      customer_total: b.total_cost!,
+      court_subtotal: booking.court_subtotal!,
+      booking_fee: booking.booking_fee!,
+      customer_total: booking.total_cost!,
     };
   }
 
-  const raw = b.total_cost ?? 0;
+  const raw = booking.total_cost ?? 0;
   if (raw <= 0) {
     return { court_subtotal: 0, booking_fee: 0, customer_total: 0 };
   }
@@ -58,7 +58,6 @@ export function aggregateRevenueByCourt(
   bookings: Booking[],
   courts: Court[],
 ): CourtRevenueRow[] {
-  const courtMap = new Map(courts.map((c) => [c.id, c]));
   const byCourt = new Map<
     string,
     {
@@ -69,28 +68,28 @@ export function aggregateRevenueByCourt(
     }
   >();
 
-  for (const b of bookings) {
-    if (!COUNTABLE.includes(b.status)) continue;
-    const f = bookingFinancials(b, undefined);
-    const cur = byCourt.get(b.court_id) ?? {
+  for (const booking of bookings) {
+    if (!COUNTABLE.includes(booking.status)) continue;
+    const financials = bookingFinancials(booking, undefined);
+    const cur = byCourt.get(booking.court_id) ?? {
       court_net: 0,
       booking_fees: 0,
       customer_total: 0,
       booking_count: 0,
     };
-    cur.court_net += f.court_subtotal;
-    cur.booking_fees += f.booking_fee;
-    cur.customer_total += f.customer_total;
+    cur.court_net += financials.court_subtotal;
+    cur.booking_fees += financials.booking_fee;
+    cur.customer_total += financials.customer_total;
     cur.booking_count += 1;
-    byCourt.set(b.court_id, cur);
+    byCourt.set(booking.court_id, cur);
   }
 
-  return courts.map((c) => {
-    const agg = byCourt.get(c.id);
+  return courts.map((court) => {
+    const agg = byCourt.get(court.id);
     return {
-      court_id: c.id,
-      court_name: c.name,
-      venue_id: c.venue_id ?? null,
+      court_id: court.id,
+      court_name: court.name,
+      venue_id: court.venue_id ?? null,
       venue_name: null,
       booking_count: agg?.booking_count ?? 0,
       court_net: agg?.court_net ?? 0,

@@ -10,17 +10,17 @@ export async function GET() {
   }
 
   const flagged = mockDb.courtReviews
-    .filter((r) => r.flagged)
-    .map((r) => {
-      const booking = mockDb.bookings.find((b) => b.id === r.booking_id);
+    .filter((review) => review.flagged)
+    .map((review) => {
+      const booking = mockDb.bookings.find((row) => row.id === review.booking_id);
       const court = booking
-        ? mockDb.courts.find((c) => c.id === booking.court_id)
+        ? mockDb.courts.find((row) => row.id === booking.court_id)
         : undefined;
-      const venue = mockDb.venues.find((v) => v.id === r.venue_id);
+      const venue = mockDb.venues.find((row) => row.id === review.venue_id);
       return {
-        ...r,
+        ...review,
         court_name: court?.name ?? booking?.court_name ?? "Court",
-        venue_name: venue?.name ?? r.venue_id,
+        venue_name: venue?.name ?? review.venue_id,
       };
     })
     .sort((a, b) =>

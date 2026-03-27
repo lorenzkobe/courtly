@@ -278,7 +278,7 @@ export default function BookCourtPage() {
       });
       if (!court?.venue_id) return [court!];
       return data
-        .filter((c) => c.venue_id === court.venue_id)
+        .filter((row) => row.venue_id === court.venue_id)
         .sort((a, b) => a.name.localeCompare(b.name));
     },
     enabled: !!court,
@@ -293,7 +293,7 @@ export default function BookCourtPage() {
         court_id: courtId,
         date: dateIso,
       });
-      return data.filter((b) => b.status === "confirmed");
+      return data.filter((booking) => booking.status === "confirmed");
     },
     enabled: !!courtId && !!selectedDate,
   });
@@ -745,10 +745,13 @@ export default function BookCourtPage() {
                     </span>
                     {(court.hourly_rate_windows?.length ?? 0) > 0 ? (
                       <ul className="ml-auto max-w-48 list-inside list-disc text-xs font-normal text-muted-foreground">
-                        {court.hourly_rate_windows!.map((w) => (
-                          <li key={`${w.start}-${w.end}-${w.hourly_rate}`}>
-                            {formatTimeShort(w.start)}–{formatTimeShort(w.end)}:{" "}
-                            {formatPhpCompact(w.hourly_rate)}/hr
+                        {court.hourly_rate_windows!.map((rateWindow) => (
+                          <li
+                            key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                          >
+                            {formatTimeShort(rateWindow.start)}–
+                            {formatTimeShort(rateWindow.end)}:{" "}
+                            {formatPhpCompact(rateWindow.hourly_rate)}/hr
                           </li>
                         ))}
                         <li>
@@ -903,13 +906,13 @@ export default function BookCourtPage() {
                   <dt className="mb-2 text-muted-foreground">Amenities</dt>
                   <dd className="flex flex-wrap gap-1.5">
                     {court.amenities?.length ? (
-                      court.amenities.map((a) => (
+                      court.amenities.map((amenity) => (
                         <Badge
-                          key={a}
+                          key={amenity}
                           variant="outline"
                           className="font-normal"
                         >
-                          {formatAmenityLabel(a)}
+                          {formatAmenityLabel(amenity)}
                         </Badge>
                       ))
                     ) : (
@@ -1074,7 +1077,7 @@ export default function BookCourtPage() {
         </div>
 
         <div className="space-y-6">
-        {establishmentCourts.length > 1 ? (
+        {establishmentCourts.length > 0 ? (
           <Card className="border-border/60">
             <CardContent className="p-4">
               <div className="space-y-2">
@@ -1091,15 +1094,17 @@ export default function BookCourtPage() {
                     <SelectValue placeholder="Choose court" />
                   </SelectTrigger>
                   <SelectContent>
-                    {establishmentCourts.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {courtNumberLabel(c)}
+                    {establishmentCourts.map((establishmentCourt) => (
+                      <SelectItem key={establishmentCourt.id} value={establishmentCourt.id}>
+                        {courtNumberLabel(establishmentCourt)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  This establishment has multiple courts. Choose which court number you want to book.
+                  {establishmentCourts.length > 1
+                    ? "This establishment has multiple courts. Choose which court number you want to book."
+                    : "Choose which court you want to book at this venue."}
                 </p>
               </div>
             </CardContent>

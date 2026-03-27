@@ -53,27 +53,14 @@ function VenueRevenueInner() {
     },
   });
 
-  if (isLoading || !data) {
-    return (
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 md:px-10">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-24 w-full rounded-xl" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const { totals, by_court } = data;
+  const byCourtRows = data?.by_court;
   const byVenue = useMemo(() => {
+    if (!byCourtRows?.length) return [];
     const groups = new Map<
       string,
       {
         venueName: string;
-        rows: typeof by_court;
+        rows: NonNullable<typeof byCourtRows>;
         totals: {
           booking_count: number;
           court_net: number;
@@ -83,7 +70,7 @@ function VenueRevenueInner() {
       }
     >();
 
-    for (const row of by_court) {
+    for (const row of byCourtRows) {
       const key = row.venue_id ?? "unassigned";
       const venueName = row.venue_name ?? "Unassigned venue";
       const existing = groups.get(key) ?? {
@@ -105,7 +92,23 @@ function VenueRevenueInner() {
     }
 
     return [...groups.values()].sort((a, b) => b.totals.customer_total - a.totals.customer_total);
-  }, [by_court]);
+  }, [byCourtRows]);
+
+  if (isLoading || !data) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 md:px-10">
+        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const { totals } = data;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">

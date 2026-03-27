@@ -6,8 +6,8 @@ function venueIdsForAdmin(
 ): Set<string> {
   return new Set(
     assignments
-      .filter((a) => a.admin_user_id === adminUserId)
-      .map((a) => a.venue_id),
+      .filter((assignment) => assignment.admin_user_id === adminUserId)
+      .map((assignment) => assignment.venue_id),
   );
 }
 
@@ -18,13 +18,13 @@ export function manageableCourtIds(
 ): string[] {
   if (!user) return [];
   if (user.role === "superadmin") {
-    return allCourts.map((c) => c.id);
+    return allCourts.map((court) => court.id);
   }
   if (user.role === "admin") {
     const venueIds = venueIdsForAdmin(user.id, assignments);
     return allCourts
-      .filter((c) => venueIds.has(c.venue_id))
-      .map((c) => c.id);
+      .filter((court) => venueIds.has(court.venue_id))
+      .map((court) => court.id);
   }
   return [];
 }

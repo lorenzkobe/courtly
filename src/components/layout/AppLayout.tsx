@@ -122,7 +122,10 @@ export default function AppLayout({
   const navItems = sidebar.items;
   const showSportPicker = sidebar.sectionLabel === null;
 
-  const navPaths = useMemo(() => navItems.map((i) => i.path), [navItems]);
+  const navPaths = useMemo(
+    () => navItems.map((navItem) => navItem.path),
+    [navItems],
+  );
   const currentNavPath = useMemo(
     () => activeNavPath(pathname, navPaths),
     [pathname, navPaths],

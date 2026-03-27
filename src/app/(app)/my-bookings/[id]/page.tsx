@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -32,7 +32,7 @@ import {
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
 import { cn, formatStatusLabel } from "@/lib/utils";
-import type { Booking, CourtReview } from "@/lib/types/courtly";
+import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -40,10 +40,175 @@ const statusStyles: Record<string, string> = {
   completed: "bg-muted text-muted-foreground border-border",
 };
 
+/** Remount when `myReview` appears/changes so draft state stays in sync without an effect. */
+function BookingReviewSection({
+  bookingId,
+  court,
+  myReview,
+}: {
+  bookingId: string;
+  court: Court;
+  myReview: CourtReview | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [ratingDraft, setRatingDraft] = useState(myReview?.rating ?? 0);
+  const [commentDraft, setCommentDraft] = useState(myReview?.comment ?? "");
+  const [confirmDeleteReviewOpen, setConfirmDeleteReviewOpen] = useState(false);
+
+  const invalidateReviews = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ["venue-reviews", court.venue_id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["court", court.id] });
+    void queryClient.invalidateQueries({ queryKey: ["courts"] });
+  }, [queryClient, court.id, court.venue_id]);
+
+  const createReviewMut = useMutation({
+    mutationFn: async () => {
+      await courtlyApi.venueReviews.create(court.venue_id, {
+        booking_id: bookingId,
+        rating: ratingDraft,
+        comment: commentDraft.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Thanks for your review!");
+    },
+    onError: () => toast.error("Could not save review"),
+  });
+
+  const updateReviewMut = useMutation({
+    mutationFn: async () => {
+      if (!myReview) throw new Error("No review");
+      await courtlyApi.venueReviews.update(court.venue_id, myReview.id, {
+        rating: ratingDraft,
+        comment: commentDraft.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Review updated");
+    },
+    onError: () => toast.error("Could not update review"),
+  });
+
+  const deleteReviewMut = useMutation({
+    mutationFn: async () => {
+      if (!myReview) throw new Error("No review");
+      await courtlyApi.venueReviews.remove(court.venue_id, myReview.id);
+    },
+    onSuccess: () => {
+      invalidateReviews();
+      toast.success("Review removed");
+    },
+  });
+
+  return (
+    <>
+      <ConfirmDialog
+        open={confirmDeleteReviewOpen}
+        onOpenChange={setConfirmDeleteReviewOpen}
+        title="Delete your review?"
+        description="This action cannot be undone."
+        confirmLabel="Delete review"
+        isPending={deleteReviewMut.isPending}
+        onConfirm={() => {
+          deleteReviewMut.mutate();
+          setConfirmDeleteReviewOpen(false);
+        }}
+      />
+      <Card className="border-border/50">
+        <CardContent className="space-y-4 p-6">
+          <h2 className="font-heading text-lg font-semibold text-foreground">
+            {myReview ? "Your review" : "Rate this court"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {myReview
+              ? "Update your star rating or note, or remove your review."
+              : "Share a 1–5 star rating after your visit. A short note is optional."}
+          </p>
+          <div className="space-y-2">
+            <Label>Stars</Label>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map((starValue) => (
+                <button
+                  key={starValue}
+                  type="button"
+                  onClick={() => setRatingDraft(starValue)}
+                  className="rounded-md p-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={`${starValue} stars`}
+                >
+                  <Star
+                    className={cn(
+                      "h-8 w-8",
+                      starValue <= ratingDraft
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-muted-foreground/30",
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="review-comment">Review (optional)</Label>
+            <Textarea
+              id="review-comment"
+              rows={3}
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              placeholder="How was the court?"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {myReview ? (
+              <>
+                <Button
+                  type="button"
+                  disabled={
+                    ratingDraft < 1 ||
+                    ratingDraft > 5 ||
+                    updateReviewMut.isPending
+                  }
+                  onClick={() => updateReviewMut.mutate()}
+                >
+                  Save changes
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                  disabled={deleteReviewMut.isPending}
+                  onClick={() => setConfirmDeleteReviewOpen(true)}
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Delete review
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                disabled={
+                  ratingDraft < 1 ||
+                  ratingDraft > 5 ||
+                  createReviewMut.isPending
+                }
+                onClick={() => createReviewMut.mutate()}
+              >
+                Submit review
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 export default function BookingDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { user } = useAuth();
   const bookingId = params.id;
 
@@ -118,76 +283,10 @@ export default function BookingDetailPage() {
 
   const myReview = useMemo(() => {
     if (!reviewBundle?.reviews || !bookingId) return undefined;
-    return reviewBundle.reviews.find((r) => r.booking_id === bookingId);
+    return reviewBundle.reviews.find(
+      (review) => review.booking_id === bookingId,
+    );
   }, [reviewBundle, bookingId]);
-
-  const [ratingDraft, setRatingDraft] = useState(0);
-  const [commentDraft, setCommentDraft] = useState("");
-  const [confirmDeleteReviewOpen, setConfirmDeleteReviewOpen] = useState(false);
-
-  useEffect(() => {
-    if (myReview) {
-      setRatingDraft(myReview.rating);
-      setCommentDraft(myReview.comment ?? "");
-    } else {
-      setRatingDraft(0);
-      setCommentDraft("");
-    }
-  }, [myReview]);
-
-  const invalidateReviews = () => {
-    void queryClient.invalidateQueries({
-      queryKey: ["venue-reviews", court?.venue_id],
-    });
-    void queryClient.invalidateQueries({ queryKey: ["court", booking?.court_id] });
-    void queryClient.invalidateQueries({ queryKey: ["courts"] });
-  };
-
-  const createReviewMut = useMutation({
-    mutationFn: async () => {
-      if (!court?.venue_id) throw new Error("No venue");
-      await courtlyApi.venueReviews.create(court.venue_id, {
-        booking_id: bookingId,
-        rating: ratingDraft,
-        comment: commentDraft.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      invalidateReviews();
-      toast.success("Thanks for your review!");
-    },
-    onError: () => toast.error("Could not save review"),
-  });
-
-  const updateReviewMut = useMutation({
-    mutationFn: async () => {
-      if (!court?.venue_id || !myReview) throw new Error("No review");
-      await courtlyApi.venueReviews.update(
-        court.venue_id,
-        myReview.id,
-        {
-          rating: ratingDraft,
-          comment: commentDraft.trim() || undefined,
-        },
-      );
-    },
-    onSuccess: () => {
-      invalidateReviews();
-      toast.success("Review updated");
-    },
-    onError: () => toast.error("Could not update review"),
-  });
-
-  const deleteReviewMut = useMutation({
-    mutationFn: async () => {
-      if (!court?.venue_id || !myReview) throw new Error("No review");
-      await courtlyApi.venueReviews.remove(court.venue_id, myReview.id);
-    },
-    onSuccess: () => {
-      invalidateReviews();
-      toast.success("Review removed");
-    },
-  });
 
   const loading =
     loadingBooking ||
@@ -250,18 +349,6 @@ export default function BookingDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
-      <ConfirmDialog
-        open={confirmDeleteReviewOpen}
-        onOpenChange={setConfirmDeleteReviewOpen}
-        title="Delete your review?"
-        description="This action cannot be undone."
-        confirmLabel="Delete review"
-        isPending={deleteReviewMut.isPending}
-        onConfirm={() => {
-          deleteReviewMut.mutate();
-          setConfirmDeleteReviewOpen(false);
-        }}
-      />
       <Button
         variant="ghost"
         className="mb-4 -ml-2 text-muted-foreground"
@@ -302,18 +389,18 @@ export default function BookingDetailPage() {
                 Reserved time{multi ? "s" : ""}
               </p>
               <ul className="space-y-3">
-                {segments.map((s) => {
-                  const hours = bookingDurationHours(s);
+                {segments.map((segment) => {
+                  const hours = bookingDurationHours(segment);
                   return (
                     <li
-                      key={s.id}
+                      key={segment.id}
                       className="flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
                           <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          {formatTimeShort(s.start_time)} –{" "}
-                          {formatTimeShort(s.end_time)}
+                          {formatTimeShort(segment.start_time)} –{" "}
+                          {formatTimeShort(segment.end_time)}
                           <span className="text-muted-foreground">
                             ({hours} {hours === 1 ? "hr" : "hrs"})
                           </span>
@@ -321,12 +408,12 @@ export default function BookingDetailPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             variant="outline"
-                            className={statusStyles[s.status] ?? ""}
+                            className={statusStyles[segment.status] ?? ""}
                           >
-                            {formatStatusLabel(s.status)}
+                            {formatStatusLabel(segment.status)}
                           </Badge>
                           <span className="text-sm font-semibold text-foreground tabular-nums">
-                            {formatPhp(s.total_cost ?? 0)}
+                            {formatPhp(segment.total_cost ?? 0)}
                           </span>
                         </div>
                       </div>
@@ -355,90 +442,14 @@ export default function BookingDetailPage() {
         </Card>
 
         {canRate || canEditReview ? (
-          <Card className="border-border/50">
-            <CardContent className="space-y-4 p-6">
-              <h2 className="font-heading text-lg font-semibold text-foreground">
-                {myReview ? "Your review" : "Rate this court"}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {myReview
-                  ? "Update your star rating or note, or remove your review."
-                  : "Share a 1–5 star rating after your visit. A short note is optional."}
-              </p>
-              <div className="space-y-2">
-                <Label>Stars</Label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setRatingDraft(n)}
-                      className="rounded-md p-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label={`${n} stars`}
-                    >
-                      <Star
-                        className={cn(
-                          "h-8 w-8",
-                          n <= ratingDraft
-                            ? "fill-amber-400 text-amber-400"
-                            : "text-muted-foreground/30",
-                        )}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="review-comment">Review (optional)</Label>
-                <Textarea
-                  id="review-comment"
-                  rows={3}
-                  value={commentDraft}
-                  onChange={(e) => setCommentDraft(e.target.value)}
-                  placeholder="How was the court?"
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {myReview ? (
-                  <>
-                    <Button
-                      type="button"
-                      disabled={
-                        ratingDraft < 1 ||
-                        ratingDraft > 5 ||
-                        updateReviewMut.isPending
-                      }
-                      onClick={() => updateReviewMut.mutate()}
-                    >
-                      Save changes
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                      disabled={deleteReviewMut.isPending}
-                      onClick={() => setConfirmDeleteReviewOpen(true)}
-                    >
-                      <Trash2 className="mr-1.5 h-4 w-4" />
-                      Delete review
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    type="button"
-                    disabled={
-                      ratingDraft < 1 ||
-                      ratingDraft > 5 ||
-                      createReviewMut.isPending
-                    }
-                    onClick={() => createReviewMut.mutate()}
-                  >
-                    Submit review
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          court ? (
+            <BookingReviewSection
+              key={myReview?.id ?? "new-review"}
+              bookingId={bookingId}
+              court={court}
+              myReview={myReview}
+            />
+          ) : null
         ) : null}
 
         {court ? (
@@ -460,9 +471,9 @@ export default function BookingDetailPage() {
               </div>
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {court.amenities.map((a) => (
-                    <Badge key={a} variant="outline" className="font-normal">
-                      {formatAmenityLabel(a)}
+                  {court.amenities.map((amenity) => (
+                    <Badge key={amenity} variant="outline" className="font-normal">
+                      {formatAmenityLabel(amenity)}
                     </Badge>
                   ))}
                 </div>

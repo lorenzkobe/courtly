@@ -148,7 +148,7 @@ export default function CourtsPage() {
 
   const uniqueLocations = useMemo(
     () =>
-      [...new Set(venueCards.map((c) => c.location))].sort((a, b) =>
+      [...new Set(venueCards.map((court) => court.location))].sort((a, b) =>
         a.localeCompare(b),
       ),
     [venueCards],
@@ -157,21 +157,21 @@ export default function CourtsPage() {
   const timeOptions = useMemo(() => buildTimeOptions(venueCards), [venueCards]);
 
   const uniqueAmenities = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of venueCards) {
-      for (const a of c.amenities ?? []) s.add(a);
+    const amenitySet = new Set<string>();
+    for (const court of venueCards) {
+      for (const amenity of court.amenities ?? []) amenitySet.add(amenity);
     }
-    return [...s].sort((a, b) => a.localeCompare(b));
+    return [...amenitySet].sort((a, b) => a.localeCompare(b));
   }, [venueCards]);
 
   const sortedRates = useMemo(() => {
-    const s = new Set<number>();
-    for (const c of venueCards) {
-      const { min, max } = courtRateRange(c);
-      s.add(min);
-      s.add(max);
+    const rateSet = new Set<number>();
+    for (const court of venueCards) {
+      const { min, max } = courtRateRange(court);
+      rateSet.add(min);
+      rateSet.add(max);
     }
-    const list = [...s].sort((a, b) => a - b);
+    const list = [...rateSet].sort((a, b) => a - b);
     return list.length ? list : [40, 45, 50, 55];
   }, [venueCards]);
 
@@ -189,34 +189,34 @@ export default function CourtsPage() {
   } = applied;
 
   const filtered = useMemo(() => {
-    return venueCards.filter((c) => {
-      if (typeFilter !== "all" && c.type !== typeFilter) return false;
-      if (favoritesOnly && !favoriteIds.has(c.venue_id)) return false;
-      if (locationFilter !== "all" && c.location !== locationFilter)
+    return venueCards.filter((court) => {
+      if (typeFilter !== "all" && court.type !== typeFilter) return false;
+      if (favoritesOnly && !favoriteIds.has(court.venue_id)) return false;
+      if (locationFilter !== "all" && court.location !== locationFilter)
         return false;
 
       let oMin = openFrom || null;
       let oMax = openTo || null;
       if (oMin && oMax && oMin > oMax) [oMin, oMax] = [oMax, oMin];
-      if (oMin && c.available_hours.open < oMin) return false;
-      if (oMax && c.available_hours.open > oMax) return false;
+      if (oMin && court.available_hours.open < oMin) return false;
+      if (oMax && court.available_hours.open > oMax) return false;
 
       let cMin = closeFrom || null;
       let cMax = closeTo || null;
       if (cMin && cMax && cMin > cMax) [cMin, cMax] = [cMax, cMin];
-      if (cMin && c.available_hours.close < cMin) return false;
-      if (cMax && c.available_hours.close > cMax) return false;
+      if (cMin && court.available_hours.close < cMin) return false;
+      if (cMax && court.available_hours.close > cMax) return false;
 
       let rLo = rateMin;
       let rHi = rateMax;
       if (rLo != null && rHi != null && rLo > rHi) [rLo, rHi] = [rHi, rLo];
-      const { min: cRMin, max: cRMax } = courtRateRange(c);
+      const { min: cRMin, max: cRMax } = courtRateRange(court);
       if (rLo != null && cRMax < rLo) return false;
       if (rHi != null && cRMin > rHi) return false;
 
       if (amenityPick.size > 0) {
-        for (const a of amenityPick) {
-          if (!c.amenities?.includes(a)) return false;
+        for (const amenity of amenityPick) {
+          if (!court.amenities?.includes(amenity)) return false;
         }
       }
       return true;
@@ -525,9 +525,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {formatTimeShort(t)}
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {formatTimeShort(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -551,9 +551,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {formatTimeShort(t)}
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {formatTimeShort(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -589,9 +589,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {formatTimeShort(t)}
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {formatTimeShort(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -615,9 +615,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {formatTimeShort(t)}
+                          {timeOptions.map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {formatTimeShort(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -647,9 +647,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {sortedRates.map((r) => (
-                            <SelectItem key={`min-${r}`} value={String(r)}>
-                              {formatPhpCompact(r)}
+                          {sortedRates.map((rate) => (
+                            <SelectItem key={`min-${rate}`} value={String(rate)}>
+                              {formatPhpCompact(rate)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -673,9 +673,9 @@ export default function CourtsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {sortedRates.map((r) => (
-                            <SelectItem key={`max-${r}`} value={String(r)}>
-                              {formatPhpCompact(r)}
+                          {sortedRates.map((rate) => (
+                            <SelectItem key={`max-${rate}`} value={String(rate)}>
+                              {formatPhpCompact(rate)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -691,20 +691,20 @@ export default function CourtsPage() {
                       Court must include all selected.
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {uniqueAmenities.map((a) => {
-                        const on = draft.amenityPick.has(a);
+                      {uniqueAmenities.map((amenity) => {
+                        const on = draft.amenityPick.has(amenity);
                         return (
                           <button
-                            key={a}
+                            key={amenity}
                             type="button"
-                            onClick={() => toggleDraftAmenity(a)}
+                            onClick={() => toggleDraftAmenity(amenity)}
                             className={cn(
                               "rounded-full border border-border px-3 py-1.5 text-xs font-medium capitalize transition-colors hover:bg-accent",
                               on &&
                                 "border-primary/50 bg-primary/10 text-primary",
                             )}
                           >
-                            {formatAmenityLabel(a)}
+                            {formatAmenityLabel(amenity)}
                           </button>
                         );
                       })}

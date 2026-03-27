@@ -4,7 +4,7 @@ import type { Court } from "@/lib/types/courtly";
 
 /** Merge venue fields and review summary onto a stored court row (mock API responses). */
 export function withVenueHydration(court: Court): Court {
-  const venue = mockDb.venues.find((v) => v.id === court.venue_id);
+  const venue = mockDb.venues.find((row) => row.id === court.venue_id);
   return {
     ...court,
     establishment_name: venue?.name ?? court.establishment_name,

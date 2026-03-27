@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, reviewId } = await ctx.params;
-  const venue = mockDb.venues.find((v) => v.id === venueId);
+  const venue = mockDb.venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (
     !user ||
@@ -18,7 +18,7 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === venueId,
+    (review) => review.id === reviewId && review.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

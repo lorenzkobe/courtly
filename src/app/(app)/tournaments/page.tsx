@@ -20,7 +20,7 @@ import { useSelectedSport } from "@/lib/stores/selected-sport";
 export default function TournamentsPage() {
   const [skillFilter, setSkillFilter] = useState("all");
   const [formatFilter, setFormatFilter] = useState("all");
-  const selectedSport = useSelectedSport((s) => s.sport);
+  const selectedSport = useSelectedSport((state) => state.sport);
 
   const { data: tournaments = [], isLoading } = useQuery({
     queryKey: ["tournaments", selectedSport],
@@ -33,9 +33,11 @@ export default function TournamentsPage() {
     },
   });
 
-  const filtered = tournaments.filter((t) => {
-    const skillMatch = skillFilter === "all" || t.skill_level === skillFilter;
-    const formatMatch = formatFilter === "all" || t.format === formatFilter;
+  const filtered = tournaments.filter((tournament) => {
+    const skillMatch =
+      skillFilter === "all" || tournament.skill_level === skillFilter;
+    const formatMatch =
+      formatFilter === "all" || tournament.format === formatFilter;
     return skillMatch && formatMatch;
   });
 
@@ -85,8 +87,8 @@ export default function TournamentsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {filtered.map((t) => (
-            <TournamentCard key={t.id} tournament={t} />
+          {filtered.map((tournament) => (
+            <TournamentCard key={tournament.id} tournament={tournament} />
           ))}
         </div>
       )}

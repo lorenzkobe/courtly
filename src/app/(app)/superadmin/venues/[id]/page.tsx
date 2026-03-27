@@ -145,13 +145,13 @@ export default function SuperadminVenueDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {courts.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.name}</TableCell>
+                  {courts.map((court) => (
+                    <TableRow key={court.id}>
+                      <TableCell className="font-medium">{court.name}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
                           <MapPin className="h-3.5 w-3.5 shrink-0" />
-                          {c.location}
+                          {court.location}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -174,10 +174,10 @@ export default function SuperadminVenueDetailPage() {
               </p>
             ) : (
               <ul className="space-y-2 text-sm">
-                {admins.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-foreground">{a.full_name}</span>
-                    <span className="text-muted-foreground">{a.email}</span>
+                {admins.map((admin) => (
+                  <li key={admin.id} className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{admin.full_name}</span>
+                    <span className="text-muted-foreground">{admin.email}</span>
                   </li>
                 ))}
               </ul>

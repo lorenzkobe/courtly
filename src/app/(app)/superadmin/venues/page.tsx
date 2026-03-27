@@ -86,7 +86,9 @@ export default function SuperadminVenuesPage() {
     },
   });
 
-  const adminOptions = managedUsers.filter((u) => u.role === "admin");
+  const adminOptions = managedUsers.filter(
+    (managedUser) => managedUser.role === "admin",
+  );
 
   const saveAccount = useMutation({
     mutationFn: async () => {
@@ -98,7 +100,9 @@ export default function SuperadminVenuesPage() {
         hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
         opens_at: form.opens_at,
         closes_at: form.closes_at,
-        amenities: [...new Set(form.amenities.map((a) => a.trim()).filter(Boolean))],
+        amenities: [
+          ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
+        ],
         image_url: form.image_url.trim(),
         initial_admin_user_id:
           form.initial_admin_mode === "existing" && form.initial_admin_user_id.trim()
@@ -194,7 +198,7 @@ export default function SuperadminVenuesPage() {
     setForm((prev) => ({
       ...prev,
       amenities: prev.amenities.includes(amenity)
-        ? prev.amenities.filter((a) => a !== amenity)
+        ? prev.amenities.filter((item) => item !== amenity)
         : [...prev.amenities, amenity],
     }));
   };
@@ -202,7 +206,9 @@ export default function SuperadminVenuesPage() {
   const addCustomAmenity = () => {
     const next = form.customAmenityDraft.trim();
     if (!next) return;
-    const exists = form.amenities.some((a) => normAmenity(a) === normAmenity(next));
+    const exists = form.amenities.some(
+      (item) => normAmenity(item) === normAmenity(next),
+    );
     if (!exists) {
       setForm((prev) => ({
         ...prev,
@@ -258,17 +264,17 @@ export default function SuperadminVenuesPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {venues.map((a) => (
+          {venues.map((venue) => (
             <Card
-              key={a.id}
+              key={venue.id}
               className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
-              onClick={() => openEdit(a)}
+              onClick={() => openEdit(venue)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  openEdit(a);
+                  openEdit(venue);
                 }
               }}
             >
@@ -276,16 +282,16 @@ export default function SuperadminVenuesPage() {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-heading font-bold text-foreground">
-                      {a.name}
+                      {venue.name}
                     </h3>
                     <Badge
                       variant="outline"
-                      className={statusVariant(a.status)}
+                      className={statusVariant(venue.status)}
                     >
-                      {formatStatusLabel(a.status)}
+                      {formatStatusLabel(venue.status)}
                     </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">{a.location}</p>
+                  <p className="text-sm text-muted-foreground">{venue.location}</p>
                 </div>
                 <div className="shrink-0 text-xs text-muted-foreground">Click to edit</div>
               </CardContent>
@@ -375,38 +381,41 @@ export default function SuperadminVenuesPage() {
             <div>
               <Label className="mb-2 block">Amenities</Label>
               <div className="mb-3 flex flex-wrap gap-2">
-                {amenityOptions.map((a) => (
+                {amenityOptions.map((amenity) => (
                   <button
-                    key={a}
+                    key={amenity}
                     type="button"
-                    onClick={() => toggleAmenity(a)}
+                    onClick={() => toggleAmenity(amenity)}
                     className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                      form.amenities.includes(a)
+                      form.amenities.includes(amenity)
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-background text-muted-foreground hover:border-primary/40"
                     }`}
                   >
-                    {formatAmenityLabel(a)}
+                    {formatAmenityLabel(amenity)}
                   </button>
                 ))}
               </div>
-              {form.amenities.filter((a) => !amenityOptions.includes(a)).length > 0 ? (
+              {form.amenities.filter((item) => !amenityOptions.includes(item)).length >
+              0 ? (
                 <div className="mb-3 flex flex-wrap gap-2">
                   {form.amenities
-                    .filter((a) => !amenityOptions.includes(a))
-                    .map((a) => (
+                    .filter((item) => !amenityOptions.includes(item))
+                    .map((customAmenity) => (
                       <Badge
-                        key={a}
+                        key={customAmenity}
                         variant="outline"
                         className="cursor-pointer"
                         onClick={() =>
                           setForm((prev) => ({
                             ...prev,
-                            amenities: prev.amenities.filter((x) => x !== a),
+                            amenities: prev.amenities.filter(
+                              (amenity) => amenity !== customAmenity,
+                            ),
                           }))
                         }
                       >
-                        {formatAmenityLabel(a)} x
+                        {formatAmenityLabel(customAmenity)} x
                       </Badge>
                     ))}
                 </div>
@@ -476,9 +485,9 @@ export default function SuperadminVenuesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Select admin</SelectItem>
-                    {adminOptions.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.full_name} ({u.email})
+                    {adminOptions.map((adminUser) => (
+                      <SelectItem key={adminUser.id} value={adminUser.id}>
+                        {adminUser.full_name} ({adminUser.email})
                       </SelectItem>
                     ))}
                   </SelectContent>

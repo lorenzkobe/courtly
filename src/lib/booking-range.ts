@@ -12,9 +12,9 @@ export function hourFromTime(time: string): number {
 
 /** e.g. `09:00` → `9:00` for display */
 export function formatTimeShort(token: string): string {
-  const [h, m = "00"] = token.split(":");
+  const [h, minutePart = "00"] = token.split(":");
   const hour = Number.parseInt(h ?? "0", 10);
-  const mins = (m ?? "00").slice(0, 2);
+  const mins = (minutePart ?? "00").slice(0, 2);
   if (mins && mins !== "00") {
     return `${hour}:${mins.padStart(2, "0")}`;
   }
@@ -41,10 +41,10 @@ export function occupiedHourStartsFromClosures(
   dateIso: string,
 ): Set<string> {
   const set = new Set<string>();
-  for (const c of closures) {
-    if (c.date !== dateIso) continue;
-    const sh = hourFromTime(c.start_time);
-    const eh = hourFromTime(c.end_time);
+  for (const closure of closures) {
+    if (closure.date !== dateIso) continue;
+    const sh = hourFromTime(closure.start_time);
+    const eh = hourFromTime(closure.end_time);
     for (let h = sh; h < eh; h++) {
       set.add(formatHourToken(h));
     }
@@ -125,5 +125,5 @@ export function selectionCoversBookedSlots(
 }
 
 export function totalBillableHours(segments: BookingSegment[]): number {
-  return segments.reduce((s, x) => s + x.hours, 0);
+  return segments.reduce((sum, segment) => sum + segment.hours, 0);
 }

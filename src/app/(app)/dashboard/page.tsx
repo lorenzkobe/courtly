@@ -65,7 +65,7 @@ const quickActions = [
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const selectedSport = useSelectedSport((s) => s.sport);
+  const selectedSport = useSelectedSport((state) => state.sport);
   const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
   const { data: todaysBookingsRaw = [], isLoading: loadingTodayBookings } =
@@ -89,20 +89,22 @@ export default function DashboardPage() {
 
   const todaysBookings = useMemo(() => {
     return todaysBookingsRaw
-      .filter((b) => b.status !== "cancelled")
+      .filter((booking) => booking.status !== "cancelled")
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }, [todaysBookingsRaw]);
 
   const todayBookingCards = useMemo(() => {
     const map = new Map<string, Booking[]>();
-    for (const b of todaysBookings) {
-      const k = b.booking_group_id ?? `solo:${b.id}`;
-      const arr = map.get(k) ?? [];
-      arr.push(b);
-      map.set(k, arr);
+    for (const booking of todaysBookings) {
+      const groupKey = booking.booking_group_id ?? `solo:${booking.id}`;
+      const arr = map.get(groupKey) ?? [];
+      arr.push(booking);
+      map.set(groupKey, arr);
     }
     return [...map.values()].map((items) =>
-      [...items].sort((a, c) => a.start_time.localeCompare(c.start_time)),
+      [...items].sort((left, right) =>
+        left.start_time.localeCompare(right.start_time),
+      ),
     );
   }, [todaysBookings]);
 
@@ -273,19 +275,19 @@ export default function DashboardPage() {
                           </p>
                         ) : null}
                         <ul className="space-y-1.5 text-sm text-muted-foreground">
-                          {items.map((b) => (
+                          {items.map((booking) => (
                             <li
-                              key={b.id}
+                              key={booking.id}
                               className="flex flex-wrap items-center gap-x-3 gap-y-0.5"
                             >
                               <span className="inline-flex items-center gap-1.5">
                                 <Clock className="h-3.5 w-3.5 shrink-0" />
-                                {formatTimeShort(b.start_time)} –{" "}
-                                {formatTimeShort(b.end_time)}
+                                {formatTimeShort(booking.start_time)} –{" "}
+                                {formatTimeShort(booking.end_time)}
                               </span>
-                              {b.total_cost != null ? (
+                              {booking.total_cost != null ? (
                                 <span className="font-semibold text-foreground tabular-nums">
-                                  {formatPhp(b.total_cost ?? 0)}
+                                  {formatPhp(booking.total_cost ?? 0)}
                                 </span>
                               ) : null}
                             </li>
@@ -332,31 +334,31 @@ export default function DashboardPage() {
               </Link>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {tournaments.map((t) => (
-                <Link key={t.id} href={`/tournaments/${t.id}`}>
+              {tournaments.map((tournament) => (
+                <Link key={tournament.id} href={`/tournaments/${tournament.id}`}>
                   <Card className="group cursor-pointer border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
                     <CardContent className="p-6">
                       <div className="mb-3 flex items-start justify-between">
                         <div>
                           <h3 className="font-heading text-lg font-semibold text-foreground transition-colors group-hover:text-primary">
-                            {t.name}
+                            {tournament.name}
                           </h3>
                           <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
                             <Calendar className="h-3.5 w-3.5" />
-                            {format(new Date(t.date), "MMM d, yyyy")}
+                            {format(new Date(tournament.date), "MMM d, yyyy")}
                           </div>
                         </div>
-                        <SkillBadge level={t.skill_level} />
+                        <SkillBadge level={tournament.skill_level} />
                       </div>
                       <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">
-                        {t.description}
+                        {tournament.description}
                       </p>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <MapPin className="h-3.5 w-3.5" /> {t.location}
+                          <MapPin className="h-3.5 w-3.5" /> {tournament.location}
                         </div>
                         <span className="font-heading font-bold text-primary">
-                          {formatPhpCompact(t.entry_fee)}
+                          {formatPhpCompact(tournament.entry_fee)}
                         </span>
                       </div>
                     </CardContent>
@@ -381,37 +383,37 @@ export default function DashboardPage() {
               </Link>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {sessions.map((s) => (
+              {sessions.map((session) => (
                 <Card
-                  key={s.id}
+                  key={session.id}
                   className="border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
                 >
                   <CardContent className="p-5">
                     <div className="mb-2 flex items-start justify-between">
                       <h3 className="font-heading font-semibold text-foreground">
-                        {s.title}
+                        {session.title}
                       </h3>
-                      <SkillBadge level={s.skill_level} />
+                      <SkillBadge level={session.skill_level} />
                     </div>
                     <div className="mb-3 space-y-1.5 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3.5 w-3.5" />
-                        {format(new Date(s.date), "EEE, MMM d")}
+                        {format(new Date(session.date), "EEE, MMM d")}
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-3.5 w-3.5" />
-                        {s.start_time} – {s.end_time}
+                        {session.start_time} – {session.end_time}
                       </div>
                       <div className="flex items-center gap-2">
-                        <MapPin className="h-3.5 w-3.5" /> {s.location}
+                        <MapPin className="h-3.5 w-3.5" /> {session.location}
                       </div>
                     </div>
                     <div className="flex items-center justify-between border-t border-border/50 pt-2">
                       <span className="text-xs text-muted-foreground">
-                        {s.current_players}/{s.max_players} players
+                        {session.current_players}/{session.max_players} players
                       </span>
                       <span className="font-heading text-sm font-bold text-primary">
-                        {s.fee > 0 ? formatPhpCompact(s.fee) : "Free"}
+                        {session.fee > 0 ? formatPhpCompact(session.fee) : "Free"}
                       </span>
                     </div>
                   </CardContent>

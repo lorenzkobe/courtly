@@ -12,7 +12,7 @@ type Props = {
 
 /** Styled native time input for venue hours (HH:mm). */
 export function VenueTimeInput({ id, value, onChange, className }: Props) {
-  const v =
+  const displayValue =
     value.length >= 5 ? value.slice(0, 5) : value ? `${value}:00`.slice(0, 5) : "07:00";
 
   return (
@@ -27,7 +27,7 @@ export function VenueTimeInput({ id, value, onChange, className }: Props) {
         id={id}
         type="time"
         step={3600}
-        value={v}
+        value={displayValue}
         onChange={(e) => onChange(e.target.value)}
         className="min-w-0 flex-1 bg-transparent text-sm font-medium tabular-nums text-foreground outline-none scheme-dark"
       />

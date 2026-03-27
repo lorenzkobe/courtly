@@ -113,7 +113,7 @@ export default function AdminVenueCourtsPage() {
   });
 
   const venueCourts = useMemo(
-    () => courts.filter((c) => c.venue_id === venueId),
+    () => courts.filter((court) => court.venue_id === venueId),
     [courts, venueId],
   );
 
@@ -164,14 +164,23 @@ export default function AdminVenueCourtsPage() {
         opens_at: venueForm.opens_at,
         closes_at: venueForm.closes_at,
         status: venueForm.status,
-        amenities: [...new Set(venueForm.amenities.map((a) => a.trim()).filter(Boolean))],
+        amenities: [
+          ...new Set(
+            venueForm.amenities.map((amenity) => amenity.trim()).filter(Boolean),
+          ),
+        ],
         image_url: venueForm.image_url.trim(),
         hourly_rate_windows: venueForm.hourly_rate_windows
-          .filter((w) => w.start.trim() && w.end.trim() && w.rate.trim())
-          .map((w) => ({
-            start: w.start.trim(),
-            end: w.end.trim(),
-            hourly_rate: Number.parseFloat(w.rate) || 0,
+          .filter(
+            (rateWindow) =>
+              rateWindow.start.trim() &&
+              rateWindow.end.trim() &&
+              rateWindow.rate.trim(),
+          )
+          .map((rateWindow) => ({
+            start: rateWindow.start.trim(),
+            end: rateWindow.end.trim(),
+            hourly_rate: Number.parseFloat(rateWindow.rate) || 0,
           })),
       });
     },
@@ -288,10 +297,10 @@ export default function AdminVenueCourtsPage() {
       amenities: [...venue.amenities],
       customAmenityDraft: "",
       image_url: venue.image_url,
-      hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((w) => ({
-        start: w.start,
-        end: w.end,
-        rate: String(w.hourly_rate),
+      hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((rateWindow) => ({
+        start: rateWindow.start,
+        end: rateWindow.end,
+        rate: String(rateWindow.hourly_rate),
       })),
     });
     setVenueOpen(true);
@@ -318,7 +327,7 @@ export default function AdminVenueCourtsPage() {
     setVenueForm((prev) => ({
       ...prev,
       amenities: prev.amenities.includes(amenity)
-        ? prev.amenities.filter((a) => a !== amenity)
+        ? prev.amenities.filter((item) => item !== amenity)
         : [...prev.amenities, amenity],
     }));
   };
@@ -326,7 +335,9 @@ export default function AdminVenueCourtsPage() {
   const addCustomAmenity = () => {
     const next = venueForm.customAmenityDraft.trim();
     if (!next) return;
-    const exists = venueForm.amenities.some((a) => normAmenity(a) === normAmenity(next));
+    const exists = venueForm.amenities.some(
+      (item) => normAmenity(item) === normAmenity(next),
+    );
     if (!exists) {
       setVenueForm((prev) => ({
         ...prev,
@@ -411,9 +422,9 @@ export default function AdminVenueCourtsPage() {
               <p className="text-muted-foreground">Amenities</p>
               {venue.amenities.length ? (
                 <div className="mt-1 flex flex-wrap gap-1.5">
-                  {venue.amenities.map((a) => (
-                    <Badge key={a} variant="outline" className="font-normal">
-                      {formatAmenityLabel(a)}
+                  {venue.amenities.map((amenity) => (
+                    <Badge key={amenity} variant="outline" className="font-normal">
+                      {formatAmenityLabel(amenity)}
                     </Badge>
                   ))}
                 </div>
@@ -425,9 +436,9 @@ export default function AdminVenueCourtsPage() {
               <p className="text-muted-foreground">Rates by time range</p>
               {(venue.hourly_rate_windows?.length ?? 0) > 0 ? (
                 <ul className="mt-1 space-y-1 text-foreground">
-                  {venue.hourly_rate_windows!.map((w) => (
-                    <li key={`${w.start}-${w.end}-${w.hourly_rate}`}>
-                      {w.start} - {w.end}: PHP {w.hourly_rate}/hr
+                  {venue.hourly_rate_windows!.map((rateWindow) => (
+                    <li key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}>
+                      {rateWindow.start} - {rateWindow.end}: PHP {rateWindow.hourly_rate}/hr
                     </li>
                   ))}
                 </ul>
@@ -617,38 +628,41 @@ export default function AdminVenueCourtsPage() {
             <div>
               <Label className="mb-2 block">Amenities</Label>
               <div className="mb-3 flex flex-wrap gap-2">
-                {amenityOptions.map((a) => (
+                {amenityOptions.map((amenity) => (
                   <button
-                    key={a}
+                    key={amenity}
                     type="button"
-                    onClick={() => toggleAmenity(a)}
+                    onClick={() => toggleAmenity(amenity)}
                     className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                      venueForm.amenities.includes(a)
+                      venueForm.amenities.includes(amenity)
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-background text-muted-foreground hover:border-primary/40"
                     }`}
                   >
-                    {formatAmenityLabel(a)}
+                    {formatAmenityLabel(amenity)}
                   </button>
                 ))}
               </div>
-              {venueForm.amenities.filter((a) => !amenityOptions.includes(a)).length > 0 ? (
+              {venueForm.amenities.filter((item) => !amenityOptions.includes(item)).length >
+              0 ? (
                 <div className="mb-3 flex flex-wrap gap-2">
                   {venueForm.amenities
-                    .filter((a) => !amenityOptions.includes(a))
-                    .map((a) => (
+                    .filter((item) => !amenityOptions.includes(item))
+                    .map((customAmenity) => (
                       <Badge
-                        key={a}
+                        key={customAmenity}
                         variant="outline"
                         className="cursor-pointer"
                         onClick={() =>
                           setVenueForm((prev) => ({
                             ...prev,
-                            amenities: prev.amenities.filter((x) => x !== a),
+                            amenities: prev.amenities.filter(
+                              (amenity) => amenity !== customAmenity,
+                            ),
                           }))
                         }
                       >
-                        {formatAmenityLabel(a)} x
+                        {formatAmenityLabel(customAmenity)} x
                       </Badge>
                     ))}
                 </div>
@@ -859,7 +873,7 @@ export default function AdminVenueCourtsPage() {
                         onClick={() =>
                           setSelectedClosureTimes((prev) =>
                             prev.includes(time)
-                              ? prev.filter((t) => t !== time)
+                              ? prev.filter((timeSlot) => timeSlot !== time)
                               : [...prev, time],
                           )
                         }

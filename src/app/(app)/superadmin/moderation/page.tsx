@@ -33,8 +33,8 @@ export default function SuperadminModerationPage() {
   const reviews = data?.reviews ?? [];
 
   const clearFlagMut = useMutation({
-    mutationFn: async (p: { venueId: string; reviewId: string }) => {
-      await courtlyApi.venueReviews.update(p.venueId, p.reviewId, {
+    mutationFn: async (payload: { venueId: string; reviewId: string }) => {
+      await courtlyApi.venueReviews.update(payload.venueId, payload.reviewId, {
         clear_flag: true,
       });
     },
@@ -46,8 +46,8 @@ export default function SuperadminModerationPage() {
   });
 
   const deleteReviewMut = useMutation({
-    mutationFn: async (p: { venueId: string; reviewId: string }) => {
-      await courtlyApi.venueReviews.remove(p.venueId, p.reviewId);
+    mutationFn: async (payload: { venueId: string; reviewId: string }) => {
+      await courtlyApi.venueReviews.remove(payload.venueId, payload.reviewId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
@@ -96,8 +96,8 @@ export default function SuperadminModerationPage() {
         </Card>
       ) : (
         <ul className="space-y-4">
-          {reviews.map((r) => (
-            <li key={r.id}>
+          {reviews.map((review) => (
+            <li key={review.id}>
               <Card className="border-amber-500/25 bg-amber-500/5">
                 <CardContent className="space-y-3 p-5 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -105,7 +105,7 @@ export default function SuperadminModerationPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Flag className="h-4 w-4 text-amber-700 dark:text-amber-400" />
                         <span className="font-heading font-semibold text-foreground">
-                          {r.court_name}
+                          {review.court_name}
                         </span>
                         <Badge variant="outline" className="text-[10px]">
                           Flagged
@@ -113,16 +113,16 @@ export default function SuperadminModerationPage() {
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Reported{" "}
-                        {r.flagged_at
-                          ? format(new Date(r.flagged_at), "PPp")
+                        {review.flagged_at
+                          ? format(new Date(review.flagged_at), "PPp")
                           : "—"}
                       </p>
-                      {r.flag_reason ? (
+                      {review.flag_reason ? (
                         <p className="mt-2 rounded-md border border-border/60 bg-background/80 px-2 py-1.5 text-xs">
                           <span className="font-medium text-foreground">
                             Venue note:{" "}
                           </span>
-                          {r.flag_reason}
+                          {review.flag_reason}
                         </p>
                       ) : null}
                     </div>
@@ -134,8 +134,8 @@ export default function SuperadminModerationPage() {
                         disabled={clearFlagMut.isPending}
                         onClick={() =>
                           clearFlagMut.mutate({
-                            venueId: r.venue_id,
-                            reviewId: r.id,
+                            venueId: review.venue_id,
+                            reviewId: review.id,
                           })
                         }
                       >
@@ -148,8 +148,8 @@ export default function SuperadminModerationPage() {
                         disabled={deleteReviewMut.isPending}
                         onClick={() =>
                           setConfirmDelete({
-                            venueId: r.venue_id,
-                            reviewId: r.id,
+                            venueId: review.venue_id,
+                            reviewId: review.id,
                           })
                         }
                       >
@@ -161,12 +161,12 @@ export default function SuperadminModerationPage() {
                   <div className="border-t border-border/50 pt-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="flex items-center gap-0.5">
-                        {Array.from({ length: 5 }, (_, i) => (
+                        {Array.from({ length: 5 }, (_, starIndex) => (
                           <Star
-                            key={i}
+                            key={starIndex}
                             className={cn(
                               "h-4 w-4",
-                              i < r.rating
+                              starIndex < review.rating
                                 ? "fill-amber-400 text-amber-400"
                                 : "text-muted-foreground/25",
                             )}
@@ -174,14 +174,14 @@ export default function SuperadminModerationPage() {
                         ))}
                       </div>
                       <span className="font-medium text-foreground">
-                        {r.user_name}
+                        {review.user_name}
                       </span>
                     </div>
-                    {r.comment ? (
-                      <p className="mt-2 text-foreground/90">{r.comment}</p>
+                    {review.comment ? (
+                      <p className="mt-2 text-foreground/90">{review.comment}</p>
                     ) : null}
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Posted {format(new Date(r.created_at), "PP")}
+                      Posted {format(new Date(review.created_at), "PP")}
                     </p>
                   </div>
                 </CardContent>

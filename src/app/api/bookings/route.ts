@@ -5,21 +5,23 @@ import { splitBookingAmounts } from "@/lib/platform-fee";
 import { mockDb } from "@/lib/mock/db";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
-function hydrateBooking(b: Booking): Booking {
-  const court = mockDb.courts.find((c) => c.id === b.court_id);
-  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : undefined;
+function hydrateBooking(booking: Booking): Booking {
+  const court = mockDb.courts.find((row) => row.id === booking.court_id);
+  const venue = court
+    ? mockDb.venues.find((row) => row.id === court.venue_id)
+    : undefined;
   return {
-    ...b,
+    ...booking,
     venue_id: venue?.id,
-    establishment_name: b.establishment_name ?? venue?.name,
+    establishment_name: booking.establishment_name ?? venue?.name,
   };
 }
 
-function bookingSport(b: Booking): CourtSport | undefined {
-  if (b.sport) return b.sport;
-  const court = mockDb.courts.find((c) => c.id === b.court_id);
+function bookingSport(booking: Booking): CourtSport | undefined {
+  if (booking.sport) return booking.sport;
+  const court = mockDb.courts.find((row) => row.id === booking.court_id);
   if (!court) return undefined;
-  return mockDb.venues.find((v) => v.id === court.venue_id)?.sport;
+  return mockDb.venues.find((row) => row.id === court.venue_id)?.sport;
 }
 
 export async function GET(req: Request) {
@@ -41,16 +43,16 @@ export async function GET(req: Request) {
     const ids = new Set(
       manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
     );
-    list = list.filter((b) => ids.has(b.court_id));
+    list = list.filter((booking) => ids.has(booking.court_id));
   }
 
   if (bookingGroupId) {
-    list = list.filter((b) => b.booking_group_id === bookingGroupId);
+    list = list.filter((booking) => booking.booking_group_id === bookingGroupId);
   }
-  if (courtId) list = list.filter((b) => b.court_id === courtId);
-  if (date) list = list.filter((b) => b.date === date);
-  if (playerEmail) list = list.filter((b) => b.player_email === playerEmail);
-  if (sport) list = list.filter((b) => bookingSport(b) === sport);
+  if (courtId) list = list.filter((booking) => booking.court_id === courtId);
+  if (date) list = list.filter((booking) => booking.date === date);
+  if (playerEmail) list = list.filter((booking) => booking.player_email === playerEmail);
+  if (sport) list = list.filter((booking) => bookingSport(booking) === sport);
 
   list.sort((a, b) =>
     String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),
@@ -61,8 +63,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<Booking>;
   const id = `book-${crypto.randomUUID().slice(0, 8)}`;
-  const court = mockDb.courts.find((c) => c.id === body.court_id);
-  const venue = court ? mockDb.venues.find((v) => v.id === court.venue_id) : null;
+  const court = mockDb.courts.find((row) => row.id === body.court_id);
+  const venue = court
+    ? mockDb.venues.find((row) => row.id === court.venue_id)
+    : null;
   if (!court || !venue) {
     return NextResponse.json({ error: "Court not found" }, { status: 404 });
   }

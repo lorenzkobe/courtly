@@ -10,9 +10,9 @@ export async function GET(req: Request) {
 
   let list = [...mockDb.openPlay];
   if (sport) {
-    list = list.filter((s) => s.sport === sport);
+    list = list.filter((session) => session.sport === sport);
   }
-  if (status) list = list.filter((s) => s.status === status);
+  if (status) list = list.filter((session) => session.status === status);
   list.sort((a, b) => a.date.localeCompare(b.date));
   if (limit) list = list.slice(0, limit);
   return NextResponse.json(list);
