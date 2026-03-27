@@ -1,5 +1,32 @@
 "use client";
 
+import { Trophy } from "lucide-react";
+import EmptyState from "@/components/shared/EmptyState";
+import PageHeader from "@/components/shared/PageHeader";
+
+export default function TournamentsPage() {
+  return (
+    <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
+      <PageHeader
+        title="Tournaments"
+        subtitle="Compete, improve, and have fun"
+      />
+      <EmptyState
+        icon={Trophy}
+        title="Available soon"
+        description="Tournament listings and registration are not live yet. Check back later — we’re building this next."
+      />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Previous listing implementation (mock API + filters + cards).
+   Uncomment and replace the component above when tournaments are ready to ship.
+   ──────────────────────────────────────────────────────────────────────────
+
+"use client";
+
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Trophy } from "lucide-react";
@@ -95,3 +122,5 @@ export default function TournamentsPage() {
     </div>
   );
 }
+
+────────────────────────────────────────────────────────────────────────────── */
