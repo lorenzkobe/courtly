@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { LocalPlaceholderNotificationRepository } from "@/lib/notifications/adapters/local-placeholder";
+import { createNotificationRepository } from "@/lib/notifications/repository-factory";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const repo = new LocalPlaceholderNotificationRepository();
+const repo = createNotificationRepository();
 
 export async function PATCH(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();

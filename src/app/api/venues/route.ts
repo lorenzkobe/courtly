@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { mockDb } from "@/lib/mock/db";
-import type { ManagedUser, Venue } from "@/lib/types/courtly";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { insertRow, listManagedUsers, listVenues } from "@/lib/data/courtly-db";
+import type { Venue } from "@/lib/types/courtly";
 
 export async function GET() {
   const user = await readSessionUser();
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json([...mockDb.venues]);
+  const venues = await listVenues();
+  return NextResponse.json(venues);
 }
 
 export async function POST(req: Request) {
@@ -37,9 +39,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const id = `venue-${crypto.randomUUID().slice(0, 8)}`;
-  const venue: Venue = {
-    id,
+  const venue: Omit<Venue, "id"> = {
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New venue",
     location: typeof body.location === "string" ? body.location.trim() : "",
     contact_phone:
@@ -63,15 +63,17 @@ export async function POST(req: Request) {
     );
   }
 
-  let assignedAdmin: ManagedUser | undefined;
+  let assignedAdminId: string | undefined;
   if (existingAdminId) {
-    assignedAdmin = mockDb.managedUsers.find(
+    const users = await listManagedUsers();
+    const assignedAdmin = users.find(
       (managedUser) =>
         managedUser.id === existingAdminId && managedUser.role === "admin",
     );
     if (!assignedAdmin) {
       return NextResponse.json({ error: "Selected admin user was not found" }, { status: 404 });
     }
+    assignedAdminId = assignedAdmin.id;
   } else if (newAdmin) {
     const email =
       typeof newAdmin.email === "string" ? newAdmin.email.trim().toLowerCase() : "";
@@ -83,35 +85,26 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    if (
-      mockDb.managedUsers.some(
-        (managedUser) => managedUser.email.toLowerCase() === email,
-      )
-    ) {
-      return NextResponse.json({ error: "Email already in use" }, { status: 409 });
-    }
-    const adminId = `user-${crypto.randomUUID().slice(0, 8)}`;
-    assignedAdmin = {
-      id: adminId,
+    const admin = createSupabaseAdminClient();
+    const created = await admin.auth.admin.createUser({
       email,
-      full_name: fullName,
-      role: "admin",
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
-    mockDb.managedUsers.push(assignedAdmin);
+      password: crypto.randomUUID(),
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+    if (created.error || !created.data.user) {
+      return NextResponse.json({ error: created.error?.message ?? "Could not create admin" }, { status: 400 });
+    }
+    assignedAdminId = created.data.user.id;
   }
 
-  mockDb.venues.push(venue);
-
-  if (assignedAdmin) {
-    mockDb.venueAdminAssignments.push({
-      id: `va-${crypto.randomUUID().slice(0, 8)}`,
-      venue_id: venue.id,
-      admin_user_id: assignedAdmin.id,
-      created_at: new Date().toISOString(),
+  const inserted = await insertRow("venues", venue);
+  if (assignedAdminId) {
+    await insertRow("venue_admin_assignments", {
+      venue_id: (inserted as { id: string }).id,
+      admin_user_id: assignedAdminId,
     });
   }
 
-  return NextResponse.json(venue);
+  return NextResponse.json(inserted);
 }

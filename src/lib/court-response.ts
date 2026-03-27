@@ -1,10 +1,13 @@
-import { mockDb } from "@/lib/mock/db";
 import { reviewSummaryForVenue } from "@/lib/review-summary";
-import type { Court } from "@/lib/types/courtly";
+import type { Court, CourtReview, Venue } from "@/lib/types/courtly";
 
 /** Merge venue fields and review summary onto a stored court row (mock API responses). */
-export function withVenueHydration(court: Court): Court {
-  const venue = mockDb.venues.find((row) => row.id === court.venue_id);
+export function withVenueHydration(
+  court: Court,
+  venues: Venue[],
+  reviews: CourtReview[],
+): Court {
+  const venue = venues.find((row) => row.id === court.venue_id);
   return {
     ...court,
     establishment_name: venue?.name ?? court.establishment_name,
@@ -22,6 +25,6 @@ export function withVenueHydration(court: Court): Court {
       : court.available_hours,
     map_latitude: venue?.map_latitude,
     map_longitude: venue?.map_longitude,
-    review_summary: reviewSummaryForVenue(court.venue_id, mockDb.courtReviews),
+    review_summary: reviewSummaryForVenue(court.venue_id, reviews),
   };
 }

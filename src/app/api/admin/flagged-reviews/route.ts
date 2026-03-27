@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isSuperadmin } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import { listBookings, listCourtReviews, listCourts, listVenues } from "@/lib/data/courtly-db";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -9,14 +9,20 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const flagged = mockDb.courtReviews
+  const [reviews, bookings, courts, venues] = await Promise.all([
+    listCourtReviews(),
+    listBookings(),
+    listCourts(),
+    listVenues(),
+  ]);
+  const flagged = reviews
     .filter((review) => review.flagged)
     .map((review) => {
-      const booking = mockDb.bookings.find((row) => row.id === review.booking_id);
+      const booking = bookings.find((row) => row.id === review.booking_id);
       const court = booking
-        ? mockDb.courts.find((row) => row.id === booking.court_id)
+        ? courts.find((row) => row.id === booking.court_id)
         : undefined;
-      const venue = mockDb.venues.find((row) => row.id === review.venue_id);
+      const venue = venues.find((row) => row.id === review.venue_id);
       return {
         ...review,
         court_name: court?.name ?? booking?.court_name ?? "Court",

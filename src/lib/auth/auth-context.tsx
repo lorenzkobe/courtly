@@ -14,7 +14,7 @@ import type { SessionUser } from "@/lib/types/courtly";
 type AuthContextValue = {
   user: SessionUser | null;
   isLoading: boolean;
-  login: (role?: "user" | "admin" | "superadmin") => Promise<void>;
+  login: (input: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
 };
@@ -44,13 +44,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshSession]);
 
-  const login = useCallback(
-    async (role?: "user" | "admin" | "superadmin") => {
-      await courtlyApi.auth.login({ role });
-      await refreshSession();
-    },
-    [refreshSession],
-  );
+  const login = useCallback(async (input: { email: string; password: string }) => {
+    await courtlyApi.auth.login(input);
+    await refreshSession();
+  }, [refreshSession]);
 
   const logout = useCallback(async () => {
     await courtlyApi.auth.logout();

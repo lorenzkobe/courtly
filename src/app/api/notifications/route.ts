@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { LocalPlaceholderNotificationRepository } from "@/lib/notifications/adapters/local-placeholder";
+import { createNotificationRepository } from "@/lib/notifications/repository-factory";
 
-const repo = new LocalPlaceholderNotificationRepository();
+const repo = createNotificationRepository();
 
 export async function GET() {
   const user = await readSessionUser();

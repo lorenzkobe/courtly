@@ -33,7 +33,6 @@ function LoginContent() {
   const { user, isLoading, login } = useAuth();
 
   const nextPath = safeRedirectPath(searchParams.get("next"));
-  const roleHint = searchParams.get("role");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,12 +45,12 @@ function LoginContent() {
     }
   }, [isLoading, user, router, nextPath]);
 
-  const handleSignIn = async (role: "user" | "admin" | "superadmin") => {
+  const handleSignIn = async () => {
     setError(null);
     setSubmitting(true);
     try {
-      await login(role);
-      router.replace(nextPath ?? homePathForRole(role));
+      await login({ email, password });
+      router.replace(nextPath ?? "/dashboard");
     } catch {
       setError("Could not sign you in. Please try again.");
     } finally {
@@ -109,8 +108,7 @@ function LoginContent() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-2 text-center text-xs text-muted-foreground">
-            Demo mode: real email/password sign-in will connect to Supabase
-            later. For now, sign in with the buttons below.
+            Supabase auth is enabled. Use your real account credentials.
           </div>
 
           <div className="space-y-4">
@@ -152,7 +150,7 @@ function LoginContent() {
               className="w-full font-heading font-semibold"
               size="lg"
               disabled={submitting}
-              onClick={() => void handleSignIn("user")}
+              onClick={() => void handleSignIn()}
             >
               {submitting ? (
                 <>
@@ -163,43 +161,7 @@ function LoginContent() {
                 "Sign in"
               )}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full font-heading font-semibold"
-              disabled={submitting}
-              onClick={() => void handleSignIn("admin")}
-            >
-              Sign in as admin
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full font-heading font-semibold"
-              disabled={submitting}
-              onClick={() => void handleSignIn("superadmin")}
-            >
-              Sign in as superadmin
-            </Button>
           </div>
-
-          {roleHint === "admin" ? (
-            <p className="text-center text-xs text-muted-foreground">
-              Tip: you opened this page with admin intent — use &quot;Sign in as
-              admin&quot; for facility tools.
-            </p>
-          ) : null}
-          {roleHint === "superadmin" ? (
-            <p className="text-center text-xs text-muted-foreground">
-              Tip: use &quot;Sign in as superadmin&quot; for the platform
-              console and full directory access.
-            </p>
-          ) : null}
-
-          <p className="text-center text-xs text-muted-foreground">
-            After Supabase is wired, this form will validate email and password
-            here.
-          </p>
         </CardContent>
       </Card>
     </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import { listBookings, listCourts, listVenueAdminAssignments, listVenues } from "@/lib/data/courtly-db";
 import {
   filterBookingsByDateRange,
   normalizeDateRange,
@@ -12,10 +12,11 @@ import type { RevenueByAccountRow, Venue } from "@/lib/types/courtly";
 
 function attachVenueNames(
   rows: ReturnType<typeof aggregateRevenueByCourt>,
+  venues: Venue[],
 ): ReturnType<typeof aggregateRevenueByCourt> {
   return rows.map((row) => {
     const name = row.venue_id
-      ? mockDb.venues.find((venue) => venue.id === row.venue_id)?.name ?? null
+      ? venues.find((venue) => venue.id === row.venue_id)?.name ?? null
       : null;
     return { ...row, venue_name: name };
   });
@@ -60,7 +61,7 @@ function platformVenueRows(
     };
   });
 
-  if (mockDb.courts.some((court) => !court.venue_id)) {
+  if (byCourt.some((court) => !court.venue_id)) {
     const hit = agg.get("");
     out.push({
       venue_id: "",
@@ -82,6 +83,12 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
+  const [allVenues, allCourts, allBookings, assignments] = await Promise.all([
+    listVenues(),
+    listCourts(),
+    listBookings(),
+    listVenueAdminAssignments(),
+  ]);
   let dateFrom = parseIsoDateParam(searchParams.get("from"));
   let dateTo = parseIsoDateParam(searchParams.get("to"));
   ({ from: dateFrom, to: dateTo } = normalizeDateRange(dateFrom, dateTo));
@@ -101,15 +108,15 @@ export async function GET(req: Request) {
   if (
     venueFilter &&
     venueFilter !== "unassigned" &&
-    !mockDb.venues.some((venue) => venue.id === venueFilter)
+    !allVenues.some((venue) => venue.id === venueFilter)
   ) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
 
-  let courts = [...mockDb.courts];
+  let courts = [...allCourts];
   if (user.role === "admin") {
     const ids = new Set(
-      manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
+      manageableCourtIds(user, allCourts, assignments),
     );
     courts = courts.filter((court) => ids.has(court.id));
   }
@@ -121,12 +128,12 @@ export async function GET(req: Request) {
   }
 
   const courtIds = new Set(courts.map((court) => court.id));
-  let bookings = mockDb.bookings.filter((booking) =>
+  let bookings = allBookings.filter((booking) =>
     courtIds.has(booking.court_id),
   );
   bookings = filterBookingsByDateRange(bookings, dateFrom, dateTo);
 
-  const byCourt = attachVenueNames(aggregateRevenueByCourt(bookings, courts));
+  const byCourt = attachVenueNames(aggregateRevenueByCourt(bookings, courts), allVenues);
 
   const totals = byCourt.reduce(
     (acc, row) => ({
@@ -146,7 +153,7 @@ export async function GET(req: Request) {
 
   let byAccount: RevenueByAccountRow[] | undefined;
   if (user.role === "superadmin" && !venueFilter) {
-    byAccount = platformVenueRows(mockDb.venues, byCourt);
+    byAccount = platformVenueRows(allVenues, byCourt);
     byAccount.sort((a, b) => b.customer_total - a.customer_total);
   }
 
@@ -154,7 +161,7 @@ export async function GET(req: Request) {
   if (venueFilter === "unassigned") {
     focus_venue = { id: "unassigned", name: "Unassigned venue" };
   } else if (venueFilter) {
-    const venue = mockDb.venues.find((row) => row.id === venueFilter);
+    const venue = allVenues.find((row) => row.id === venueFilter);
     focus_venue = venue ? { id: venue.id, name: venue.name } : null;
   }
 

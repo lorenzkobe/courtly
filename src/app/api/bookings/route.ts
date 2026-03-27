@@ -2,26 +2,15 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { splitBookingAmounts } from "@/lib/platform-fee";
-import { mockDb } from "@/lib/mock/db";
+import { insertRow, listBookings, listCourts, listVenueAdminAssignments, listVenues } from "@/lib/data/courtly-db";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  const venue = court
-    ? mockDb.venues.find((row) => row.id === court.venue_id)
-    : undefined;
-  return {
-    ...booking,
-    venue_id: venue?.id,
-    establishment_name: booking.establishment_name ?? venue?.name,
-  };
+  return booking;
 }
 
 function bookingSport(booking: Booking): CourtSport | undefined {
-  if (booking.sport) return booking.sport;
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  if (!court) return undefined;
-  return mockDb.venues.find((row) => row.id === court.venue_id)?.sport;
+  return booking.sport;
 }
 
 export async function GET(req: Request) {
@@ -33,7 +22,12 @@ export async function GET(req: Request) {
   const sport = searchParams.get("sport") as CourtSport | null;
   const bookingGroupId = searchParams.get("booking_group_id");
 
-  let list = [...mockDb.bookings];
+  const [bookings, courts, assignments] = await Promise.all([
+    listBookings(),
+    listCourts(),
+    listVenueAdminAssignments(),
+  ]);
+  let list = [...bookings];
 
   if (manageable) {
     const user = await readSessionUser();
@@ -41,7 +35,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const ids = new Set(
-      manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
+      manageableCourtIds(user, courts, assignments),
     );
     list = list.filter((booking) => ids.has(booking.court_id));
   }
@@ -62,11 +56,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = (await req.json()) as Partial<Booking>;
-  const id = `book-${crypto.randomUUID().slice(0, 8)}`;
-  const court = mockDb.courts.find((row) => row.id === body.court_id);
-  const venue = court
-    ? mockDb.venues.find((row) => row.id === court.venue_id)
-    : null;
+  const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
+  const court = courts.find((row) => row.id === body.court_id);
+  const venue = court ? venues.find((row) => row.id === court.venue_id) : null;
   if (!court || !venue) {
     return NextResponse.json({ error: "Court not found" }, { status: 404 });
   }
@@ -104,7 +96,7 @@ export async function POST(req: Request) {
   }
 
   const booking: Booking = {
-    id,
+    id: crypto.randomUUID(),
     court_id: body.court_id as string,
     court_name: body.court_name,
     establishment_name: court
@@ -127,7 +119,21 @@ export async function POST(req: Request) {
     notes: body.notes,
     created_date: new Date().toISOString(),
   };
-  mockDb.bookings.push(booking);
+  await insertRow("bookings", {
+    court_id: booking.court_id,
+    booking_group_id: booking.booking_group_id ?? null,
+    date: booking.date,
+    start_time: booking.start_time,
+    end_time: booking.end_time,
+    player_name: booking.player_name ?? null,
+    player_email: booking.player_email ?? null,
+    players_count: booking.players_count ?? null,
+    court_subtotal: booking.court_subtotal ?? null,
+    booking_fee: booking.booking_fee ?? null,
+    total_cost: booking.total_cost ?? null,
+    status: booking.status,
+    notes: booking.notes ?? null,
+  });
   // TODO(notifications): emit placeholder event hook for "booking created"
   // when Supabase notifications are wired.
   return NextResponse.json(hydrateBooking(booking));

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { mockDb } from "@/lib/mock/db";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ManagedUser } from "@/lib/types/courtly";
 
 export async function GET() {
@@ -8,14 +9,20 @@ export async function GET() {
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const supabase = (await createSupabaseServerClient()) as any;
+  const [{ data: users }, { data: assignments }] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, role, is_active, created_at"),
+    supabase.from("venue_admin_assignments").select("venue_id, admin_user_id"),
+  ]);
   return NextResponse.json(
-    mockDb.managedUsers.map((managedUser) => ({
+    (users ?? []).map((managedUser: { id: string; role: string }) => ({
       ...managedUser,
+      email: "",
       venue_ids:
         managedUser.role === "admin"
-          ? mockDb.venueAdminAssignments
-              .filter((assignment) => assignment.admin_user_id === managedUser.id)
-              .map((assignment) => assignment.venue_id)
+          ? (assignments ?? [])
+              .filter((assignment: { admin_user_id: string }) => assignment.admin_user_id === managedUser.id)
+              .map((assignment: { venue_id: string }) => assignment.venue_id)
           : [],
     })),
   );
@@ -30,7 +37,8 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Partial<ManagedUser> & {
     venue_ids?: string[];
   };
-  const id = `user-${crypto.randomUUID().slice(0, 8)}`;
+  const supabaseAdmin = createSupabaseAdminClient();
+  const supabase = (await createSupabaseServerClient()) as any;
   const role =
     body.role === "admin" || body.role === "superadmin" ? body.role : "user";
 
@@ -43,39 +51,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
   }
 
-  if (
-    mockDb.managedUsers.some(
-      (managedUser) => managedUser.email.toLowerCase() === email,
-    )
-  ) {
-    return NextResponse.json({ error: "Email already in use" }, { status: 409 });
-  }
-
-  const managed: ManagedUser = {
-    id,
+  const full_name =
+    typeof body.full_name === "string" && body.full_name.trim()
+      ? body.full_name.trim()
+      : "New user";
+  const createRes = await supabaseAdmin.auth.admin.createUser({
     email,
-    full_name:
-      typeof body.full_name === "string" && body.full_name.trim()
-        ? body.full_name.trim()
-        : "New user",
+    password: crypto.randomUUID(),
+    email_confirm: true,
+    user_metadata: { full_name },
+  });
+  if (createRes.error || !createRes.data.user) {
+    return NextResponse.json({ error: createRes.error?.message ?? "Could not create user" }, { status: 400 });
+  }
+  const id = createRes.data.user.id;
+  await supabase.from("profiles").update({
+    full_name,
     role,
     is_active: body.is_active !== false,
-    created_at: new Date().toISOString(),
-  };
-  mockDb.managedUsers.push(managed);
+  }).eq("id", id);
+
   if (role === "admin" && Array.isArray(body.venue_ids)) {
     for (const venueId of body.venue_ids) {
-      if (!mockDb.venues.some((venue) => venue.id === venueId)) continue;
-      mockDb.venueAdminAssignments.push({
-        id: `va-${crypto.randomUUID().slice(0, 8)}`,
+      await supabase.from("venue_admin_assignments").insert({
         venue_id: venueId,
-        admin_user_id: managed.id,
-        created_at: new Date().toISOString(),
+        admin_user_id: id,
       });
     }
   }
   return NextResponse.json({
-    ...managed,
+    id,
+    email,
+    full_name,
+    role,
+    is_active: body.is_active !== false,
+    created_at: new Date().toISOString(),
     venue_ids: role === "admin" ? body.venue_ids ?? [] : [],
   });
 }

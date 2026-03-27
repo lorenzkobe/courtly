@@ -21,7 +21,7 @@ export const courtlyApi = {
       http.get<{ user: import("@/lib/types/courtly").SessionUser | null }>(
         "/api/auth/session",
       ),
-    login: (body: { role?: "user" | "admin" | "superadmin" }) =>
+    login: (body: { email: string; password: string }) =>
       http.post("/api/auth/login", body),
     logout: () => http.post("/api/auth/logout"),
   },

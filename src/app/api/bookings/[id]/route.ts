@@ -1,19 +1,16 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import {
+  listBookings,
+  listCourts,
+  listVenueAdminAssignments,
+  updateRow,
+} from "@/lib/data/courtly-db";
 import type { Booking } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  const venue = court
-    ? mockDb.venues.find((row) => row.id === court.venue_id)
-    : undefined;
-  return {
-    ...booking,
-    venue_id: venue?.id,
-    establishment_name: booking.establishment_name ?? venue?.name,
-  };
+  return booking;
 }
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -21,6 +18,8 @@ type Ctx = { params: Promise<{ id: string }> };
 function canReadBooking(
   user: Awaited<ReturnType<typeof readSessionUser>>,
   booking: Booking,
+  assignments: Awaited<ReturnType<typeof listVenueAdminAssignments>>,
+  courts: Awaited<ReturnType<typeof listCourts>>,
 ): boolean {
   if (!user) return false;
   if (user.email) {
@@ -34,19 +33,24 @@ function canReadBooking(
       return true;
     }
   }
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  if (court && canMutateCourt(user, court, mockDb.venueAdminAssignments)) return true;
+  const court = courts.find((row) => row.id === booking.court_id);
+  if (court && canMutateCourt(user, court, assignments)) return true;
   return false;
 }
 
 export async function GET(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const booking = mockDb.bookings.find((row) => row.id === id);
+  const [bookings, assignments, courts] = await Promise.all([
+    listBookings(),
+    listVenueAdminAssignments(),
+    listCourts(),
+  ]);
+  const booking = bookings.find((row) => row.id === id);
   if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!canReadBooking(user, booking)) {
+  if (!canReadBooking(user, booking, assignments, courts)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   return NextResponse.json(hydrateBooking(booking));
@@ -55,13 +59,17 @@ export async function GET(_req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.bookings.findIndex((row) => row.id === id);
-  if (idx === -1) {
+  const [bookings, courts, assignments] = await Promise.all([
+    listBookings(),
+    listCourts(),
+    listVenueAdminAssignments(),
+  ]);
+  const booking = bookings.find((row) => row.id === id);
+  if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const booking = mockDb.bookings[idx];
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
+  const court = courts.find((row) => row.id === booking.court_id);
   const body = (await req.json()) as Partial<Booking> & {
     admin_note?: string;
     clear_admin_note?: boolean;
@@ -90,7 +98,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
 
-  if (!court || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!court || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -115,8 +123,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
-  mockDb.bookings[idx] = { ...mockDb.bookings[idx], ...patch };
+  const updated = await updateRow("bookings", id, {
+    ...patch,
+    admin_note: patch.admin_note ?? null,
+    admin_note_updated_by_user_id: patch.admin_note_updated_by_user_id ?? null,
+    admin_note_updated_by_name: patch.admin_note_updated_by_name ?? null,
+    admin_note_updated_at: patch.admin_note_updated_at ?? null,
+  });
   // TODO(notifications): emit placeholder event hook for booking changes/completion
   // when Supabase notifications are wired.
-  return NextResponse.json(hydrateBooking(mockDb.bookings[idx]!));
+  return NextResponse.json(hydrateBooking(updated as Booking));
 }

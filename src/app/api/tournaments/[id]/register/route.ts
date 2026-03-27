@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
-import { mockDb } from "@/lib/mock/db";
+import {
+  insertRow,
+  listTournaments,
+  updateRow,
+} from "@/lib/data/courtly-db";
 import type { TournamentRegistration } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, ctx: Ctx) {
   const { id: tournamentId } = await ctx.params;
-  const tournament = mockDb.tournaments.find((row) => row.id === tournamentId);
+  const tournaments = await listTournaments();
+  const tournament = tournaments.find((row) => row.id === tournamentId);
   if (!tournament) {
     return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   }
@@ -18,26 +23,22 @@ export async function POST(req: Request, ctx: Ctx) {
     skill_level: TournamentRegistration["skill_level"];
   };
 
-  const reg: TournamentRegistration = {
-    id: `reg-${crypto.randomUUID().slice(0, 8)}`,
+  const reg = {
     tournament_id: tournamentId,
-    tournament_name: tournament.name,
     player_name: body.player_name,
     player_email: body.player_email,
     partner_name: body.partner_name,
     skill_level: body.skill_level ?? "intermediate",
     status: "registered",
+  };
+  const inserted = await insertRow("tournament_registrations", reg);
+  await updateRow("tournaments", tournamentId, {
+    current_participants: (tournament.current_participants ?? 0) + 1,
+  });
+  const response: TournamentRegistration = {
+    ...(inserted as TournamentRegistration),
+    tournament_name: tournament.name,
     created_date: new Date().toISOString(),
   };
-  mockDb.registrations.push(reg);
-
-  const idx = mockDb.tournaments.findIndex((row) => row.id === tournamentId);
-  if (idx !== -1) {
-    mockDb.tournaments[idx] = {
-      ...mockDb.tournaments[idx],
-      current_participants: (mockDb.tournaments[idx].current_participants ?? 0) + 1,
-    };
-  }
-
-  return NextResponse.json(reg);
+  return NextResponse.json(response);
 }

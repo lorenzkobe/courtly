@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import {
+  insertRow,
+  listBookings,
+  listCourtClosures,
+  listCourts,
+  listVenueAdminAssignments,
+} from "@/lib/data/courtly-db";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import type { CourtClosure } from "@/lib/types/courtly";
 
@@ -10,25 +16,30 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Public: `?date=yyyy-MM-dd` for that day. Authenticated venue/superadmin: all blocks for the court. */
 export async function GET(req: Request, ctx: Ctx) {
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [courts, closures, assignments] = await Promise.all([
+    listCourts(),
+    listCourtClosures(),
+    listVenueAdminAssignments(),
+  ]);
+  const court = courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
 
   if (date) {
-    const list = mockDb.courtClosures.filter(
+    const list = closures.filter(
       (closure) => closure.court_id === courtId && closure.date === date,
     );
     return NextResponse.json(list);
   }
 
   const user = await readSessionUser();
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const list = mockDb.courtClosures
+  const list = closures
     .filter((closure) => closure.court_id === courtId)
     .sort((a, b) => {
       const d = a.date.localeCompare(b.date);
@@ -40,9 +51,14 @@ export async function GET(req: Request, ctx: Ctx) {
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [courts, assignments, bookings] = await Promise.all([
+    listCourts(),
+    listVenueAdminAssignments(),
+    listBookings(),
+  ]);
+  const court = courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -68,7 +84,7 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Reason is required" }, { status: 400 });
   }
 
-  const conflicts = mockDb.bookings.some(
+  const conflicts = bookings.some(
     (booking) =>
       booking.court_id === courtId &&
       booking.date === date &&
@@ -90,16 +106,14 @@ export async function POST(req: Request, ctx: Ctx) {
     );
   }
 
-  const row: CourtClosure = {
-    id: `clos-${crypto.randomUUID().slice(0, 8)}`,
+  const row = {
     court_id: courtId,
     date,
     start_time,
     end_time,
     reason,
-    note: typeof body.note === "string" ? body.note.trim() || undefined : undefined,
-    created_at: new Date().toISOString(),
+    note: typeof body.note === "string" ? body.note.trim() || null : null,
   };
-  mockDb.courtClosures.push(row);
-  return NextResponse.json(row);
+  const inserted = await insertRow("court_closures", row);
+  return NextResponse.json(inserted as CourtClosure);
 }
