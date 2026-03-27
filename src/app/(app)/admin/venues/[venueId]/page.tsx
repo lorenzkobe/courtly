@@ -255,8 +255,8 @@ export default function AdminVenueCourtsPage() {
       setClosureForm(defaultClosureForm);
       void queryClient.invalidateQueries({ queryKey: ["court-closures"] });
     },
-    onError: (e: Error) => {
-      toast.error(e.message || "Could not apply unavailability");
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not apply unavailability"));
     },
   });
 
@@ -310,6 +310,9 @@ export default function AdminVenueCourtsPage() {
     }
     return out;
   }, [venue?.opens_at, venue?.closes_at]);
+  const allClosureHoursSelected =
+    closureTimeSlots.length > 0 &&
+    selectedClosureTimes.length === closureTimeSlots.length;
 
   const toggleAmenity = (amenity: string) => {
     setVenueForm((prev) => ({
@@ -829,9 +832,15 @@ export default function AdminVenueCourtsPage() {
                     size="sm"
                     className="shrink-0"
                     disabled={closureTimeSlots.length === 0}
-                    onClick={() => setSelectedClosureTimes([...closureTimeSlots])}
+                    onClick={() =>
+                      setSelectedClosureTimes(
+                        allClosureHoursSelected ? [] : [...closureTimeSlots],
+                      )
+                    }
                   >
-                    Select all hours
+                    {allClosureHoursSelected
+                      ? "Unselect all hours"
+                      : "Select all hours"}
                   </Button>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
