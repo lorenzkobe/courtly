@@ -15,6 +15,15 @@ type AuthContextValue = {
   user: SessionUser | null;
   isLoading: boolean;
   login: (input: { email: string; password: string }) => Promise<void>;
+  signup: (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    birthdate: string;
+    mobileNumber: string;
+    password: string;
+    confirmPassword: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
 };
@@ -49,6 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await refreshSession();
   }, [refreshSession]);
 
+  const signup = useCallback(async (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    birthdate: string;
+    mobileNumber: string;
+    password: string;
+    confirmPassword: string;
+  }) => {
+    await courtlyApi.auth.signup(input);
+    await refreshSession();
+  }, [refreshSession]);
+
   const logout = useCallback(async () => {
     await courtlyApi.auth.logout();
     setUser(null);
@@ -59,10 +81,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isLoading,
       login,
+      signup,
       logout,
       refreshSession,
     }),
-    [user, isLoading, login, logout, refreshSession],
+    [user, isLoading, login, signup, logout, refreshSession],
   );
 
   return (

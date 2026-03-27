@@ -23,6 +23,15 @@ export const courtlyApi = {
       ),
     login: (body: { email: string; password: string }) =>
       http.post("/api/auth/login", body),
+    signup: (body: {
+      email: string;
+      firstName: string;
+      lastName: string;
+      birthdate: string;
+      mobileNumber: string;
+      password: string;
+      confirmPassword: string;
+    }) => http.post("/api/auth/signup", body),
     logout: () => http.post("/api/auth/logout"),
   },
 
