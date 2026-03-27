@@ -20,14 +20,14 @@ import {
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatStatusLabel } from "@/lib/utils";
 
-export default function CourtAccountDetailPage() {
+export default function SuperadminVenueDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["court-account", id],
+    queryKey: ["venue-detail", id],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.courtAccounts.get(id);
+      const { data: d } = await courtlyApi.venues.get(id);
       return d;
     },
     enabled: !!id,
@@ -45,40 +45,41 @@ export default function CourtAccountDetailPage() {
   if (isError || !data) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
-        <p className="text-muted-foreground">Court account not found.</p>
+        <p className="text-muted-foreground">Venue not found.</p>
         <Button variant="outline" className="mt-4" asChild>
-          <Link href="/superadmin/court-accounts">Back to accounts</Link>
+          <Link href="/superadmin/venues">Back to venues</Link>
         </Button>
       </div>
     );
   }
 
-  const account = data.account ?? data.venue;
-  const { courts, primaryAdmin } = data;
+  const venue = data.venue;
+  const { courts } = data;
   const admins = data.admins ?? [];
+  const primaryAdmin = admins[0] ?? null;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
       <Button variant="ghost" className="mb-4 -ml-2" asChild>
-        <Link href="/superadmin/court-accounts">
+        <Link href="/superadmin/venues">
           <ArrowLeft className="mr-2 h-4 w-4" /> Venues
         </Link>
       </Button>
 
       <PageHeader
-        title={account.name}
-        subtitle={account.location}
+        title={venue.name}
+        subtitle={venue.location}
         alignActions="start"
       >
         <Badge
           variant="outline"
           className={
-            account.status === "active"
+            venue.status === "active"
               ? "bg-primary/10 text-primary"
               : "bg-destructive/10 text-destructive"
           }
         >
-          {formatStatusLabel(account.status)}
+          {formatStatusLabel(venue.status)}
         </Badge>
       </PageHeader>
 
@@ -107,7 +108,7 @@ export default function CourtAccountDetailPage() {
             <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
               <span className="text-muted-foreground">Created</span>
               <span>
-                {new Date(account.created_at).toLocaleString(undefined, {
+                {new Date(venue.created_at).toLocaleString(undefined, {
                   dateStyle: "medium",
                   timeStyle: "short",
                 })}
@@ -128,7 +129,7 @@ export default function CourtAccountDetailPage() {
               <p className="text-sm text-muted-foreground">
                 No courts are linked to this account yet. Assign them from{" "}
                 <Link
-                  href="/admin/courts"
+                  href="/admin/venues"
                   className="font-medium text-primary underline-offset-4 hover:underline"
                 >
                   court management

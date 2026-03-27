@@ -3,7 +3,7 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { mockDb } from "@/lib/mock/db";
 import type { Court, Venue } from "@/lib/types/courtly";
 
-type Ctx = { params: Promise<{ id: string }> };
+type Ctx = { params: Promise<{ venueId: string }> };
 
 function isAssignedVenueAdmin(userId: string, venueId: string): boolean {
   return mockDb.venueAdminAssignments.some(
@@ -11,45 +11,45 @@ function isAssignedVenueAdmin(userId: string, venueId: string): boolean {
   );
 }
 
-function accountDetail(id: string) {
-  const venue = mockDb.venues.find((v) => v.id === id);
+function venueDetail(venueId: string) {
+  const venue = mockDb.venues.find((v) => v.id === venueId);
   if (!venue) return null;
-  const courts: Court[] = mockDb.courts.filter((c) => c.venue_id === id);
+  const courts: Court[] = mockDb.courts.filter((c) => c.venue_id === venueId);
   const adminIds = new Set(
     mockDb.venueAdminAssignments
-      .filter((a) => a.venue_id === id)
+      .filter((a) => a.venue_id === venueId)
       .map((a) => a.admin_user_id),
   );
   const admins = mockDb.managedUsers.filter(
     (u) => u.role === "admin" && adminIds.has(u.id),
   );
-  return { venue, account: venue, courts, admins, primaryAdmin: admins[0] ?? null };
+  return { venue, courts, admins };
 }
 
 export async function GET(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
-  const { id } = await ctx.params;
+  const { venueId } = await ctx.params;
   const canRead =
     user?.role === "superadmin" ||
-    (user?.role === "admin" && isAssignedVenueAdmin(user.id, id));
+    (user?.role === "admin" && isAssignedVenueAdmin(user.id, venueId));
   if (!canRead) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const detail = accountDetail(id);
+  const detail = venueDetail(venueId);
   if (!detail) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(detail);
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
-  const { id } = await ctx.params;
+  const { venueId } = await ctx.params;
   const canWrite =
     user?.role === "superadmin" ||
-    (user?.role === "admin" && isAssignedVenueAdmin(user.id, id));
+    (user?.role === "admin" && isAssignedVenueAdmin(user.id, venueId));
   if (!canWrite) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const idx = mockDb.venues.findIndex((a) => a.id === id);
+  const idx = mockDb.venues.findIndex((a) => a.id === venueId);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const patch = (await req.json()) as Partial<Venue> & {
@@ -88,7 +88,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
   };
   mockDb.venues[idx] = next;
 
-  // Optional: assign an admin to this venue when provided from superadmin edit UI.
   if (user?.role === "superadmin") {
     const existingAdminId =
       typeof patch.initial_admin_user_id === "string"
@@ -104,12 +103,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
         return NextResponse.json({ error: "Selected admin user was not found" }, { status: 404 });
       }
       const exists = mockDb.venueAdminAssignments.some(
-        (a) => a.venue_id === id && a.admin_user_id === assignedAdmin.id,
+        (a) => a.venue_id === venueId && a.admin_user_id === assignedAdmin.id,
       );
       if (!exists) {
         mockDb.venueAdminAssignments.push({
           id: `va-${crypto.randomUUID().slice(0, 8)}`,
-          venue_id: id,
+          venue_id: venueId,
           admin_user_id: assignedAdmin.id,
           created_at: new Date().toISOString(),
         });
@@ -146,12 +145,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
         mockDb.managedUsers.push(assignedAdmin);
       }
       const exists = mockDb.venueAdminAssignments.some(
-        (a) => a.venue_id === id && a.admin_user_id === assignedAdmin.id,
+        (a) => a.venue_id === venueId && a.admin_user_id === assignedAdmin.id,
       );
       if (!exists) {
         mockDb.venueAdminAssignments.push({
           id: `va-${crypto.randomUUID().slice(0, 8)}`,
-          venue_id: id,
+          venue_id: venueId,
           admin_user_id: assignedAdmin.id,
           created_at: new Date().toISOString(),
         });
@@ -167,12 +166,12 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { id } = await ctx.params;
-  const idx = mockDb.venues.findIndex((a) => a.id === id);
+  const { venueId } = await ctx.params;
+  const idx = mockDb.venues.findIndex((a) => a.id === venueId);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const venueCourtIds = new Set(
-    mockDb.courts.filter((c) => c.venue_id === id).map((c) => c.id),
+    mockDb.courts.filter((c) => c.venue_id === venueId).map((c) => c.id),
   );
   const hasActiveBookings = mockDb.bookings.some(
     (b) => venueCourtIds.has(b.court_id) && b.status === "confirmed",
@@ -187,7 +186,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     );
   }
 
-  const linked = mockDb.courts.some((c) => c.venue_id === id);
+  const linked = mockDb.courts.some((c) => c.venue_id === venueId);
   if (linked) {
     return NextResponse.json(
       {
@@ -200,7 +199,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
 
   mockDb.venues.splice(idx, 1);
   mockDb.venueAdminAssignments = mockDb.venueAdminAssignments.filter(
-    (a) => a.venue_id !== id,
+    (a) => a.venue_id !== venueId,
   );
   return NextResponse.json({ ok: true });
 }

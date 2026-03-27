@@ -20,7 +20,7 @@ import {
 
 const links = [
   {
-    href: "/superadmin/court-accounts",
+    href: "/superadmin/venues",
     title: "Court accounts",
     description:
       "Create and manage venue operator accounts, assign primary admins, and review linked courts.",

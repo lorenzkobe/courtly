@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       { status: 409 },
     );
   }
-  const courtBookingFee = court?.booking_fee;
+  const courtBookingFee = undefined;
 
   let court_subtotal = body.court_subtotal;
   let booking_fee = body.booking_fee;

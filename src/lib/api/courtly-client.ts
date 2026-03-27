@@ -10,6 +10,7 @@ import type {
   Tournament,
   TournamentRegistration,
   Venue,
+  VenueClosure,
   VenueDetailResponse,
 } from "@/lib/types/courtly";
 import type { NotificationsListResponse } from "@/lib/notifications/types";
@@ -35,11 +36,6 @@ export const courtlyApi = {
     create: (data: Partial<Court>) => http.post<Court>("/api/courts", data),
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
-    applyBookingFeeToAll: (data: { booking_fee: number }) =>
-      http.patch<{ ok: true; booking_fee: number; updated_count: number }>(
-        "/api/courts/booking-fees",
-        data,
-      ),
     remove: (id: string) => http.delete(`/api/courts/${id}`),
   },
 
@@ -63,17 +59,17 @@ export const courtlyApi = {
       http.delete(`/api/courts/${courtId}/closures/${closureId}`),
   },
 
-  courtReviews: {
-    bundle: (courtId: string) =>
-      http.get<{ court: Court; reviews: CourtReview[] }>(
-        `/api/courts/${courtId}/reviews`,
+  venueReviews: {
+    bundle: (venueId: string) =>
+      http.get<{ court: Court | null; reviews: CourtReview[] }>(
+        `/api/venues/${venueId}/reviews`,
       ),
     create: (
-      courtId: string,
+      venueId: string,
       body: { booking_id: string; rating: number; comment?: string },
-    ) => http.post<CourtReview>(`/api/courts/${courtId}/reviews`, body),
+    ) => http.post<CourtReview>(`/api/venues/${venueId}/reviews`, body),
     update: (
-      courtId: string,
+      venueId: string,
       reviewId: string,
       body: Partial<{
         rating: number;
@@ -82,20 +78,40 @@ export const courtlyApi = {
       }>,
     ) =>
       http.patch<CourtReview>(
-        `/api/courts/${courtId}/reviews/${reviewId}`,
+        `/api/venues/${venueId}/reviews/${reviewId}`,
         body,
       ),
-    remove: (courtId: string, reviewId: string) =>
-      http.delete(`/api/courts/${courtId}/reviews/${reviewId}`),
+    remove: (venueId: string, reviewId: string) =>
+      http.delete(`/api/venues/${venueId}/reviews/${reviewId}`),
     flag: (
-      courtId: string,
+      venueId: string,
       reviewId: string,
       body?: { reason?: string },
     ) =>
       http.post<CourtReview>(
-        `/api/courts/${courtId}/reviews/${reviewId}/flag`,
+        `/api/venues/${venueId}/reviews/${reviewId}/flag`,
         body ?? {},
       ),
+  },
+
+  venueClosures: {
+    list: (venueId: string, params?: { date?: string }) =>
+      http.get<VenueClosure[]>(`/api/venues/${venueId}/closures`, {
+        params: params?.date ? { date: params.date } : {},
+      }),
+    create: (venueId: string, data: Partial<VenueClosure>) =>
+      http.post<VenueClosure>(`/api/venues/${venueId}/closures`, data),
+    update: (
+      venueId: string,
+      closureId: string,
+      data: Partial<VenueClosure>,
+    ) =>
+      http.patch<VenueClosure>(
+        `/api/venues/${venueId}/closures/${closureId}`,
+        data,
+      ),
+    remove: (venueId: string, closureId: string) =>
+      http.delete(`/api/venues/${venueId}/closures/${closureId}`),
   },
 
   bookings: {
@@ -154,24 +170,14 @@ export const courtlyApi = {
       }),
   },
 
-  courtAccounts: {
-    list: () => http.get<Venue[]>("/api/court-accounts"),
-    create: (data: Partial<Venue>) =>
-      http.post<Venue>("/api/court-accounts", data),
-    get: (id: string) =>
-      http.get<VenueDetailResponse>(`/api/court-accounts/${id}`),
-    update: (id: string, data: Partial<Venue>) =>
-      http.patch<Venue>(`/api/court-accounts/${id}`, data),
-    remove: (id: string) => http.delete(`/api/court-accounts/${id}`),
-  },
-
   venues: {
-    list: () => http.get<Venue[]>("/api/court-accounts"),
-    create: (data: Partial<Venue>) => http.post<Venue>("/api/court-accounts", data),
-    get: (id: string) => http.get<VenueDetailResponse>(`/api/court-accounts/${id}`),
+    list: () => http.get<Venue[]>("/api/venues"),
+    create: (data: Partial<Venue>) => http.post<Venue>("/api/venues", data),
+    get: (id: string) =>
+      http.get<VenueDetailResponse>(`/api/venues/${id}`),
     update: (id: string, data: Partial<Venue>) =>
-      http.patch<Venue>(`/api/court-accounts/${id}`, data),
-    remove: (id: string) => http.delete(`/api/court-accounts/${id}`),
+      http.patch<Venue>(`/api/venues/${id}`, data),
+    remove: (id: string) => http.delete(`/api/venues/${id}`),
   },
 
   managedUsers: {
@@ -187,15 +193,13 @@ export const courtlyApi = {
     summary: (params?: {
       from?: string | null;
       to?: string | null;
-      court_account_id?: string | null;
+      venue_id?: string | null;
     }) =>
       http.get<RevenueSummaryResponse>("/api/admin/revenue", {
         params: {
           ...(params?.from ? { from: params.from } : {}),
           ...(params?.to ? { to: params.to } : {}),
-          ...(params?.court_account_id
-            ? { court_account_id: params.court_account_id }
-            : {}),
+          ...(params?.venue_id ? { venue_id: params.venue_id } : {}),
         },
       }),
   },

@@ -1,30 +1,31 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { mockDb } from "@/lib/mock/db";
-import { reviewSummaryForVenue } from "@/lib/review-summary";
-import type { Court, CourtReview } from "@/lib/types/courtly";
+import { withVenueHydration } from "@/lib/court-response";
+import type { CourtReview } from "@/lib/types/courtly";
 
-type Ctx = { params: Promise<{ id: string }> };
-
-function enrichCourt(c: Court) {
-  return {
-    ...c,
-    review_summary: reviewSummaryForVenue(c.venue_id, mockDb.courtReviews),
-  };
-}
+type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
-  const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
-  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { venueId } = await ctx.params;
+  const venue = mockDb.venues.find((v) => v.id === venueId);
+  if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const courtsAtVenue = mockDb.courts.filter((c) => c.venue_id === venueId);
+  const displayCourt = courtsAtVenue[0];
+  if (!displayCourt) {
+    return NextResponse.json({
+      court: null,
+      reviews: [] as CourtReview[],
+    });
+  }
 
   const list = mockDb.courtReviews
-    .filter((r) => r.venue_id === court.venue_id)
-    .sort((a, b) =>
-      String(b.created_at).localeCompare(String(a.created_at)),
-    );
+    .filter((r) => r.venue_id === venueId)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
   return NextResponse.json({
-    court: enrichCourt(court),
+    court: withVenueHydration(displayCourt),
     reviews: list,
   });
 }
@@ -35,9 +36,9 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
-  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { venueId } = await ctx.params;
+  const venue = mockDb.venues.find((v) => v.id === venueId);
+  if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as {
     booking_id?: string;
@@ -65,7 +66,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const bookingCourt = booking
     ? mockDb.courts.find((c) => c.id === booking.court_id)
     : undefined;
-  if (!booking || !bookingCourt || bookingCourt.venue_id !== court.venue_id) {
+  if (!booking || !bookingCourt || bookingCourt.venue_id !== venueId) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
   if (booking.status !== "completed") {
@@ -90,8 +91,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const now = new Date().toISOString();
   const row: CourtReview = {
     id: `rev-${crypto.randomUUID().slice(0, 8)}`,
-    venue_id: court.venue_id,
-    court_id: courtId,
+    venue_id: venueId,
     user_id: user.id,
     user_name: user.full_name?.trim() || user.email,
     booking_id: bookingId,
@@ -101,7 +101,5 @@ export async function POST(req: Request, ctx: Ctx) {
     updated_at: now,
   };
   mockDb.courtReviews.push(row);
-  // TODO(notifications): emit placeholder event hook for "review created"
-  // to court admin when Supabase notifications are wired.
   return NextResponse.json(row);
 }

@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 export default function SuperadminModerationPage() {
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState<{
-    courtId: string;
+    venueId: string;
     reviewId: string;
   } | null>(null);
 
@@ -33,25 +33,25 @@ export default function SuperadminModerationPage() {
   const reviews = data?.reviews ?? [];
 
   const clearFlagMut = useMutation({
-    mutationFn: async (p: { courtId: string; reviewId: string }) => {
-      await courtlyApi.courtReviews.update(p.courtId, p.reviewId, {
+    mutationFn: async (p: { venueId: string; reviewId: string }) => {
+      await courtlyApi.venueReviews.update(p.venueId, p.reviewId, {
         clear_flag: true,
       });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
-      void queryClient.invalidateQueries({ queryKey: ["court-reviews"] });
+      void queryClient.invalidateQueries({ queryKey: ["venue-reviews"] });
       toast.success("Flag cleared");
     },
   });
 
   const deleteReviewMut = useMutation({
-    mutationFn: async (p: { courtId: string; reviewId: string }) => {
-      await courtlyApi.courtReviews.remove(p.courtId, p.reviewId);
+    mutationFn: async (p: { venueId: string; reviewId: string }) => {
+      await courtlyApi.venueReviews.remove(p.venueId, p.reviewId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
-      void queryClient.invalidateQueries({ queryKey: ["court-reviews"] });
+      void queryClient.invalidateQueries({ queryKey: ["venue-reviews"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Review removed");
     },
@@ -134,7 +134,7 @@ export default function SuperadminModerationPage() {
                         disabled={clearFlagMut.isPending}
                         onClick={() =>
                           clearFlagMut.mutate({
-                            courtId: r.court_id,
+                            venueId: r.venue_id,
                             reviewId: r.id,
                           })
                         }
@@ -148,7 +148,7 @@ export default function SuperadminModerationPage() {
                         disabled={deleteReviewMut.isPending}
                         onClick={() =>
                           setConfirmDelete({
-                            courtId: r.court_id,
+                            venueId: r.venue_id,
                             reviewId: r.id,
                           })
                         }

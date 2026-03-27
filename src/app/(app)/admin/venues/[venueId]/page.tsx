@@ -104,9 +104,17 @@ export default function AdminVenueCourtsPage() {
   const [selectedClosureTimes, setSelectedClosureTimes] = useState<string[]>([]);
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
+  const [venueWideOpen, setVenueWideOpen] = useState(false);
+  const [venueWideForm, setVenueWideForm] = useState({
+    date: format(addDays(new Date(), 1), "yyyy-MM-dd"),
+    start_time: "09:00",
+    end_time: "17:00",
+    reason: "special_event",
+    note: "",
+  });
 
   const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["admin-courts"],
+    queryKey: ["admin-venues"],
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({ manageable: true });
       return data;
@@ -126,8 +134,50 @@ export default function AdminVenueCourtsPage() {
     },
     enabled: !!venueId,
   });
-  const venue = venueDetail?.venue ?? venueDetail?.account;
+  const venue = venueDetail?.venue;
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
+
+  const { data: venueWideClosures = [] } = useQuery({
+    queryKey: ["venue-closures-admin", venueId],
+    queryFn: async () => {
+      const { data } = await courtlyApi.venueClosures.list(venueId);
+      return data;
+    },
+    enabled: !!venueId,
+  });
+
+  const addVenueWideClosure = useMutation({
+    mutationFn: async () => {
+      await courtlyApi.venueClosures.create(venueId, {
+        date: venueWideForm.date.trim(),
+        start_time: venueWideForm.start_time.trim(),
+        end_time: venueWideForm.end_time.trim(),
+        reason: venueWideForm.reason.trim(),
+        note: venueWideForm.note.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["venue-closures-admin", venueId] });
+      toast.success("Venue-wide block added — all courts unavailable for that window.");
+      setVenueWideOpen(false);
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not add venue closure"));
+    },
+  });
+
+  const removeVenueWideClosure = useMutation({
+    mutationFn: async (closureId: string) => {
+      await courtlyApi.venueClosures.remove(venueId, closureId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["venue-closures-admin", venueId] });
+      toast.success("Venue-wide block removed");
+    },
+    onError: (error) => {
+      toast.error(mutationErrorMessage(error, "Could not remove block"));
+    },
+  });
 
   const upsert = useMutation({
     mutationFn: async () => {
@@ -143,7 +193,7 @@ export default function AdminVenueCourtsPage() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-courts"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success(editing ? "Court updated" : "Court created");
       setOpen(false);
@@ -179,7 +229,7 @@ export default function AdminVenueCourtsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["venue-detail", venueId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-courts"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Venue updated");
       setVenueOpen(false);
@@ -194,7 +244,7 @@ export default function AdminVenueCourtsPage() {
       await courtlyApi.courts.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-courts"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Court deleted");
     },
@@ -361,7 +411,7 @@ export default function AdminVenueCourtsPage() {
         }}
       />
       <Button variant="ghost" className="mb-4 -ml-2" asChild>
-        <Link href="/admin/courts">
+        <Link href="/admin/venues">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to venues
         </Link>
       </Button>
@@ -372,6 +422,9 @@ export default function AdminVenueCourtsPage() {
       >
         <Button variant="outline" onClick={() => setClosureOpen(true)}>
           Set unavailability
+        </Button>
+        <Button variant="outline" onClick={() => setVenueWideOpen(true)}>
+          Close entire venue
         </Button>
         <Button variant="outline" onClick={openVenueEdit}>
           Edit venue
@@ -440,6 +493,59 @@ export default function AdminVenueCourtsPage() {
                 <p className="font-medium text-foreground">None</p>
               )}
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {venue ? (
+        <Card className="mb-6 border-border/50">
+          <CardContent className="p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-heading font-semibold text-foreground">
+                  Whole-venue closures
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Blocks every court at this venue for the time window (e.g. holiday, full facility event).
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => setVenueWideOpen(true)}>
+                Add block
+              </Button>
+            </div>
+            {venueWideClosures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No venue-wide blocks scheduled.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {venueWideClosures
+                  .slice()
+                  .sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time))
+                  .map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
+                    >
+                      <span>
+                        <span className="font-medium">{c.date}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          {c.start_time}–{c.end_time} · {c.reason}
+                        </span>
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={removeVenueWideClosure.isPending}
+                        onClick={() => removeVenueWideClosure.mutate(c.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -795,6 +901,79 @@ export default function AdminVenueCourtsPage() {
               disabled={saveVenue.isPending}
             >
               {saveVenue.isPending ? "Saving..." : "Save Venue"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={venueWideOpen} onOpenChange={setVenueWideOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Close entire venue</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Date *</Label>
+              <Input
+                type="date"
+                className="mt-1.5"
+                value={venueWideForm.date}
+                onChange={(e) =>
+                  setVenueWideForm((prev) => ({ ...prev, date: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start *</Label>
+                <Input
+                  className="mt-1.5"
+                  placeholder="HH:mm"
+                  value={venueWideForm.start_time}
+                  onChange={(e) =>
+                    setVenueWideForm((prev) => ({ ...prev, start_time: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>End *</Label>
+                <Input
+                  className="mt-1.5"
+                  placeholder="HH:mm"
+                  value={venueWideForm.end_time}
+                  onChange={(e) =>
+                    setVenueWideForm((prev) => ({ ...prev, end_time: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Reason *</Label>
+              <Input
+                className="mt-1.5"
+                value={venueWideForm.reason}
+                onChange={(e) =>
+                  setVenueWideForm((prev) => ({ ...prev, reason: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Note</Label>
+              <Textarea
+                className="mt-1.5"
+                value={venueWideForm.note}
+                onChange={(e) =>
+                  setVenueWideForm((prev) => ({ ...prev, note: e.target.value }))
+                }
+              />
+            </div>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={addVenueWideClosure.isPending}
+              onClick={() => addVenueWideClosure.mutate()}
+            >
+              {addVenueWideClosure.isPending ? "Saving…" : "Save venue-wide block"}
             </Button>
           </div>
         </DialogContent>

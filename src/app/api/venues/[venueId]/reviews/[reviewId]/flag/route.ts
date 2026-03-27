@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { canCourtVenueAdminFlagReview } from "@/lib/auth/management";
+import { canVenueAdminFlagReview } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
 
-type Ctx = { params: Promise<{ id: string; reviewId: string }> };
+type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
 
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
-  const { id: courtId, reviewId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
-  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canCourtVenueAdminFlagReview(user, court)) {
+  const { venueId, reviewId } = await ctx.params;
+  const venue = mockDb.venues.find((v) => v.id === venueId);
+  if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (
+    !user ||
+    !canVenueAdminFlagReview(user, venueId, mockDb.venueAdminAssignments)
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === court.venue_id,
+    (r) => r.id === reviewId && r.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -39,7 +42,5 @@ export async function POST(req: Request, ctx: Ctx) {
     flag_reason: reason || undefined,
     updated_at: new Date().toISOString(),
   };
-  // TODO(notifications): emit placeholder event hooks for "review under review"
-  // (author) and "review flagged" (superadmin) when Supabase is wired.
   return NextResponse.json(mockDb.courtReviews[idx]);
 }

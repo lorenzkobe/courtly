@@ -12,11 +12,14 @@ export async function GET() {
   const flagged = mockDb.courtReviews
     .filter((r) => r.flagged)
     .map((r) => {
-      const court = mockDb.courts.find((c) => c.id === r.court_id);
+      const booking = mockDb.bookings.find((b) => b.id === r.booking_id);
+      const court = booking
+        ? mockDb.courts.find((c) => c.id === booking.court_id)
+        : undefined;
       const venue = mockDb.venues.find((v) => v.id === r.venue_id);
       return {
         ...r,
-        court_name: court?.name ?? r.court_id,
+        court_name: court?.name ?? booking?.court_name ?? "Court",
         venue_name: venue?.name ?? r.venue_id,
       };
     })

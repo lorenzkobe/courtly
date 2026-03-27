@@ -66,7 +66,7 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { canCourtVenueAdminFlagReview, isSuperadmin } from "@/lib/auth/management";
 import type { Booking, Court } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
-import { useFavoriteCourtIds } from "@/hooks/use-favorite-court-ids";
+import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_SLOT_OPEN = 6;
@@ -106,7 +106,7 @@ function buildBookingPayloads(
     const court_subtotal = segmentTotalCost(court, seg);
     const { booking_fee, total_cost } = splitBookingAmounts(
       court_subtotal,
-      court.booking_fee,
+      undefined,
     );
     return {
       court_id: court.id,
@@ -251,7 +251,7 @@ export default function BookCourtPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { toggleFavorite, isFavorite } = useFavoriteCourtIds();
+  const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
 
   const [selectedDate, setSelectedDate] = useState(addDays(new Date(), 1));
   const [startTime, setStartTime] = useState<string | null>(null);
@@ -270,15 +270,15 @@ export default function BookCourtPage() {
   });
 
   const { data: establishmentCourts = [] } = useQuery({
-    queryKey: ["establishment-courts", court?.court_account_id, court?.sport],
+    queryKey: ["establishment-courts", court?.venue_id, court?.sport],
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({
         status: "active",
         sport: court!.sport,
       });
-      if (!court?.court_account_id) return [court!];
+      if (!court?.venue_id) return [court!];
       return data
-        .filter((c) => c.court_account_id === court.court_account_id)
+        .filter((c) => c.venue_id === court.venue_id)
         .sort((a, b) => a.name.localeCompare(b.name));
     },
     enabled: !!court,
@@ -309,14 +309,28 @@ export default function BookCourtPage() {
     enabled: !!courtId,
   });
 
+  const { data: venueDayClosures = [] } = useQuery({
+    queryKey: ["venue-closures", court?.venue_id, dateIso],
+    queryFn: async () => {
+      const { data } = await courtlyApi.venueClosures.list(court!.venue_id, {
+        date: dateIso,
+      });
+      return data;
+    },
+    enabled: !!court?.venue_id,
+  });
+
   const bookingOccupied = useMemo(
     () => occupiedHourStarts(existingBookings),
     [existingBookings],
   );
-  const closureOccupied = useMemo(
-    () => occupiedHourStartsFromClosures(dayClosures, dateIso),
-    [dayClosures, dateIso],
-  );
+  const closureOccupied = useMemo(() => {
+    const merged = occupiedHourStartsFromClosures(dayClosures, dateIso);
+    for (const token of occupiedHourStartsFromClosures(venueDayClosures, dateIso)) {
+      merged.add(token);
+    }
+    return merged;
+  }, [dayClosures, venueDayClosures, dateIso]);
   const occupied = useMemo(() => {
     const merged = new Set<string>();
     for (const t of bookingOccupied) merged.add(t);
@@ -325,15 +339,15 @@ export default function BookCourtPage() {
   }, [bookingOccupied, closureOccupied]);
 
   const { data: courtReviews = [] } = useQuery({
-    queryKey: ["court-reviews", courtId],
+    queryKey: ["venue-reviews", court?.venue_id],
     queryFn: async () => {
-      const { data: payload } = await courtlyApi.courtReviews.bundle(courtId);
+      const { data: payload } = await courtlyApi.venueReviews.bundle(court!.venue_id);
       if (payload == null) return [];
       if (Array.isArray(payload)) return payload;
       if (Array.isArray(payload.reviews)) return payload.reviews;
       return [];
     },
-    enabled: !!courtId,
+    enabled: !!court?.venue_id,
   });
 
   const galleryUrls = useMemo(
@@ -362,10 +376,13 @@ export default function BookCourtPage() {
 
   const deleteReviewMut = useMutation({
     mutationFn: async (reviewId: string) => {
-      await courtlyApi.courtReviews.remove(courtId, reviewId);
+      if (!court?.venue_id) return;
+      await courtlyApi.venueReviews.remove(court.venue_id, reviewId);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["court-reviews", courtId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["venue-reviews", court?.venue_id],
+      });
       void queryClient.invalidateQueries({ queryKey: ["court", courtId] });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Review removed");
@@ -374,12 +391,15 @@ export default function BookCourtPage() {
 
   const flagReviewMut = useMutation({
     mutationFn: async (p: { reviewId: string; reason: string }) => {
-      await courtlyApi.courtReviews.flag(courtId, p.reviewId, {
+      if (!court?.venue_id) return;
+      await courtlyApi.venueReviews.flag(court.venue_id, p.reviewId, {
         reason: p.reason || undefined,
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["court-reviews", courtId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["venue-reviews", court?.venue_id],
+      });
       void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
       setFlagReviewId(null);
       setFlagNote("");
@@ -435,7 +455,7 @@ export default function BookCourtPage() {
       : 0;
   const bookingTotals =
     court && courtSubtotal > 0
-      ? splitBookingAmounts(courtSubtotal, court.booking_fee)
+      ? splitBookingAmounts(courtSubtotal, undefined)
       : null;
 
   const runBooking = (toBook: BookingSegment[]) => {

@@ -21,13 +21,13 @@ import {
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
 
-function AccountRevenueInner() {
-  const params = useParams<{ accountId: string }>();
+function VenueRevenueInner() {
+  const params = useParams<{ venueId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const accountId = params.accountId;
-  const courtAccountParam =
-    accountId === "unassigned" ? "unassigned" : (accountId ?? "");
+  const venueRouteId = params.venueId;
+  const venueFilterParam =
+    venueRouteId === "unassigned" ? "unassigned" : (venueRouteId ?? "");
 
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
@@ -41,19 +41,19 @@ function AccountRevenueInner() {
       else p.delete("to");
       const qs = p.toString();
       router.replace(
-        `/superadmin/revenue/accounts/${accountId}${qs ? `?${qs}` : ""}`,
+        `/superadmin/revenue/venues/${venueRouteId}${qs ? `?${qs}` : ""}`,
       );
     },
-    [router, searchParams, accountId],
+    [router, searchParams, venueRouteId],
   );
 
   const queryParams = useMemo(
     () => ({
       from: from || undefined,
       to: to || undefined,
-      court_account_id: courtAccountParam,
+      venue_id: venueFilterParam,
     }),
-    [from, to, courtAccountParam],
+    [from, to, venueFilterParam],
   );
 
   const backHref = useMemo(() => {
@@ -67,8 +67,8 @@ function AccountRevenueInner() {
   const { data, isLoading, isError } = useQuery({
     queryKey: [
       "revenue-summary",
-      "account",
-      courtAccountParam,
+      "venue",
+      venueFilterParam,
       queryParams.from,
       queryParams.to,
     ],
@@ -76,7 +76,7 @@ function AccountRevenueInner() {
       const { data: d } = await courtlyApi.revenue.summary(queryParams);
       return d;
     },
-    enabled: !!courtAccountParam,
+    enabled: !!venueFilterParam,
   });
 
   if (isLoading || !data) {
@@ -96,7 +96,7 @@ function AccountRevenueInner() {
   if (isError) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
-        <p className="text-muted-foreground">Could not load revenue for this account.</p>
+        <p className="text-muted-foreground">Could not load revenue for this venue.</p>
         <Button variant="outline" className="mt-4" asChild>
           <Link href="/superadmin/revenue">Back to platform revenue</Link>
         </Button>
@@ -104,8 +104,8 @@ function AccountRevenueInner() {
     );
   }
 
-  const { totals, by_court, focus_account } = data;
-  const title = focus_account?.name ?? "Court account";
+  const { totals, by_court, focus_venue } = data;
+  const title = focus_venue?.name ?? "Venue";
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -118,7 +118,7 @@ function AccountRevenueInner() {
 
       <PageHeader
         title={title}
-        subtitle="Courts under this account and booking income for the selected reservation dates."
+        subtitle="Courts under this venue and booking income for the selected reservation dates."
       />
 
       <div className="mb-6">
@@ -182,7 +182,7 @@ function AccountRevenueInner() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading text-lg">Courts in this account</CardTitle>
+          <CardTitle className="font-heading text-lg">Courts in this venue</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -230,10 +230,10 @@ function Fallback() {
   );
 }
 
-export default function AccountRevenueDetailPage() {
+export default function VenueRevenueDetailPage() {
   return (
     <Suspense fallback={<Fallback />}>
-      <AccountRevenueInner />
+      <VenueRevenueInner />
     </Suspense>
   );
 }

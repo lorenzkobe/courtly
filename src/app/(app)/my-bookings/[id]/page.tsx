@@ -100,10 +100,10 @@ export default function BookingDetailPage() {
   });
 
   const { data: reviewBundle } = useQuery({
-    queryKey: ["court-reviews", booking?.court_id],
+    queryKey: ["venue-reviews", court?.venue_id],
     queryFn: async () => {
-      const { data: payload } = await courtlyApi.courtReviews.bundle(
-        booking!.court_id,
+      const { data: payload } = await courtlyApi.venueReviews.bundle(
+        court!.venue_id,
       );
       if (payload == null)
         return { court: undefined, reviews: [] as CourtReview[] };
@@ -113,7 +113,7 @@ export default function BookingDetailPage() {
       const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
       return { ...payload, reviews };
     },
-    enabled: !!booking?.court_id,
+    enabled: !!court?.venue_id,
   });
 
   const myReview = useMemo(() => {
@@ -137,7 +137,7 @@ export default function BookingDetailPage() {
 
   const invalidateReviews = () => {
     void queryClient.invalidateQueries({
-      queryKey: ["court-reviews", booking?.court_id],
+      queryKey: ["venue-reviews", court?.venue_id],
     });
     void queryClient.invalidateQueries({ queryKey: ["court", booking?.court_id] });
     void queryClient.invalidateQueries({ queryKey: ["courts"] });
@@ -145,8 +145,8 @@ export default function BookingDetailPage() {
 
   const createReviewMut = useMutation({
     mutationFn: async () => {
-      if (!booking?.court_id) throw new Error("No court");
-      await courtlyApi.courtReviews.create(booking.court_id, {
+      if (!court?.venue_id) throw new Error("No venue");
+      await courtlyApi.venueReviews.create(court.venue_id, {
         booking_id: bookingId,
         rating: ratingDraft,
         comment: commentDraft.trim() || undefined,
@@ -161,9 +161,9 @@ export default function BookingDetailPage() {
 
   const updateReviewMut = useMutation({
     mutationFn: async () => {
-      if (!booking?.court_id || !myReview) throw new Error("No review");
-      await courtlyApi.courtReviews.update(
-        booking.court_id,
+      if (!court?.venue_id || !myReview) throw new Error("No review");
+      await courtlyApi.venueReviews.update(
+        court.venue_id,
         myReview.id,
         {
           rating: ratingDraft,
@@ -180,8 +180,8 @@ export default function BookingDetailPage() {
 
   const deleteReviewMut = useMutation({
     mutationFn: async () => {
-      if (!booking?.court_id || !myReview) throw new Error("No review");
-      await courtlyApi.courtReviews.remove(booking.court_id, myReview.id);
+      if (!court?.venue_id || !myReview) throw new Error("No review");
+      await courtlyApi.venueReviews.remove(court.venue_id, myReview.id);
     },
     onSuccess: () => {
       invalidateReviews();

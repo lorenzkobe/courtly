@@ -78,9 +78,9 @@ export default function SuperadminUsersPage() {
   });
 
   const { data: accounts = [] } = useQuery({
-    queryKey: ["court-accounts"],
+    queryKey: ["venues"],
     queryFn: async () => {
-      const { data } = await courtlyApi.courtAccounts.list();
+      const { data } = await courtlyApi.venues.list();
       return data;
     },
   });

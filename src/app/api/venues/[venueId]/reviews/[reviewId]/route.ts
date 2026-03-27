@@ -4,17 +4,17 @@ import { isSuperadmin } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
 import type { CourtReview } from "@/lib/types/courtly";
 
-type Ctx = { params: Promise<{ id: string; reviewId: string }> };
+type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id: courtId, reviewId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
-  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { venueId, reviewId } = await ctx.params;
+  const venue = mockDb.venues.find((v) => v.id === venueId);
+  if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === court.venue_id,
+    (r) => r.id === reviewId && r.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -34,8 +34,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
       flag_reason: undefined,
       updated_at: new Date().toISOString(),
     };
-    // TODO(notifications): emit placeholder moderation feedback hook for flagger
-    // when Supabase notifications are wired.
     return NextResponse.json(mockDb.courtReviews[idx]);
   }
 
@@ -81,11 +79,11 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id: courtId, reviewId } = await ctx.params;
-  const court = mockDb.courts.find((c) => c.id === courtId);
-  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { venueId, reviewId } = await ctx.params;
+  const venue = mockDb.venues.find((v) => v.id === venueId);
+  if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const idx = mockDb.courtReviews.findIndex(
-    (r) => r.id === reviewId && r.venue_id === court.venue_id,
+    (r) => r.id === reviewId && r.venue_id === venueId,
   );
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -98,7 +96,5 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   mockDb.courtReviews.splice(idx, 1);
-  // TODO(notifications): emit placeholder moderation feedback hook for flagger
-  // when Supabase notifications are wired.
   return NextResponse.json({ ok: true });
 }

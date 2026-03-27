@@ -77,11 +77,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   return NextResponse.json({
     ...next,
-    court_account_id:
-      role === "admin"
-        ? mockDb.venueAdminAssignments.find((a) => a.admin_user_id === id)?.venue_id ??
-          null
-        : null,
     venue_ids:
       role === "admin"
         ? mockDb.venueAdminAssignments

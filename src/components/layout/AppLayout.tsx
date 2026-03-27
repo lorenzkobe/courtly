@@ -44,7 +44,7 @@ type NavEntry = (typeof PLAYER_NAV)[number] | {
 
 function venueAdminNav(): NavEntry[] {
   return [
-    { path: "/admin/courts", label: "Venues", icon: Layers },
+    { path: "/admin/venues", label: "Venues", icon: Layers },
     { path: "/admin/bookings", label: "Court bookings", icon: Calendar },
     { path: "/admin/revenue", label: "Revenue", icon: PhilippinePeso },
   ];
@@ -54,7 +54,7 @@ function platformSuperadminNav(): NavEntry[] {
   return [
     { path: "/superadmin", label: "Overview", icon: Crown },
     {
-      path: "/superadmin/court-accounts",
+      path: "/superadmin/venues",
       label: "Venues",
       icon: Building2,
     },
@@ -78,7 +78,7 @@ type SidebarModel = {
   items: NavEntry[];
 };
 
-/** Longest matching nav path wins so `/superadmin` does not stay active on `/superadmin/court-accounts`. */
+/** Longest matching nav path wins so `/superadmin` does not stay active on `/superadmin/venues`. */
 function activeNavPath(pathname: string, paths: readonly string[]) {
   let best: string | null = null;
   for (const p of paths) {

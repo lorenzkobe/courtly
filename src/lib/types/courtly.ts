@@ -7,7 +7,20 @@ export type CourtRateWindow = {
   hourly_rate: number;
 };
 
-/** Single-day block when the court is not bookable (maintenance, event, etc.). */
+/** Whole-venue block (all courts at the venue unbookable for the window). */
+export type VenueClosure = {
+  id: string;
+  venue_id: string;
+  /** yyyy-MM-dd */
+  date: string;
+  start_time: string;
+  end_time: string;
+  reason: string;
+  note?: string;
+  created_at: string;
+};
+
+/** Single-day block when one court is not bookable (maintenance, event, etc.). */
 export type CourtClosure = {
   id: string;
   court_id: string;
@@ -24,8 +37,6 @@ export type CourtClosure = {
 export type CourtReview = {
   id: string;
   venue_id: string;
-  /** @deprecated Legacy compatibility. */
-  court_id: string;
   user_id: string;
   user_name: string;
   booking_id: string;
@@ -61,6 +72,8 @@ export type Venue = {
   amenities: string[];
   image_url: string;
   created_at: string;
+  map_latitude?: number;
+  map_longitude?: number;
 };
 
 export type VenueAdminAssignment = {
@@ -89,9 +102,9 @@ export type Court = {
   gallery_urls?: string[];
   /** Deprecated/optional legacy metadata. */
   description?: string;
-  /** Deprecated/optional legacy metadata. */
+  /** Derived on read from linked venue (maps). */
   map_latitude?: number;
-  /** Deprecated/optional legacy metadata. */
+  /** Derived on read from linked venue (maps). */
   map_longitude?: number;
   /** Deprecated but retained for compatibility in current UI. */
   type: "indoor" | "outdoor";
@@ -107,12 +120,6 @@ export type Court = {
   available_hours: { open: string; close: string };
   /** Populated on read APIs from reviews table — not stored on court row. */
   review_summary?: CourtReviewSummary;
-  /** @deprecated Legacy compatibility field. */
-  court_account_id?: string | null;
-  /** @deprecated Legacy compatibility field. */
-  managed_by_user_id?: string | null;
-  /** @deprecated Legacy compatibility field. */
-  booking_fee?: number;
 };
 
 export type Booking = {
@@ -209,9 +216,6 @@ export type SessionUser = {
   is_active?: boolean;
 };
 
-/** @deprecated Use Venue instead. */
-export type CourtAccount = Venue;
-
 /** Directory user record (superadmin CRUD); aligns with demo login identities. */
 export type ManagedUser = {
   id: string;
@@ -219,8 +223,6 @@ export type ManagedUser = {
   full_name: string;
   role: "user" | "admin" | "superadmin";
   is_active: boolean;
-  /** @deprecated Legacy single-account link; use venue assignments. */
-  court_account_id?: string | null;
   created_at: string;
 };
 
@@ -229,10 +231,6 @@ export type RevenueByCourtRow = {
   court_name: string;
   venue_id: string | null;
   venue_name: string | null;
-  /** @deprecated Legacy alias. */
-  court_account_id?: string | null;
-  /** @deprecated Legacy alias. */
-  court_account_name?: string | null;
   booking_count: number;
   court_net: number;
   booking_fees: number;
@@ -242,10 +240,6 @@ export type RevenueByCourtRow = {
 export type RevenueByAccountRow = {
   venue_id: string;
   venue_name: string;
-  /** @deprecated Legacy alias. */
-  court_account_id: string;
-  /** @deprecated Legacy alias. */
-  court_account_name: string;
   court_net: number;
   booking_fees: number;
   customer_total: number;
@@ -262,8 +256,6 @@ export type RevenueSummaryResponse = {
   };
   by_court: RevenueByCourtRow[];
   by_account?: RevenueByAccountRow[];
-  /** @deprecated Legacy alias. */
-  by_account_legacy?: RevenueByAccountRow[];
   /** Applied filters (echo for UI). */
   filters: {
     date_from: string | null;
@@ -273,19 +265,10 @@ export type RevenueSummaryResponse = {
   };
   /** Present when `venue_id` filter is set (drill-down page). */
   focus_venue?: { id: string; name: string } | null;
-  /** @deprecated Legacy alias. */
-  focus_account?: { id: string; name: string } | null;
 };
 
 export type VenueDetailResponse = {
   venue: Venue;
-  /** @deprecated Legacy alias. */
-  account?: Venue;
   courts: Court[];
-  /** @deprecated Legacy single-admin shape. */
-  primaryAdmin?: ManagedUser | null;
   admins: ManagedUser[];
 };
-
-/** @deprecated Use VenueDetailResponse. */
-export type CourtAccountDetailResponse = VenueDetailResponse;

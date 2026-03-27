@@ -41,7 +41,7 @@ function subscribe(onChange: () => void) {
   };
 }
 
-export function useFavoriteCourtIds() {
+export function useFavoriteVenueIds() {
   const favoriteIds = useSyncExternalStore(subscribe, getSnapshot, () => serverEmpty);
 
   const toggleFavorite = useCallback((venueId: string) => {

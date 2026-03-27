@@ -30,7 +30,7 @@ import { formatTimeShort } from "@/lib/booking-range";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
-import { useFavoriteCourtIds } from "@/hooks/use-favorite-court-ids";
+import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import { cn } from "@/lib/utils";
 
@@ -122,7 +122,7 @@ export default function CourtsPage() {
     }
   }, [dialogOpen]);
 
-  const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteCourtIds();
+  const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteVenueIds();
   const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: courts = [], isLoading } = useQuery({

@@ -54,7 +54,7 @@ export function isSuperadmin(user: SessionUser | null): boolean {
 export function homePathForRole(role: SessionUser["role"] | undefined): string {
   switch (role) {
     case "admin":
-      return "/admin/courts";
+      return "/admin/venues";
     case "superadmin":
       return "/superadmin";
     case "user":
@@ -70,6 +70,29 @@ export function canCourtVenueAdminFlagReview(
 ): boolean {
   if (!user || user.role !== "admin") return false;
   return canMutateCourt(user, court);
+}
+
+export function canMutateVenue(
+  user: SessionUser | null,
+  venueId: string,
+  assignments: { venue_id: string; admin_user_id: string }[] = [],
+): boolean {
+  if (!user) return false;
+  if (user.role === "superadmin") return true;
+  if (user.role === "admin") {
+    return venueIdsForAdmin(user.id, assignments).has(venueId);
+  }
+  return false;
+}
+
+/** Venue admins may flag venue-level reviews (same scope as managing courts at that venue). */
+export function canVenueAdminFlagReview(
+  user: SessionUser | null,
+  venueId: string,
+  assignments: { venue_id: string; admin_user_id: string }[] = [],
+): boolean {
+  if (!user || user.role !== "admin") return false;
+  return canMutateVenue(user, venueId, assignments);
 }
 
 /** Roles that may access `/admin/*` (scoped data for admin, all data for superadmin). */

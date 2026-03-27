@@ -46,8 +46,8 @@ export function bookingFinancials(
 export type CourtRevenueRow = {
   court_id: string;
   court_name: string;
-  court_account_id: string | null;
-  court_account_name: string | null;
+  venue_id: string | null;
+  venue_name: string | null;
   booking_count: number;
   court_net: number;
   booking_fees: number;
@@ -71,9 +71,7 @@ export function aggregateRevenueByCourt(
 
   for (const b of bookings) {
     if (!COUNTABLE.includes(b.status)) continue;
-    const court = courtMap.get(b.court_id);
-    const fallbackCourtBookingFee = court?.booking_fee;
-    const f = bookingFinancials(b, fallbackCourtBookingFee);
+    const f = bookingFinancials(b, undefined);
     const cur = byCourt.get(b.court_id) ?? {
       court_net: 0,
       booking_fees: 0,
@@ -92,8 +90,8 @@ export function aggregateRevenueByCourt(
     return {
       court_id: c.id,
       court_name: c.name,
-      court_account_id: c.court_account_id ?? null,
-      court_account_name: null,
+      venue_id: c.venue_id ?? null,
+      venue_name: null,
       booking_count: agg?.booking_count ?? 0,
       court_net: agg?.court_net ?? 0,
       booking_fees: agg?.booking_fees ?? 0,

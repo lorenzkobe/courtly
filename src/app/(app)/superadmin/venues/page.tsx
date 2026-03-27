@@ -64,7 +64,7 @@ function normAmenity(s: string) {
   return s.trim().toLowerCase();
 }
 
-export default function SuperadminCourtAccountsPage() {
+export default function SuperadminVenuesPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Venue | null>(null);
@@ -72,7 +72,7 @@ export default function SuperadminCourtAccountsPage() {
   const [confirmRemoveVenueId, setConfirmRemoveVenueId] = useState<string | null>(null);
 
   const { data: venues = [], isLoading } = useQuery({
-    queryKey: ["court-accounts"],
+    queryKey: ["venues"],
     queryFn: async () => {
       const { data } = await courtlyApi.venues.list();
       return data;
@@ -121,7 +121,7 @@ export default function SuperadminCourtAccountsPage() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["court-accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["venues"] });
       void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
       toast.success(editing ? "Venue updated" : "Venue created");
       setDialogOpen(false);
@@ -138,7 +138,7 @@ export default function SuperadminCourtAccountsPage() {
       await courtlyApi.venues.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["court-accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["venues"] });
       void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
       toast.success("Venue removed");
       setDialogOpen(false);

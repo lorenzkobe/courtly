@@ -9,6 +9,7 @@ import type {
   TournamentRegistration,
   Venue,
   VenueAdminAssignment,
+  VenueClosure,
 } from "@/lib/types/courtly";
 
 function isoDate(d: Date) {
@@ -37,6 +38,8 @@ const venues: Venue[] = [
     amenities: ["lights", "parking", "restrooms", "seating"],
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
     created_at: new Date().toISOString(),
+    map_latitude: 14.5515,
+    map_longitude: 121.0483,
   },
   {
     id: "venue-cebubay",
@@ -52,6 +55,8 @@ const venues: Venue[] = [
     amenities: ["lights", "parking", "water_fountain"],
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
     created_at: new Date().toISOString(),
+    map_latitude: 10.3157,
+    map_longitude: 123.8854,
   },
 ];
 
@@ -99,14 +104,11 @@ const courts: Court[] = [
     location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
-    map_latitude: 14.5515,
-    map_longitude: 121.0483,
     hourly_rate: 45,
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
     type: "indoor",
     surface: "sport_court",
-    court_account_id: "venue-bgcmakati",
     status: "active",
   },
   {
@@ -116,14 +118,11 @@ const courts: Court[] = [
     location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
-    map_latitude: 14.5515,
-    map_longitude: 121.0483,
     hourly_rate: 45,
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
     type: "indoor",
     surface: "sport_court",
-    court_account_id: "venue-bgcmakati",
     status: "active",
   },
   {
@@ -133,14 +132,11 @@ const courts: Court[] = [
     location: "Cebu City",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
-    map_latitude: 10.3157,
-    map_longitude: 123.8854,
     hourly_rate: 40,
     amenities: ["lights", "parking", "water_fountain"],
     available_hours: { open: "08:00", close: "21:00" },
     type: "indoor",
     surface: "sport_court",
-    court_account_id: "venue-cebubay",
     status: "active",
   },
 ];
@@ -349,11 +345,12 @@ const courtClosures: CourtClosure[] = [
   },
 ];
 
+const venueClosures: VenueClosure[] = [];
+
 const courtReviews: CourtReview[] = [
   {
     id: "rev-demo-bgcs",
     venue_id: "venue-bgcmakati",
-    court_id: "court-bgcs-1",
     user_id: "user-player-1",
     user_name: "Alex Player",
     booking_id: "book-demo-completed",
@@ -366,7 +363,6 @@ const courtReviews: CourtReview[] = [
   {
     id: "rev-demo-flagged-makati",
     venue_id: "venue-bgcmakati",
-    court_id: "court-makati-2",
     user_id: "user-guest-demo",
     user_name: "River Guest",
     booking_id: "book-demo-makati-completed",
@@ -387,8 +383,7 @@ const courtReviews: CourtReview[] = [
 export const mockDb = {
   venues,
   venueAdminAssignments,
-  /** @deprecated for compatibility during venue migration. */
-  courtAccounts: venues,
+  venueClosures,
   managedUsers,
   courts,
   bookings,

@@ -19,13 +19,13 @@ import {
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
 
-function accountHref(accountId: string, from: string, to: string) {
-  const seg = accountId === "" ? "unassigned" : accountId;
+function venueHref(venueId: string, from: string, to: string) {
+  const seg = venueId === "" ? "unassigned" : venueId;
   const q = new URLSearchParams();
   if (from) q.set("from", from);
   if (to) q.set("to", to);
   const qs = q.toString();
-  return `/superadmin/revenue/accounts/${seg}${qs ? `?${qs}` : ""}`;
+  return `/superadmin/revenue/venues/${seg}${qs ? `?${qs}` : ""}`;
 }
 
 function PlatformRevenueInner() {
@@ -83,7 +83,7 @@ function PlatformRevenueInner() {
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <PageHeader
         title="Platform revenue"
-        subtitle="Totals and court accounts for the selected reservation dates. Open an account to see courts and per-court income. Confirmed and completed bookings only."
+        subtitle="Totals by venue for the selected reservation dates. Open a venue to see courts and per-court income. Confirmed and completed bookings only."
       />
 
       <div className="mb-6">
@@ -164,14 +164,14 @@ function PlatformRevenueInner() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading text-lg">Court accounts</CardTitle>
+          <CardTitle className="font-heading text-lg">Venues</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {by_account && by_account.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Account</TableHead>
+                  <TableHead>Venue</TableHead>
                   <TableHead className="text-right">Bookings</TableHead>
                   <TableHead className="text-right">Court net</TableHead>
                   <TableHead className="text-right">Courtly booking fee</TableHead>
@@ -181,15 +181,15 @@ function PlatformRevenueInner() {
               <TableBody>
                 {by_account.map((row) => (
                   <TableRow
-                    key={row.court_account_id || "unassigned"}
+                    key={row.venue_id || "unassigned"}
                     className="cursor-pointer transition-colors hover:bg-muted/50"
                   >
                     <TableCell className="font-medium">
                       <Link
-                        href={accountHref(row.court_account_id, from, to)}
+                        href={venueHref(row.venue_id, from, to)}
                         className="text-primary underline-offset-4 hover:underline"
                       >
-                        {row.court_account_name}
+                        {row.venue_name}
                       </Link>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -209,7 +209,7 @@ function PlatformRevenueInner() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">No account data.</p>
+            <p className="text-sm text-muted-foreground">No venue data.</p>
           )}
         </CardContent>
       </Card>

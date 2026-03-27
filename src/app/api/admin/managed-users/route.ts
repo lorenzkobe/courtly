@@ -17,11 +17,6 @@ export async function GET() {
               .filter((a) => a.admin_user_id === u.id)
               .map((a) => a.venue_id)
           : [],
-      court_account_id:
-        u.role === "admin"
-          ? mockDb.venueAdminAssignments.find((a) => a.admin_user_id === u.id)
-              ?.venue_id ?? null
-          : null,
     })),
   );
 }
@@ -77,7 +72,6 @@ export async function POST(req: Request) {
   }
   return NextResponse.json({
     ...managed,
-    court_account_id: null,
     venue_ids: role === "admin" ? body.venue_ids ?? [] : [],
   });
 }

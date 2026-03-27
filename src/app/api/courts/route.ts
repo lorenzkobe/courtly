@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { mockDb } from "@/lib/mock/db";
-import { reviewSummaryForVenue } from "@/lib/review-summary";
+import { withVenueHydration } from "@/lib/court-response";
 import type { Court, CourtSport, Venue } from "@/lib/types/courtly";
 
 function venueById(venueId: string): Venue | undefined {
@@ -10,25 +10,7 @@ function venueById(venueId: string): Venue | undefined {
 }
 
 function hydrateCourt(court: Court): Court {
-  const venue = venueById(court.venue_id);
-  return {
-    ...court,
-    establishment_name: venue?.name ?? court.establishment_name,
-    contact_phone: venue?.contact_phone ?? court.contact_phone,
-    location: venue?.location ?? court.location,
-    sport: venue?.sport ?? court.sport,
-    image_url: venue?.image_url ?? court.image_url,
-    type: "indoor",
-    surface: "sport_court",
-    hourly_rate: venue?.hourly_rate ?? court.hourly_rate,
-    hourly_rate_windows: venue?.hourly_rate_windows ?? court.hourly_rate_windows,
-    amenities: venue?.amenities ?? court.amenities,
-    available_hours: venue
-      ? { open: venue.opens_at, close: venue.closes_at }
-      : court.available_hours,
-    court_account_id: court.venue_id,
-    review_summary: reviewSummaryForVenue(court.venue_id, mockDb.courtReviews),
-  };
+  return withVenueHydration(court);
 }
 
 export async function GET(req: Request) {
@@ -107,7 +89,6 @@ export async function POST(req: Request) {
     available_hours: { open: venue.opens_at, close: venue.closes_at },
     type: "indoor",
     surface: "sport_court",
-    court_account_id: venue_id,
     status: (body.status as Court["status"]) ?? "active",
   }
   mockDb.courts.push(court);

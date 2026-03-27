@@ -8,11 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import type { Court } from "@/lib/types/courtly";
 
-export default function AdminCourtsPage() {
+export default function AdminVenuesPage() {
   const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["admin-courts"],
+    queryKey: ["admin-venues"],
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({ manageable: true });
       return data;
@@ -85,7 +84,7 @@ export default function AdminCourtsPage() {
                   <div className="text-xs">{venue.court_count} courts</div>
                 </div>
                 <Button asChild variant="outline" className="w-full">
-                  <Link href={`/admin/courts/${venue.id}`}>
+                  <Link href={`/admin/venues/${venue.id}`}>
                     Manage courts <ChevronRight className="ml-1 h-4 w-4" />
                   </Link>
                 </Button>
