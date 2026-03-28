@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   deleteRow,
+  insertRow,
   listBookings,
   listCourts,
   listManagedUsers,
@@ -11,6 +13,31 @@ import {
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { Venue } from "@/lib/types/courtly";
+
+function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
+  const keys: (keyof Venue)[] = [
+    "name",
+    "location",
+    "contact_phone",
+    "sport",
+    "hourly_rate",
+    "hourly_rate_windows",
+    "opens_at",
+    "closes_at",
+    "status",
+    "amenities",
+    "image_url",
+    "map_latitude",
+    "map_longitude",
+  ];
+  const out: Partial<Venue> = {};
+  for (const key of keys) {
+    if (key in patch && patch[key] !== undefined) {
+      (out as Record<string, unknown>)[key as string] = patch[key];
+    }
+  }
+  return out;
+}
 
 type Ctx = { params: Promise<{ venueId: string }> };
 
@@ -57,12 +84,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const cur = venues.find((venue) => venue.id === venueId);
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const patch = (await req.json()) as Partial<Venue> & {
+  const patch = (await req.json()) as Record<string, unknown> & {
     initial_admin_user_id?: string;
-    initial_admin_new?: {
-      full_name?: string;
-      email?: string;
-    };
   };
   if (patch.status === "closed") {
     const [courts, bookings] = await Promise.all([listCourts(), listBookings()]);
@@ -81,7 +104,37 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
-  const next = await updateRow<Venue>("venues", venueId, patch);
+  const venuePatch = pickVenuePatch(patch);
+  const next = await updateRow<Venue>("venues", venueId, venuePatch);
+
+  if (
+    user.role === "superadmin" &&
+    Object.prototype.hasOwnProperty.call(patch, "initial_admin_user_id")
+  ) {
+    const rawId =
+      typeof patch.initial_admin_user_id === "string"
+        ? patch.initial_admin_user_id.trim()
+        : "";
+    const supabase = await createSupabaseServerClient();
+    await supabase.from("venue_admin_assignments").delete().eq("venue_id", venueId);
+    if (rawId) {
+      const managedUsers = await listManagedUsers();
+      const adminUser = managedUsers.find(
+        (managedUser) => managedUser.id === rawId && managedUser.role === "admin",
+      );
+      if (!adminUser) {
+        return NextResponse.json(
+          { error: "Selected admin was not found or is not a court admin." },
+          { status: 404 },
+        );
+      }
+      await insertRow("venue_admin_assignments", {
+        venue_id: venueId,
+        admin_user_id: rawId,
+      });
+    }
+  }
+
   return NextResponse.json(next);
 }
 

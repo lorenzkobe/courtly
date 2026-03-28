@@ -30,12 +30,21 @@ type DialogContentProps = React.ComponentPropsWithoutRef<
 > & {
   /** Applied to the inner scroll/padding region (e.g. `p-0` for full-bleed layouts). */
   contentClassName?: string;
+  /**
+   * Set `true` when this dialog renders `DialogDescription` so `aria-describedby` stays
+   * wired. Omit or `false` otherwise (default) to silence Radix’s missing-description warning.
+   */
+  linkDescription?: boolean;
 };
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, contentClassName, ...props }, ref) => (
+>(({ className, children, contentClassName, linkDescription = false, ...props }, ref) => {
+  const suppressAriaDescribedBy =
+    !linkDescription && !("aria-describedby" in props);
+
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -45,6 +54,7 @@ const DialogContent = React.forwardRef<
         className,
       )}
       {...props}
+      {...(suppressAriaDescribedBy ? { "aria-describedby": undefined } : {})}
     >
       <div
         className={cn(
@@ -60,7 +70,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-));
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({

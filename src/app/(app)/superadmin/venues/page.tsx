@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Building2, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -43,10 +44,7 @@ const emptyForm = {
   amenities: [] as string[],
   customAmenityDraft: "",
   image_url: "",
-  initial_admin_mode: "existing" as "existing" | "new",
   initial_admin_user_id: "" as string,
-  initial_admin_new_name: "",
-  initial_admin_new_email: "",
 };
 
 const amenityOptions = [
@@ -61,6 +59,12 @@ const amenityOptions = [
 
 function normAmenity(s: string) {
   return s.trim().toLowerCase();
+}
+
+function adminDirectoryLabel(u: ManagedUser) {
+  const fromParts = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+  const name = fromParts || u.full_name;
+  return u.email ? `${name} (${u.email})` : name;
 }
 
 export default function SuperadminVenuesPage() {
@@ -104,17 +108,7 @@ export default function SuperadminVenuesPage() {
           ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
         ],
         image_url: form.image_url.trim(),
-        initial_admin_user_id:
-          form.initial_admin_mode === "existing" && form.initial_admin_user_id.trim()
-            ? form.initial_admin_user_id
-            : undefined,
-        initial_admin_new:
-          form.initial_admin_mode === "new"
-            ? {
-                full_name: form.initial_admin_new_name.trim(),
-                email: form.initial_admin_new_email.trim(),
-              }
-            : undefined,
+        initial_admin_user_id: form.initial_admin_user_id.trim() || undefined,
       };
       if (editing) {
         await courtlyApi.venues.update(editing.id, body);
@@ -180,10 +174,7 @@ export default function SuperadminVenuesPage() {
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
       image_url: a.image_url ?? "",
-      initial_admin_mode: "existing",
       initial_admin_user_id: assignedAdminId,
-      initial_admin_new_name: "",
-      initial_admin_new_email: "",
     });
     setDialogOpen(true);
   };
@@ -446,71 +437,47 @@ export default function SuperadminVenuesPage() {
               />
             </div>
             <div>
-              <Label>Initial venue admin *</Label>
+              <Label>Venue admin *</Label>
               <p className="mb-1.5 text-xs text-muted-foreground">
                 {editing
-                  ? "Optional on edit. Link an existing admin or create a new admin user to add assignment."
-                  : "Required on creation. You can link an existing admin or create a new admin user."}
+                  ? "Optional on edit: change which court admin is linked to this venue, or clear the selection."
+                  : "Choose an existing court admin. Create accounts (and invite them) from Users first."}
               </p>
               <Select
-                value={form.initial_admin_mode}
+                value={form.initial_admin_user_id || "__none__"}
                 onValueChange={(v) =>
                   setForm({
                     ...form,
-                    initial_admin_mode: v as "existing" | "new",
+                    initial_admin_user_id: v === "__none__" ? "" : v,
                   })
                 }
               >
-                <SelectTrigger className="mt-0.5">
-                  <SelectValue />
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Select admin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="existing">Link existing admin</SelectItem>
-                  <SelectItem value="new">Create new admin</SelectItem>
+                  <SelectItem value="__none__">
+                    {editing ? "No linked admin" : "Select admin"}
+                  </SelectItem>
+                  {adminOptions.map((adminUser) => (
+                    <SelectItem key={adminUser.id} value={adminUser.id}>
+                      {adminDirectoryLabel(adminUser)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-
-              {form.initial_admin_mode === "existing" ? (
-                <Select
-                  value={form.initial_admin_user_id || "__none__"}
-                  onValueChange={(v) =>
-                    setForm({
-                      ...form,
-                      initial_admin_user_id: v === "__none__" ? "" : v,
-                    })
-                  }
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder="Select admin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select admin</SelectItem>
-                    {adminOptions.map((adminUser) => (
-                      <SelectItem key={adminUser.id} value={adminUser.id}>
-                        {adminUser.full_name} ({adminUser.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="mt-2 space-y-2">
-                  <Input
-                    value={form.initial_admin_new_name}
-                    onChange={(e) =>
-                      setForm({ ...form, initial_admin_new_name: e.target.value })
-                    }
-                    placeholder="New admin full name"
-                  />
-                  <Input
-                    type="email"
-                    value={form.initial_admin_new_email}
-                    onChange={(e) =>
-                      setForm({ ...form, initial_admin_new_email: e.target.value })
-                    }
-                    placeholder="new-admin@example.com"
-                  />
-                </div>
-              )}
+              {adminOptions.length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  No court admins yet.{" "}
+                  <Link
+                    href="/superadmin/users"
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Add a user
+                  </Link>{" "}
+                  with role Court admin first.
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -542,13 +509,7 @@ export default function SuperadminVenuesPage() {
                 !form.contact_phone.trim() ||
                 !form.image_url.trim() ||
                 !form.hourly_rate.trim() ||
-                (!editing &&
-                  form.initial_admin_mode === "existing" &&
-                  !form.initial_admin_user_id.trim()) ||
-                (!editing &&
-                  form.initial_admin_mode === "new" &&
-                  (!form.initial_admin_new_name.trim() ||
-                    !form.initial_admin_new_email.trim()))
+                (!editing && !form.initial_admin_user_id.trim())
               }
               onClick={() => saveAccount.mutate()}
             >

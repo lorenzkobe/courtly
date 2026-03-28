@@ -1,34 +1,14 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const NAME_REGEX = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
-const PH_MOBILE_REGEX = /^(?:\+63|0)9\d{9}$/;
-
-function getPasswordValidation(password: string) {
-  return {
-    minLength: password.length >= 8,
-    uppercase: /[A-Z]/.test(password),
-    lowercase: /[a-z]/.test(password),
-    number: /\d/.test(password),
-    symbol: /[^A-Za-z0-9]/.test(password),
-  };
-}
-
-function isValidBirthdate(value: string) {
-  if (!value) return false;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return false;
-  return parsed <= new Date();
-}
-
-function isValidName(value: string) {
-  const trimmed = value.trim();
-  if (!NAME_REGEX.test(trimmed)) return false;
-  const letterCount = trimmed.replace(/[^A-Za-z]/g, "").length;
-  return letterCount >= 2;
-}
+import { isPasswordPolicySatisfied } from "@/lib/validation/password";
+import {
+  buildFullName,
+  EMAIL_REGEX,
+  isValidBirthdateIso,
+  isValidPersonName,
+  PH_MOBILE_REGEX,
+} from "@/lib/validation/person-fields";
 
 export async function POST(req: Request) {
   let email = "";
@@ -72,7 +52,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
 
-  if (!isValidName(firstName) || !isValidName(lastName)) {
+  if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
     return NextResponse.json(
       {
         error:
@@ -82,7 +62,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!isValidBirthdate(birthdate)) {
+  if (!isValidBirthdateIso(birthdate)) {
     return NextResponse.json(
       { error: "Please provide a valid birthdate." },
       { status: 400 },
@@ -99,9 +79,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const passwordValidation = getPasswordValidation(password);
-  const isPasswordValid = Object.values(passwordValidation).every(Boolean);
-  if (!isPasswordValid) {
+  if (!isPasswordPolicySatisfied(password)) {
     return NextResponse.json(
       {
         error:
@@ -119,7 +97,7 @@ export async function POST(req: Request) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const fullName = `${firstName} ${lastName}`.trim();
+  const fullName = buildFullName(firstName, lastName);
   const { error } = await supabase.auth.signUp({
     email,
     password,

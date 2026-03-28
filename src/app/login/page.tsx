@@ -273,7 +273,7 @@ function LoginContent() {
                         variant="outline"
                         disabled={submitting}
                         className={cn(
-                          "h-10 w-full justify-start gap-2.5 rounded-md border-input bg-background px-3 text-left text-sm font-normal hover:bg-muted/50",
+                          "h-11 w-full justify-start gap-2.5 rounded-2xl border-border/80 bg-card px-3 text-left text-sm font-normal shadow-sm transition-[box-shadow,background-color] hover:bg-muted/50 hover:shadow-md",
                           !birthdate && "text-muted-foreground",
                         )}
                       >
@@ -286,10 +286,11 @@ function LoginContent() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
-                      className="z-120 w-auto overflow-hidden border-border/80 p-0 shadow-xl"
+                      className="z-120 w-auto overflow-hidden rounded-2xl border-border/80 bg-card p-0 shadow-xl"
                       align="start"
                     >
                       <Calendar
+                        birthdatePicker
                         mode="single"
                         selected={selectedBirthdate}
                         onSelect={(date) => {
@@ -299,6 +300,7 @@ function LoginContent() {
                           setBirthdateOpen(false);
                         }}
                         disabled={(date) => date > new Date()}
+                        className="w-full min-w-0"
                         initialFocus
                       />
                     </PopoverContent>
@@ -344,11 +346,21 @@ function LoginContent() {
               </div>
             ) : null}
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="password">Password</Label>
+                {authMode === "signin" ? (
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                ) : null}
+              </div>
               <Input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={authMode === "signin" ? "current-password" : "new-password"}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

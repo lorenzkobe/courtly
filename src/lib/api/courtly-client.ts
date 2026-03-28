@@ -32,6 +32,10 @@ export const courtlyApi = {
       password: string;
       confirmPassword: string;
     }) => http.post("/api/auth/signup", body),
+    setPassword: (body: { password: string; confirmPassword: string }) =>
+      http.post<{ ok: boolean }>("/api/auth/set-password", body),
+    forgotPassword: (body: { email: string }) =>
+      http.post<{ ok: boolean; message?: string }>("/api/auth/forgot-password", body),
     logout: () => http.post("/api/auth/logout"),
   },
 
@@ -196,6 +200,12 @@ export const courtlyApi = {
     update: (id: string, data: Partial<ManagedUser>) =>
       http.patch<ManagedUser>(`/api/admin/managed-users/${id}`, data),
     remove: (id: string) => http.delete(`/api/admin/managed-users/${id}`),
+    resendInvite: (id: string) =>
+      http.post<{
+        emailed: boolean;
+        action_link?: string;
+        message?: string;
+      }>(`/api/admin/managed-users/${id}/resend-invite`),
   },
 
   revenue: {

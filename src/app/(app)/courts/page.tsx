@@ -397,6 +397,7 @@ export default function CourtsPage() {
                 "max-h-[min(92dvh,44rem)] sm:max-w-lg lg:left-[calc(50vw+8rem)]",
               )}
               contentClassName="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0"
+              linkDescription
             >
               <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 py-4 text-left sm:px-6">
                 <DialogTitle>Filters</DialogTitle>

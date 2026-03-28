@@ -3,6 +3,13 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ManagedUser } from "@/lib/types/courtly";
+import {
+  buildFullName,
+  EMAIL_REGEX,
+  isValidBirthdateIso,
+  isValidPersonName,
+  PH_MOBILE_REGEX,
+} from "@/lib/validation/person-fields";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,16 +19,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;
-  const supabase = (await createSupabaseServerClient()) as any;
+  const supabase = await createSupabaseServerClient();
   const { data: cur } = await supabase
     .from("profiles")
-    .select("id, full_name, role, is_active, created_at")
+    .select(
+      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
+    )
     .eq("id", id)
     .maybeSingle();
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const current = cur as {
     id: string;
     full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    birthdate: string | null;
+    mobile_number: string | null;
     role: ManagedUser["role"];
     is_active: boolean;
     created_at: string;
@@ -29,31 +42,91 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const patch = (await req.json()) as Partial<ManagedUser> & {
     venue_ids?: string[];
+    firstName?: string;
+    lastName?: string;
+    birthdate?: string;
+    mobileNumber?: string;
   };
   let role = current.role;
   if (patch.role === "user" || patch.role === "admin" || patch.role === "superadmin") {
     role = patch.role;
   }
 
-  const full_name =
-    typeof patch.full_name === "string" && patch.full_name.trim()
-      ? patch.full_name.trim()
-      : current.full_name;
+  const firstName =
+    typeof patch.firstName === "string"
+      ? patch.firstName.trim()
+      : (current.first_name ?? "").trim();
+  const lastName =
+    typeof patch.lastName === "string"
+      ? patch.lastName.trim()
+      : (current.last_name ?? "").trim();
+  const birthdate =
+    typeof patch.birthdate === "string"
+      ? patch.birthdate.trim()
+      : current.birthdate
+        ? String(current.birthdate).slice(0, 10)
+        : "";
+  const mobileNumber =
+    typeof patch.mobileNumber === "string"
+      ? patch.mobileNumber.trim()
+      : (current.mobile_number ?? "").trim();
 
-  await supabase.from("profiles").update({
-    full_name,
-    role,
-    is_active: typeof patch.is_active === "boolean" ? patch.is_active : current.is_active,
-  }).eq("id", id);
-
-  if (typeof patch.email === "string" && patch.email.includes("@")) {
-    const admin = createSupabaseAdminClient();
-    await admin.auth.admin.updateUserById(id, { email: patch.email.trim().toLowerCase() });
+  if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
+    return NextResponse.json(
+      {
+        error:
+          "First name and last name must have at least 2 letters and may include spaces.",
+      },
+      { status: 400 },
+    );
   }
+  if (!isValidBirthdateIso(birthdate)) {
+    return NextResponse.json(
+      { error: "Please provide a valid birthdate." },
+      { status: 400 },
+    );
+  }
+  if (!PH_MOBILE_REGEX.test(mobileNumber)) {
+    return NextResponse.json(
+      {
+        error:
+          "Please provide a valid Philippine mobile number (e.g. 09171234567 or +639171234567).",
+      },
+      { status: 400 },
+    );
+  }
+
+  const fullName = buildFullName(firstName, lastName);
+
+  await supabase
+    .from("profiles")
+    .update({
+      full_name: fullName,
+      first_name: firstName,
+      last_name: lastName,
+      birthdate,
+      mobile_number: mobileNumber,
+      role,
+      is_active: typeof patch.is_active === "boolean" ? patch.is_active : current.is_active,
+    })
+    .eq("id", id);
+
+  if (typeof patch.email === "string" && EMAIL_REGEX.test(patch.email.trim().toLowerCase())) {
+    const admin = createSupabaseAdminClient();
+    await admin.auth.admin.updateUserById(id, {
+      email: patch.email.trim().toLowerCase(),
+    });
+  }
+
+  const adminClient = createSupabaseAdminClient();
+  const { data: authUser } = await adminClient.auth.admin.getUserById(id);
+  const email = authUser.user?.email ?? "";
 
   const { data: next } = await supabase
     .from("profiles")
-    .select("id, full_name, role, is_active, created_at")
+    .select(
+      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
+    )
     .eq("id", id)
     .single();
   if (Array.isArray(patch.venue_ids) && role === "admin") {
@@ -75,7 +148,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     .eq("admin_user_id", id);
   return NextResponse.json({
     ...next,
-    email: "",
+    email,
     venue_ids:
       role === "admin"
         ? (assignments ?? []).map((assignment: { venue_id: string }) => assignment.venue_id)
@@ -92,7 +165,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (id === user.id) {
     return NextResponse.json({ error: "You cannot delete your own account" }, { status: 400 });
   }
-  const supabase = (await createSupabaseServerClient()) as any;
+  const supabase = await createSupabaseServerClient();
   await supabase.from("venue_admin_assignments").delete().eq("admin_user_id", id);
   const admin = createSupabaseAdminClient();
   await admin.auth.admin.deleteUser(id);

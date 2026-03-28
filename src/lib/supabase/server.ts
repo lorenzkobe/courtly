@@ -3,11 +3,12 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabasePublicEnv } from "@/lib/supabase/env";
 
-export async function createSupabaseServerClient(): Promise<SupabaseClient<any>> {
+/** DB schema is untyped until `supabase gen types` fills `database.types.ts`. Do not `as any` the client at call sites. */
+export async function createSupabaseServerClient(): Promise<SupabaseClient> {
   const { url, anonKey } = getSupabasePublicEnv();
   const cookieStore = await cookies();
 
-  return createServerClient<any>(url, anonKey, {
+  return createServerClient(url, anonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

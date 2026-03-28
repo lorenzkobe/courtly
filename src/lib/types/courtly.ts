@@ -223,6 +223,13 @@ export type ManagedUser = {
   id: string;
   email: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  /** yyyy-MM-dd */
+  birthdate?: string | null;
+  mobile_number?: string | null;
+  /** From Supabase Auth; null means invite / signup not completed. */
+  email_confirmed_at?: string | null;
   role: "user" | "admin" | "superadmin";
   is_active: boolean;
   created_at: string;

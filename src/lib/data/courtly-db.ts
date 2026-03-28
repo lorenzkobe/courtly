@@ -35,11 +35,17 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, is_active, created_at");
+    .select(
+      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
+    );
   if (error) throw error;
   const users = (data ?? []) as Array<{
     id: string;
     full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    birthdate: string | null;
+    mobile_number: string | null;
     role: ManagedUser["role"];
     is_active: boolean;
     created_at: string;

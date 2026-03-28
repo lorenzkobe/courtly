@@ -1,0 +1,100 @@
+<!--
+  Paste into Supabase → Authentication → Email Templates → "Invite user"
+  Suggested subject: "You're invited to Courtly"
+
+  Brand tokens match src/app/globals.css (light theme) and confirm-signup.html.
+-->
+<table
+  role="presentation"
+  cellpadding="0"
+  cellspacing="0"
+  border="0"
+  width="100%"
+  style="margin:0;padding:0;background-color:#f9fafb;"
+>
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+      <table
+        role="presentation"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        width="560"
+        style="max-width:560px;width:100%;border-collapse:separate;border-spacing:0;background-color:#ffffff;border:1px solid #e0e5eb;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,41,0.04);"
+      >
+        <tr>
+          <td
+            style="background-color:#20ac6b;padding:28px 28px 24px;text-align:center;"
+          >
+            <p
+              style="margin:0;font-family:'Space Grotesk',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:24px;font-weight:700;letter-spacing:-0.03em;color:#ffffff;line-height:1.2;"
+            >
+              Courtly
+            </p>
+            <p
+              style="margin:10px 0 0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:500;line-height:1.45;color:rgba(255,255,255,0.92);"
+            >
+              Book courts, tournaments &amp; open play
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td
+            style="padding:32px 28px 28px;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"
+          >
+            <h1
+              style="margin:0 0 14px;font-family:'Space Grotesk',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:700;line-height:1.25;color:#0f1729;letter-spacing:-0.02em;"
+            >
+              You're invited to Courtly
+            </h1>
+            <p
+              style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;"
+            >
+              A Courtly administrator invited you to join the platform tied to
+              <strong style="color:#0f1729;font-weight:600;">{{ .SiteURL }}</strong>.
+              Use the link below to accept the invitation and set up your account
+              (including your password).
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-radius:10px;background-color:#20ac6b;">
+                  <a
+                    href="{{ .ConfirmationURL }}"
+                    style="display:inline-block;padding:14px 28px;font-family:'Space Grotesk',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;line-height:1.2;color:#ffffff !important;text-decoration:none;border-radius:10px;"
+                  >
+                    Accept invitation
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p
+              style="margin:28px 0 14px;font-size:13px;line-height:1.55;color:#65758b;"
+            >
+              This link expires for security reasons. If you were not expecting this
+              invitation, you can ignore this email.
+            </p>
+            <p style="margin:0;font-size:12px;line-height:1.55;color:#94a3b8;">
+              If the button does not work, copy and paste this URL into your browser:<br />
+              <span
+                style="word-break:break-all;color:#475569;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;font-size:11px;"
+              >
+                {{ .ConfirmationURL }}
+              </span>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td
+            style="padding:0 28px 24px;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"
+          >
+            <p
+              style="margin:0;padding-top:20px;border-top:1px solid #e0e5eb;font-size:11px;line-height:1.5;color:#94a3b8;text-align:center;"
+            >
+              Courtly — sports court booking &amp; tournaments
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

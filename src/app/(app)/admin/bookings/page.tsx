@@ -716,7 +716,10 @@ export default function AdminBookingsPage() {
       </div>
 
       <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
-        <DialogContent className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto">
+        <DialogContent
+          className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto"
+          linkDescription
+        >
           <DialogHeader>
             <DialogTitle className="font-heading">Filters</DialogTitle>
             <DialogDescription>

@@ -573,7 +573,7 @@ export default function BookCourtPage() {
         }}
       />
       <Dialog open={blockedWarningOpen} onOpenChange={setBlockedWarningOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" linkDescription>
           <DialogHeader>
             <DialogTitle className="font-heading">
               Unavailable hours in your range
@@ -620,7 +620,7 @@ export default function BookCourtPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" linkDescription>
           <DialogHeader>
             <DialogTitle className="font-heading">Report review</DialogTitle>
             <DialogDescription>
@@ -668,7 +668,7 @@ export default function BookCourtPage() {
       </Dialog>
 
       <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
-        <DialogContent className="max-h-[min(90dvh,36rem)] sm:max-w-md">
+        <DialogContent className="max-h-[min(90dvh,36rem)] sm:max-w-md" linkDescription>
           <DialogHeader>
             <DialogTitle className="font-heading">Booking summary</DialogTitle>
             <DialogDescription>
