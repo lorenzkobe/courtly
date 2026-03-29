@@ -6,10 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatTimeShort } from "@/lib/booking-range";
 import { formatCourtRateSummary } from "@/lib/court-pricing";
-import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
+
+function mergedOperatingRanges(court: Court): Array<{ start: string; end: string }> {
+  const windows = [...(court.hourly_rate_windows ?? [])].sort((a, b) =>
+    a.start.localeCompare(b.start),
+  );
+  const merged: Array<{ start: string; end: string }> = [];
+  for (const window of windows) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.end === window.start) {
+      prev.end = window.end;
+      continue;
+    }
+    merged.push({ start: window.start, end: window.end });
+  }
+  return merged;
+}
 
 export default function CourtCard({
   court,
@@ -84,11 +99,10 @@ export default function CourtCard({
             <span className="min-w-0 leading-snug">
               {(court.hourly_rate_windows ?? []).length ? (
                 <span className="block text-xs text-muted-foreground">
-                  {(court.hourly_rate_windows ?? []).map((w, i) => (
-                    <span key={`${w.start}-${w.end}-${w.hourly_rate}`}>
+                  {mergedOperatingRanges(court).map((range, i) => (
+                    <span key={`${range.start}-${range.end}`}>
                       {i > 0 ? " · " : null}
-                      {formatTimeShort(w.start)}–{formatTimeShort(w.end)}{" "}
-                      {formatPhpCompact(w.hourly_rate)}/hr
+                      {formatTimeShort(range.start)}–{formatTimeShort(range.end)}
                     </span>
                   ))}
                 </span>

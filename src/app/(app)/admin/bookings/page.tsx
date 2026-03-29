@@ -35,6 +35,7 @@ import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import type { Booking } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
@@ -157,6 +158,14 @@ export default function AdminBookingsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
   const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
+  const adminRealtimeKeys = useMemo(
+    () => [["admin-bookings"], ["admin-booking-detail"], ["admin-booking-group"]],
+    [],
+  );
+  useBookingsRealtime({
+    enabled: !!user && (user.role === "admin" || user.role === "superadmin"),
+    queryKeysToInvalidate: adminRealtimeKeys,
+  });
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],

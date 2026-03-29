@@ -32,6 +32,7 @@ import {
 } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 
@@ -212,32 +213,31 @@ export default function BookingDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const bookingId = params.id;
+  const bookingRealtimeKeys = useMemo(
+    () => [["my-booking-detail", bookingId, "with-group"], queryKeys.bookings.all()],
+    [bookingId],
+  );
+  useBookingsRealtime({
+    playerEmail: user?.email,
+    enabled: !!user?.email,
+    queryKeysToInvalidate: bookingRealtimeKeys,
+  });
 
-  const { data: booking, isLoading: loadingBooking } = useQuery({
-    queryKey: queryKeys.bookings.detail(bookingId),
+  const { data: bookingPayload, isLoading: loadingBooking } = useQuery({
+    queryKey: ["my-booking-detail", bookingId, "with-group"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.get(bookingId);
+      const { data } = await courtlyApi.bookings.getWithGroup(bookingId);
       return data;
     },
     enabled: !!bookingId,
   });
-
-  const { data: groupMembers = [], isLoading: loadingGroup } = useQuery({
-    queryKey: queryKeys.bookings.byGroup(booking?.booking_group_id, user?.email),
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        player_email: user!.email,
-        booking_group_id: booking!.booking_group_id!,
-      });
-      return data.sort((a, b) => a.start_time.localeCompare(b.start_time));
-    },
-    enabled: !!booking?.booking_group_id && !!user?.email,
-  });
+  const booking = bookingPayload?.booking;
+  const groupMembers = bookingPayload?.group_segments;
 
   const segments = useMemo((): Booking[] => {
     if (!booking) return [];
-    if (booking.booking_group_id && groupMembers.length > 0) {
-      return groupMembers;
+    if (booking.booking_group_id && (groupMembers?.length ?? 0) > 0) {
+      return groupMembers ?? [];
     }
     return [booking];
   }, [booking, groupMembers]);
@@ -265,7 +265,7 @@ export default function BookingDetailPage() {
     enabled: !!booking?.court_id,
   });
 
-  const { data: reviewBundle } = useQuery({
+  const { data: reviewBundle, isLoading: loadingReviews } = useQuery({
     queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
       const { data: payload } = await courtlyApi.venueReviews.bundle(
@@ -291,7 +291,6 @@ export default function BookingDetailPage() {
 
   const loading =
     loadingBooking ||
-    (booking?.booking_group_id && loadingGroup) ||
     (booking?.court_id && loadingCourt);
 
   const hasMapPin =
@@ -337,10 +336,11 @@ export default function BookingDetailPage() {
   const canRate =
     isMyBooking &&
     visitCompleted &&
+    !loadingReviews &&
     !myReview &&
     booking.court_id;
   const canEditReview = Boolean(
-    isMyBooking && myReview && user && myReview.user_id === user.id,
+    isMyBooking && !loadingReviews && myReview && user && myReview.user_id === user.id,
   );
 
   return (
@@ -450,29 +450,37 @@ export default function BookingDetailPage() {
 
         {court ? (
           <Card className="border-border/50">
-            <CardContent className="space-y-4 p-6">
+            <CardContent className="space-y-5 p-6">
               <h2 className="font-heading text-lg font-semibold text-foreground">
                 Venue
               </h2>
-              <div className="space-y-1 text-sm">
-                <p className="font-medium text-foreground">
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-base font-semibold text-foreground">
                   {court.establishment_name ?? booking.establishment_name ?? "—"}
                 </p>
-                <p className="text-muted-foreground">{court.name}</p>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Location</p>
-                    <p className="flex items-start gap-2 text-foreground">
-                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {court.location}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {hasMapPin
-                        ? "Opens in Google Maps at the venue pin."
-                        : "Opens in Google Maps using this address."}
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" className="shrink-0 self-start" asChild>
+                <p className="mt-0.5 text-sm text-muted-foreground">{court.name}</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5 rounded-xl border border-border/60 p-4 text-sm">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Location
+                  </p>
+                  <p className="flex items-start gap-2 text-foreground">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {court.location}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasMapPin
+                      ? "Uses venue map pin."
+                      : "Uses venue address text."}
+                  </p>
+                </div>
+                <div className="space-y-2 rounded-xl border border-border/60 p-4 text-sm">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Contact
+                  </p>
+                  <p className="font-medium text-foreground">{court.contact_phone ?? "—"}</p>
+                  <Button variant="outline" size="sm" className="w-full justify-center" asChild>
                     <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
                       <MapPin className="mr-1.5 h-3.5 w-3.5" />
                       Open in Map
@@ -480,38 +488,31 @@ export default function BookingDetailPage() {
                     </a>
                   </Button>
                 </div>
-                <p className="text-muted-foreground">Contact: {court.contact_phone ?? "—"}</p>
-                <p className="text-muted-foreground">
-                  Facebook:{" "}
+              </div>
+              {court.facebook_url || court.instagram_url ? (
+                <div className="flex flex-wrap gap-2">
                   {court.facebook_url ? (
                     <a
                       href={court.facebook_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-medium text-primary hover:underline"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                     >
-                      View page
+                      Facebook <ExternalLink className="h-3 w-3" />
                     </a>
-                  ) : (
-                    "—"
-                  )}
-                </p>
-                <p className="text-muted-foreground">
-                  Instagram:{" "}
+                  ) : null}
                   {court.instagram_url ? (
                     <a
                       href={court.instagram_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-medium text-primary hover:underline"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                     >
-                      View page
+                      Instagram <ExternalLink className="h-3 w-3" />
                     </a>
-                  ) : (
-                    "—"
-                  )}
-                </p>
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">
                   {court.amenities.map((amenity) => (

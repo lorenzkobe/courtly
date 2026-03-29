@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -57,6 +57,7 @@ import {
   splitBookingAmounts,
 } from "@/lib/platform-fee";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import {
   availableSegmentsInRange,
   bookedHoursInSelection,
@@ -246,7 +247,8 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
 
 export default function BookCourtPage() {
   const params = useParams<{ id: string }>();
-  const courtId = params.id;
+  const paramCourtId = params.id;
+  const [activeCourtId, setActiveCourtId] = useState(paramCourtId);
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -264,32 +266,45 @@ export default function BookCourtPage() {
     return formatHourToken(hourFromTime(startTime) + 1);
   }, [startTime, endTime]);
 
+  useEffect(() => {
+    setActiveCourtId(paramCourtId);
+  }, [paramCourtId]);
+
   const { data: courtContext, isLoading } = useQuery({
-    queryKey: queryKeys.courts.detail(courtId),
+    queryKey: queryKeys.courts.detail(activeCourtId),
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.getWithContext(courtId);
+      const { data } = await courtlyApi.courts.getWithContext(activeCourtId);
       return data;
     },
-    enabled: !!courtId,
+    enabled: !!activeCourtId,
   });
   const court = courtContext?.court;
   const establishmentCourts = courtContext?.sibling_courts ?? [];
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
+  const bookingRealtimeKeys = useMemo(
+    () => [queryKeys.availability.courtDay(activeCourtId, dateIso)],
+    [activeCourtId, dateIso],
+  );
+  useBookingsRealtime({
+    filter: activeCourtId ? `court_id=eq.${activeCourtId}` : null,
+    enabled: !!activeCourtId,
+    queryKeysToInvalidate: bookingRealtimeKeys,
+  });
 
   const {
     data: dayAvailability,
     isLoading: isLoadingDayAvailability,
     isFetching: isFetchingDayAvailability,
   } = useQuery({
-    queryKey: queryKeys.availability.courtDay(courtId, dateIso),
+    queryKey: queryKeys.availability.courtDay(activeCourtId, dateIso),
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.availability(courtId, {
+      const { data } = await courtlyApi.courts.availability(activeCourtId, {
         date: dateIso,
       });
       return data;
     },
-    enabled: !!courtId,
+    enabled: !!activeCourtId,
   });
   const existingBookings = dayAvailability?.bookings ?? EMPTY_BOOKINGS;
   const dayClosures = dayAvailability?.court_closures ?? EMPTY_COURT_CLOSURES;
@@ -315,7 +330,7 @@ export default function BookCourtPage() {
     return merged;
   }, [bookingOccupied, closureOccupied]);
 
-  const { data: reviewBundle } = useQuery({
+  const { data: reviewBundle, isLoading: isLoadingReviews } = useQuery({
     queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
       const { data: payload } = await courtlyApi.venueReviews.bundle(court!.venue_id);
@@ -394,7 +409,9 @@ export default function BookCourtPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.reviews.venue(court?.venue_id),
       });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.detail(courtId) });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.courts.detail(activeCourtId),
+      });
       void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       toast.success("Review removed");
     },
@@ -429,7 +446,7 @@ export default function BookCourtPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.my(user?.email, court?.sport) });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.availability.courtDay(courtId, dateIso),
+        queryKey: queryKeys.availability.courtDay(activeCourtId, dateIso),
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       setBlockedWarningOpen(false);
@@ -901,40 +918,36 @@ export default function BookCourtPage() {
                     {court.contact_phone ?? "—"}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">Facebook</dt>
-                  <dd className="mt-0.5">
-                    {court.facebook_url ? (
+                {court.facebook_url ? (
+                  <div>
+                    <dt className="text-muted-foreground">Facebook</dt>
+                    <dd className="mt-0.5">
                       <a
                         href={court.facebook_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                       >
-                        View page <ExternalLink className="h-3 w-3" />
+                        Visit page <ExternalLink className="h-3 w-3" />
                       </a>
-                    ) : (
-                      <span className="font-medium text-foreground">—</span>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Instagram</dt>
-                  <dd className="mt-0.5">
-                    {court.instagram_url ? (
+                    </dd>
+                  </div>
+                ) : null}
+                {court.instagram_url ? (
+                  <div>
+                    <dt className="text-muted-foreground">Instagram</dt>
+                    <dd className="mt-0.5">
                       <a
                         href={court.instagram_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                       >
-                        View page <ExternalLink className="h-3 w-3" />
+                        Visit profile <ExternalLink className="h-3 w-3" />
                       </a>
-                    ) : (
-                      <span className="font-medium text-foreground">—</span>
-                    )}
-                  </dd>
-                </div>
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="sm:col-span-2">
                   <dt className="mb-2 text-muted-foreground">Amenities</dt>
                   <dd className="flex flex-wrap gap-1.5">
@@ -1008,7 +1021,12 @@ export default function BookCourtPage() {
                 <h3 className="font-heading text-base font-semibold text-foreground">
                   Recent reviews
                 </h3>
-                {courtReviews.length === 0 ? (
+                {isLoadingReviews ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-14 rounded-lg" />
+                    <Skeleton className="h-14 rounded-lg" />
+                  </div>
+                ) : courtReviews.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Be the first to review after a completed visit.
                   </p>
@@ -1110,10 +1128,12 @@ export default function BookCourtPage() {
               <div className="space-y-2">
                 <Label>Select court number</Label>
                 <Select
-                  value={court.id}
+                  value={activeCourtId}
                   onValueChange={(nextCourtId) => {
-                    if (nextCourtId !== court.id) {
-                      router.push(`/courts/${nextCourtId}/book`);
+                    if (nextCourtId !== activeCourtId) {
+                      setActiveCourtId(nextCourtId);
+                      setStartTime(null);
+                      setEndTime(null);
                     }
                   }}
                 >
@@ -1317,7 +1337,7 @@ export default function BookCourtPage() {
               {!user ? (
                 <p className="text-sm text-muted-foreground">
                   <Link
-                    href={`/login?next=${encodeURIComponent(`/courts/${courtId}/book`)}`}
+                    href={`/login?next=${encodeURIComponent(`/courts/${activeCourtId}/book`)}`}
                     className="font-medium text-primary underline underline-offset-2"
                   >
                     Sign in

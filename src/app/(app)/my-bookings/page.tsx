@@ -32,6 +32,7 @@ import {
   formatTimeShort,
 } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
@@ -103,6 +104,12 @@ export default function MyBookingsPage() {
       return data;
     },
     enabled: !!user?.email,
+  });
+  const bookingsRealtimeKeys = useMemo(() => [queryKeys.bookings.all()], []);
+  useBookingsRealtime({
+    playerEmail: user?.email,
+    enabled: !!user?.email,
+    queryKeysToInvalidate: bookingsRealtimeKeys,
   });
 
   const bookingGroups = useMemo(() => {

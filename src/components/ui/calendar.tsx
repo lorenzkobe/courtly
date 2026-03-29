@@ -34,7 +34,7 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
-  navLayout = "around",
+  navLayout = "after",
   captionLayout,
   hideNavigation,
   startMonth,
@@ -93,12 +93,12 @@ function Calendar({
         button_previous: cn(
           rdp("button_previous"),
           buttonVariants({ variant: "outline" }),
-          "absolute start-1 z-20 size-8 bg-background p-0 hover:bg-muted sm:start-2",
+          "size-8 bg-background p-0 hover:bg-muted",
         ),
         button_next: cn(
           rdp("button_next"),
           buttonVariants({ variant: "outline" }),
-          "absolute end-1 z-20 size-8 bg-background p-0 hover:bg-muted sm:end-2",
+          "size-8 bg-background p-0 hover:bg-muted",
         ),
         month_grid: rdp("month_grid", "w-full border-collapse"),
         weekdays: rdp("weekdays", "mb-0.5 flex w-full"),
