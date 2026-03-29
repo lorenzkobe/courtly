@@ -23,7 +23,7 @@ async function listSuperadminProfileIds(): Promise<string[]> {
       console.error("[courtly:notifications]", error);
       return [];
     }
-    return (data ?? []).map((r) => (r as { id: string }).id);
+    return (data ?? []).map((profileRow) => (profileRow as { id: string }).id);
   } catch (e) {
     console.error("[courtly:notifications]", e);
     return [];

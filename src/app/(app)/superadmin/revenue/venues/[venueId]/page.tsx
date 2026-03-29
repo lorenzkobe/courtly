@@ -73,8 +73,9 @@ function VenueRevenueInner() {
       queryParams.to,
     ],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.revenue.summary(queryParams);
-      return d;
+      const { data: revenueSummary } =
+        await courtlyApi.revenue.summary(queryParams);
+      return revenueSummary;
     },
     enabled: !!venueFilterParam,
   });

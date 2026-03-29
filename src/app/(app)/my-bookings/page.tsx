@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Calendar,
@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -35,15 +34,6 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
-}
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -100,7 +90,6 @@ export default function MyBookingsPage() {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
   const { user } = useAuth();
-  const queryClient = useQueryClient();
   const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({

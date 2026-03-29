@@ -243,7 +243,7 @@ export default function DashboardPage() {
                 const first = items[0]!;
                 const detailId = first.id;
                 const sessionTotal = items.reduce(
-                  (s, x) => s + (x.total_cost ?? 0),
+                  (totalCost, booking) => totalCost + (booking.total_cost ?? 0),
                   0,
                 );
                 const multi = items.length > 1;

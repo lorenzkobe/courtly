@@ -7,10 +7,10 @@ export function parseRateWindowsFromUnknown(raw: unknown): CourtRateWindow[] {
   const out: CourtRateWindow[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
-    const o = item as Record<string, unknown>;
-    const start = typeof o.start === "string" ? o.start.trim() : "";
-    const end = typeof o.end === "string" ? o.end.trim() : "";
-    const rawRate = o.hourly_rate;
+    const rawItem = item as Record<string, unknown>;
+    const start = typeof rawItem.start === "string" ? rawItem.start.trim() : "";
+    const end = typeof rawItem.end === "string" ? rawItem.end.trim() : "";
+    const rawRate = rawItem.hourly_rate;
     const hourly_rate =
       typeof rawRate === "number" && Number.isFinite(rawRate)
         ? rawRate
@@ -55,8 +55,8 @@ export function validateVenuePriceRanges(
     if (w.hourly_rate <= 0 || !Number.isFinite(w.hourly_rate)) {
       return { ok: false, error: "Each range needs a positive price per hour." };
     }
-    for (let j = i + 1; j < ranges.length; j++) {
-      if (rateWindowsOverlap(w, ranges[j]!)) {
+    for (let comparisonIndex = i + 1; comparisonIndex < ranges.length; comparisonIndex++) {
+      if (rateWindowsOverlap(w, ranges[comparisonIndex]!)) {
         return {
           ok: false,
           error: "Price ranges cannot overlap. Split or adjust times so each hour belongs to at most one range.",
@@ -102,12 +102,12 @@ export type PriceRangeFormRow = { start: string; end: string; rate: string };
 export function priceRangeFormRowsComplete(rows: PriceRangeFormRow[]): boolean {
   if (rows.length === 0) return false;
   for (const row of rows) {
-    const s = row.start.trim();
-    const e = row.end.trim();
-    const r = row.rate.trim();
-    if (!s || !e || !r) return false;
-    const n = Number.parseFloat(r);
-    if (!Number.isFinite(n) || n <= 0) return false;
+    const startTime = row.start.trim();
+    const endTime = row.end.trim();
+    const rateText = row.rate.trim();
+    if (!startTime || !endTime || !rateText) return false;
+    const parsedRate = Number.parseFloat(rateText);
+    if (!Number.isFinite(parsedRate) || parsedRate <= 0) return false;
   }
   return true;
 }

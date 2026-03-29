@@ -90,8 +90,8 @@ export default function NotificationBell() {
   const { data, isLoading, isError } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
     queryFn: async () => {
-      const { data: payload } = await courtlyApi.notifications.list();
-      return payload;
+      const { data: listResponse } = await courtlyApi.notifications.list();
+      return listResponse;
     },
     enabled: Boolean(user),
     staleTime: realtimeOk ? 5 * 60 * 1000 : 0,
@@ -100,8 +100,10 @@ export default function NotificationBell() {
 
   const markRead = useMutation({
     mutationFn: async (id: string) => {
-      const { data: payload } = await courtlyApi.notifications.markRead(id);
-      return payload;
+      const { data: markReadResponse } = await courtlyApi.notifications.markRead(
+        id,
+      );
+      return markReadResponse;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });
@@ -110,8 +112,9 @@ export default function NotificationBell() {
 
   const markAllRead = useMutation({
     mutationFn: async () => {
-      const { data: payload } = await courtlyApi.notifications.markAllRead();
-      return payload;
+      const { data: markAllReadResponse } =
+        await courtlyApi.notifications.markAllRead();
+      return markAllReadResponse;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });

@@ -48,8 +48,9 @@ function VenueRevenueInner() {
   const { data, isLoading } = useQuery({
     queryKey: ["revenue-summary", "venue", queryParams.from, queryParams.to],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.revenue.summary(queryParams);
-      return d;
+      const { data: revenueSummary } =
+        await courtlyApi.revenue.summary(queryParams);
+      return revenueSummary;
     },
   });
 

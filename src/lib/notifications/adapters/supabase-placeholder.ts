@@ -154,7 +154,10 @@ export class SupabaseNotificationRepository implements NotificationRepository {
       body: input.body,
       metadata: input.metadata ?? null,
     }));
-    const { error } = await supabase.from("notifications").insert(rows);
+    // Repository remains schema-untyped until generated DB types are wired; cast keeps inserts compile-safe.
+    const { error } = await supabase
+      .from("notifications")
+      .insert(rows as never);
     if (error) throw error;
   }
 }

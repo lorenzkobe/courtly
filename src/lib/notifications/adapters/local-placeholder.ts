@@ -17,29 +17,40 @@ const PLACEHOLDER_RESPONSE: NotificationsListResponse = {
 export class LocalPlaceholderNotificationRepository
   implements NotificationRepository
 {
-  async listForUser(_userId: string): Promise<NotificationsListResponse> {
+  async listForUser(userId: string): Promise<NotificationsListResponse> {
+    void userId;
     return PLACEHOLDER_RESPONSE;
   }
 
-  async markRead(_notificationId: string, _userId: string): Promise<{ ok: true } | { ok: false }> {
+  async markRead(
+    notificationId: string,
+    userId: string,
+  ): Promise<{ ok: true } | { ok: false }> {
+    void notificationId;
+    void userId;
     return { ok: true };
   }
 
-  async markAllRead(_userId: string): Promise<{ ok: true }> {
+  async markAllRead(userId: string): Promise<{ ok: true }> {
+    void userId;
     return { ok: true };
   }
 
-  async emit(_input: EmitNotificationInput): Promise<void> {
+  async emit(input: EmitNotificationInput): Promise<void> {
+    void input;
     // Placeholder only.
   }
 
-  async emitMany(_inputs: EmitNotificationInput[]): Promise<void> {
+  async emitMany(inputs: EmitNotificationInput[]): Promise<void> {
+    void inputs;
     // Placeholder only.
   }
 }
 
 export class LocalPlaceholderNotificationTransport implements NotificationTransport {
-  subscribe(_userId: string, _onEvent: () => void): NotificationSubscription {
+  subscribe(userId: string, onEvent: () => void): NotificationSubscription {
+    void userId;
+    void onEvent;
     return {
       unsubscribe: () => {
         // Placeholder only.

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Building2 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import PageHeader from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -39,13 +40,16 @@ export default function AdminVenuesPage() {
               className="overflow-hidden border-border/50 transition-shadow hover:shadow-md"
             >
               {venue.image_url ? (
-                <div className="h-36 overflow-hidden">
-                  <img
+                <div className="relative h-36 overflow-hidden">
+                  <Image
                     src={venue.image_url}
                     alt={venue.name}
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    unoptimized
+                    className="object-cover"
                     onError={(e) => {
-                      e.currentTarget.parentElement?.remove();
+                      e.currentTarget.style.display = "none";
                     }}
                   />
                 </div>

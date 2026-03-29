@@ -27,8 +27,8 @@ export default function SuperadminVenueDetailPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["venue-detail", id],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.venues.get(id);
-      return d;
+      const { data: venueDetails } = await courtlyApi.venues.get(id);
+      return venueDetails;
     },
     enabled: !!id,
   });

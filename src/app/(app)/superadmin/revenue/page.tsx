@@ -58,8 +58,9 @@ function PlatformRevenueInner() {
   const { data, isLoading } = useQuery({
     queryKey: ["revenue-summary", "platform", queryParams.from, queryParams.to],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.revenue.summary(queryParams);
-      return d;
+      const { data: revenueSummary } =
+        await courtlyApi.revenue.summary(queryParams);
+      return revenueSummary;
     },
   });
 

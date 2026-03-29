@@ -10,8 +10,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const data = await repo.listForUser(user.id);
-  return NextResponse.json(data);
+  const notifications = await repo.listForUser(user.id);
+  return NextResponse.json(notifications);
 }
 
 export async function PATCH() {
