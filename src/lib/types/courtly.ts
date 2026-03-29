@@ -287,6 +287,12 @@ export type RevenueSummaryResponse = {
   focus_venue?: { id: string; name: string } | null;
 };
 
+export type CourtDayAvailability = {
+  bookings: Booking[];
+  court_closures: CourtClosure[];
+  venue_closures: VenueClosure[];
+};
+
 export type VenueDetailResponse = {
   venue: Venue;
   courts: Court[];

@@ -201,6 +201,20 @@ export async function listBookings(): Promise<Booking[]> {
   return (data ?? []).map(mapBookingRow);
 }
 
+export async function listBookingsByCourtOnDate(
+  courtId: string,
+  date: string,
+): Promise<Booking[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .eq("court_id", courtId)
+    .eq("date", date);
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
 export async function getBookingById(id: string): Promise<Booking | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase

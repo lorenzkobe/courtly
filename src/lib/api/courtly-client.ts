@@ -1,6 +1,7 @@
 import { http } from "@/lib/http-client";
 import type {
   Booking,
+  CourtDayAvailability,
   Court,
   CourtClosure,
   CourtReview,
@@ -65,6 +66,10 @@ export const courtlyApi = {
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
     remove: (id: string) => http.delete(`/api/courts/${id}`),
+    availability: (id: string, params: { date: string }) =>
+      http.get<CourtDayAvailability>(`/api/courts/${id}/availability`, {
+        params,
+      }),
   },
 
   courtClosures: {

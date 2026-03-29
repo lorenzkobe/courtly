@@ -93,8 +93,8 @@ export default function NotificationBell() {
     },
     enabled: Boolean(user),
     staleTime: 0,
-    // Keep a lightweight fallback poll even with Realtime enabled in case publication/channel config drifts.
-    refetchInterval: realtimeOk ? 10_000 : 30_000,
+    // Fallback refresh to avoid stale badge count if realtime delivery fails.
+    refetchInterval: 30_000,
   });
 
   const markRead = useMutation({

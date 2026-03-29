@@ -274,12 +274,12 @@ export default function AppLayout({
       <main className="lg:pl-64">
         <div className="min-h-screen pt-16 lg:pt-0">
           {showSportPicker ? (
-            <div className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
+            <div className="hidden items-center justify-between border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:flex lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
               <SportPicker layout="toolbar" id="app-shell-sport" />
               <NotificationBell />
             </div>
           ) : (
-            <div className="flex justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
+            <div className="hidden justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:flex lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
               <NotificationBell />
             </div>
           )}

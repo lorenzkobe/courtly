@@ -75,7 +75,13 @@ import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { bookableHourTokensFromRanges } from "@/lib/venue-price-ranges";
 import { canCourtVenueAdminFlagReview, isSuperadmin } from "@/lib/auth/management";
-import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
+import type {
+  Booking,
+  Court,
+  CourtClosure,
+  CourtReview,
+  VenueClosure,
+} from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { cn } from "@/lib/utils";
@@ -133,6 +139,10 @@ function courtNumberLabel(court: Court): string {
   }
   return rawName;
 }
+
+const EMPTY_BOOKINGS: Booking[] = [];
+const EMPTY_COURT_CLOSURES: CourtClosure[] = [];
+const EMPTY_VENUE_CLOSURES: VenueClosure[] = [];
 
 function StarRow({ rating, className }: { rating: number; className?: string }) {
   const filled = Math.round(rating);
@@ -280,39 +290,25 @@ export default function BookCourtPage() {
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
 
-  const { data: existingBookings = [] } = useQuery({
-    queryKey: queryKeys.bookings.forCourt(courtId, dateIso),
+  const {
+    data: dayAvailability,
+    isLoading: isLoadingDayAvailability,
+    isFetching: isFetchingDayAvailability,
+  } = useQuery({
+    queryKey: queryKeys.availability.courtDay(courtId, dateIso),
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        court_id: courtId,
-        date: dateIso,
-      });
-      return data.filter((booking) => booking.status === "confirmed");
-    },
-    enabled: !!courtId && !!selectedDate,
-  });
-
-  const { data: dayClosures = [] } = useQuery({
-    queryKey: queryKeys.closures.court(courtId, dateIso),
-    queryFn: async () => {
-      const { data } = await courtlyApi.courtClosures.list(courtId, {
+      const { data } = await courtlyApi.courts.availability(courtId, {
         date: dateIso,
       });
       return data;
     },
     enabled: !!courtId,
   });
-
-  const { data: venueDayClosures = [] } = useQuery({
-    queryKey: queryKeys.closures.venue(court?.venue_id, dateIso),
-    queryFn: async () => {
-      const { data } = await courtlyApi.venueClosures.list(court!.venue_id, {
-        date: dateIso,
-      });
-      return data;
-    },
-    enabled: !!court?.venue_id,
-  });
+  const existingBookings = dayAvailability?.bookings ?? EMPTY_BOOKINGS;
+  const dayClosures = dayAvailability?.court_closures ?? EMPTY_COURT_CLOSURES;
+  const venueDayClosures =
+    dayAvailability?.venue_closures ?? EMPTY_VENUE_CLOSURES;
+  const isHoursLoading = isLoadingDayAvailability || isFetchingDayAvailability;
 
   const bookingOccupied = useMemo(
     () => occupiedHourStarts(existingBookings),
@@ -446,7 +442,7 @@ export default function BookCourtPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.my(user?.email, court?.sport) });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.bookings.forCourt(courtId, dateIso),
+        queryKey: queryKeys.availability.courtDay(courtId, dateIso),
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       setBlockedWarningOpen(false);
@@ -1233,14 +1229,24 @@ export default function BookCourtPage() {
                   </>
                 ) : null}
               </p>
-              {timeSlots.length === 0 ? (
+              {isHoursLoading ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Loading available hours...</p>
+                  <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <Skeleton key={i} className="h-14 rounded-md" />
+                    ))}
+                  </div>
+                </div>
+              ) : timeSlots.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No bookable hours are configured for this venue yet.
                 </p>
               ) : null}
-              <div className="max-h-[min(52vh,22rem)] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
-                <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
-                  {timeSlots.map((time) => {
+              {!isHoursLoading ? (
+                <div className="max-h-[min(52vh,22rem)] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
+                  <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
+                    {timeSlots.map((time) => {
                     const isUnavailable = occupied.has(time);
                     const isPastHour = isBookableHourStartInPast(
                       time,
@@ -1256,61 +1262,62 @@ export default function BookCourtPage() {
                       Boolean(effectiveEndTime) &&
                       time > startTime! &&
                       time < effectiveEndTime!;
-                    return (
-                      <Button
-                        key={time}
-                        type="button"
-                        size="sm"
-                        variant={
-                          isStart || isEnd
-                            ? "default"
-                            : isInRange
-                              ? isUnavailable
-                                ? "outline"
-                                : "secondary"
-                              : "outline"
-                        }
-                        disabled={
-                          (isUnavailable && !pickingEnd) || isPastHour
-                        }
-                        onClick={() => handleTimeSelect(time)}
-                        className={cn(
-                          "relative flex h-14 min-w-0 shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium tabular-nums sm:text-sm",
-                          isPastHour &&
-                            "cursor-not-allowed border-muted-foreground/25 bg-muted/50 text-muted-foreground opacity-65",
-                          isUnavailable &&
-                            fromClosureOnly &&
-                            "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
-                          isUnavailable &&
-                            !fromClosureOnly &&
-                            "border-destructive/50 bg-destructive/10 text-destructive line-through",
-                          isUnavailable && isInRange && "opacity-90",
-                          isStart &&
-                            "ring-2 ring-primary ring-offset-1 ring-offset-background",
-                          isEnd &&
-                            !isStart &&
-                            "ring-2 ring-chart-3 ring-offset-1 ring-offset-background",
-                        )}
-                      >
-                        {isStart ? (
-                          <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-primary-foreground/95">
-                            Start
+                      return (
+                        <Button
+                          key={time}
+                          type="button"
+                          size="sm"
+                          variant={
+                            isStart || isEnd
+                              ? "default"
+                              : isInRange
+                                ? isUnavailable
+                                  ? "outline"
+                                  : "secondary"
+                                : "outline"
+                          }
+                          disabled={
+                            (isUnavailable && !pickingEnd) || isPastHour
+                          }
+                          onClick={() => handleTimeSelect(time)}
+                          className={cn(
+                            "relative flex h-14 min-w-0 shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium tabular-nums sm:text-sm",
+                            isPastHour &&
+                              "cursor-not-allowed border-muted-foreground/25 bg-muted/50 text-muted-foreground opacity-65",
+                            isUnavailable &&
+                              fromClosureOnly &&
+                              "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
+                            isUnavailable &&
+                              !fromClosureOnly &&
+                              "border-destructive/50 bg-destructive/10 text-destructive line-through",
+                            isUnavailable && isInRange && "opacity-90",
+                            isStart &&
+                              "ring-2 ring-primary ring-offset-1 ring-offset-background",
+                            isEnd &&
+                              !isStart &&
+                              "ring-2 ring-chart-3 ring-offset-1 ring-offset-background",
+                          )}
+                        >
+                          {isStart ? (
+                            <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-primary-foreground/95">
+                              Start
+                            </span>
+                          ) : null}
+                          {isEnd && !isStart ? (
+                            <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-amber-100">
+                              End
+                            </span>
+                          ) : null}
+                          <span>{formatTimeShort(time)}</span>
+                          <span className="text-[10px] font-medium text-muted-foreground">
+                            {hourlyRate > 0 ? `${formatPhpCompact(hourlyRate)}/hr` : "—"}
                           </span>
-                        ) : null}
-                        {isEnd && !isStart ? (
-                          <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-amber-100">
-                            End
-                          </span>
-                        ) : null}
-                        <span>{formatTimeShort(time)}</span>
-                        <span className="text-[10px] font-medium text-muted-foreground">
-                          {hourlyRate > 0 ? `${formatPhpCompact(hourlyRate)}/hr` : "—"}
-                        </span>
-                      </Button>
-                    );
-                  })}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>

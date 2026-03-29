@@ -139,6 +139,14 @@ export const queryKeys = {
         { venueId: normalized(venueId), date: normalized(date) },
       ] as const,
   },
+  availability: {
+    courtDay: (courtId: NullableString, date: NullableString) =>
+      [
+        "availability",
+        "court-day",
+        { courtId: normalized(courtId), date: normalized(date) },
+      ] as const,
+  },
   reviews: {
     venue: (venueId: NullableString) =>
       ["reviews", "venue", normalized(venueId)] as const,
