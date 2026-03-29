@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
+  getBookingById,
+  hasReviewForBooking,
   insertRow,
-  listBookings,
-  listCourtReviews,
-  listCourts,
+  listCourtReviewsByVenue,
+  listCourtsByVenue,
   listVenues,
 } from "@/lib/data/courtly-db";
 import { emitReviewCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
@@ -15,15 +16,14 @@ type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { venueId } = await ctx.params;
-  const [venues, courts, reviews] = await Promise.all([
+  const [venues, courtsAtVenue, reviews] = await Promise.all([
     listVenues(),
-    listCourts(),
-    listCourtReviews(),
+    listCourtsByVenue(venueId),
+    listCourtReviewsByVenue(venueId),
   ]);
   const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const courtsAtVenue = courts.filter((court) => court.venue_id === venueId);
   const displayCourt = courtsAtVenue[0];
   if (!displayCourt) {
     return NextResponse.json({
@@ -32,9 +32,9 @@ export async function GET(_req: Request, ctx: Ctx) {
     });
   }
 
-  const list = reviews
-    .filter((review) => review.venue_id === venueId)
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  const list = [...reviews].sort((a, b) =>
+    String(b.created_at).localeCompare(String(a.created_at)),
+  );
 
   return NextResponse.json({
     court: withVenueHydration(displayCourt, venues, reviews),
@@ -49,11 +49,8 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const { venueId } = await ctx.params;
-  const [venues, bookings, courts, reviews] = await Promise.all([
+  const [venues] = await Promise.all([
     listVenues(),
-    listBookings(),
-    listCourts(),
-    listCourtReviews(),
   ]);
   const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -80,11 +77,8 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "rating must be 1–5" }, { status: 400 });
   }
 
-  const booking = bookings.find((row) => row.id === bookingId);
-  const bookingCourt = booking
-    ? courts.find((row) => row.id === booking.court_id)
-    : undefined;
-  if (!booking || !bookingCourt || bookingCourt.venue_id !== venueId) {
+  const booking = await getBookingById(bookingId);
+  if (!booking || booking.venue_id !== venueId) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
   if (booking.status !== "completed") {
@@ -99,7 +93,7 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (reviews.some((review) => review.booking_id === bookingId)) {
+  if (await hasReviewForBooking(bookingId)) {
     return NextResponse.json(
       { error: "This booking already has a review" },
       { status: 409 },

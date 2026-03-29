@@ -32,6 +32,7 @@ import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
+import { queryKeys } from "@/lib/query/query-keys";
 import { cn } from "@/lib/utils";
 
 const ANY_VALUE = "__any__";
@@ -126,7 +127,10 @@ export default function CourtsPage() {
   const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["courts", selectedSport],
+    queryKey: queryKeys.courts.list({
+      status: "active",
+      sport: selectedSport,
+    }),
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({
         status: "active",

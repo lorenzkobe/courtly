@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { OpenPlaySession } from "@/lib/types/courtly";
@@ -47,7 +48,7 @@ export default function OpenPlayPage() {
   const selectedSport = useSelectedSport((state) => state.sport);
 
   const { data: sessions = [], isLoading } = useQuery({
-    queryKey: ["open-play", selectedSport],
+    queryKey: queryKeys.openPlay.list({ sport: selectedSport }),
     queryFn: async () => {
       const { data } = await courtlyApi.openPlay.list({ sport: selectedSport });
       return data;
@@ -64,7 +65,7 @@ export default function OpenPlayPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["open-play"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
       toast.success("You're in! See you on the court.");
       setJoinSession(null);
       setPlayerName("");

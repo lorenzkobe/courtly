@@ -3,8 +3,8 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
 import {
   deleteRow,
-  listCourtClosures,
-  listCourts,
+  getCourtById,
+  getCourtClosureById,
   listVenueAdminAssignments,
   updateRow,
 } from "@/lib/data/courtly-db";
@@ -15,20 +15,15 @@ type Ctx = { params: Promise<{ id: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const [courts, closures, assignments] = await Promise.all([
-    listCourts(),
-    listCourtClosures(),
+  const [court, cur, assignments] = await Promise.all([
+    getCourtById(courtId),
+    getCourtClosureById(courtId, closureId),
     listVenueAdminAssignments(),
   ]);
-  const court = courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const cur = closures.find(
-    (closure) => closure.id === closureId && closure.court_id === courtId,
-  );
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as Partial<CourtClosure>;
@@ -77,21 +72,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const [courts, closures, assignments] = await Promise.all([
-    listCourts(),
-    listCourtClosures(),
+  const [court, cur, assignments] = await Promise.all([
+    getCourtById(courtId),
+    getCourtClosureById(courtId, closureId),
     listVenueAdminAssignments(),
   ]);
-  const court = courts.find((row) => row.id === courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const idx = closures.findIndex(
-    (closure) => closure.id === closureId && closure.court_id === courtId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await deleteRow("court_closures", closureId);
   return NextResponse.json({ ok: true });
 }

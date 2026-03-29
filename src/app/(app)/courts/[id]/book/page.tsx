@@ -47,6 +47,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import {
   segmentTotalCost,
   segmentsTotalCost,
@@ -248,7 +249,7 @@ export default function BookCourtPage() {
   const [summaryOpen, setSummaryOpen] = useState(false);
 
   const { data: court, isLoading } = useQuery({
-    queryKey: ["court", courtId],
+    queryKey: queryKeys.courts.detail(courtId),
     queryFn: async () => {
       const { data } = await courtlyApi.courts.get(courtId);
       return data;
@@ -257,7 +258,7 @@ export default function BookCourtPage() {
   });
 
   const { data: establishmentCourts = [] } = useQuery({
-    queryKey: ["establishment-courts", court?.venue_id, court?.sport],
+    queryKey: queryKeys.courts.byVenue(court?.venue_id, court?.sport),
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({
         status: "active",
@@ -274,7 +275,7 @@ export default function BookCourtPage() {
   const dateIso = format(selectedDate, "yyyy-MM-dd");
 
   const { data: existingBookings = [] } = useQuery({
-    queryKey: ["bookings-for-court", courtId, dateIso],
+    queryKey: queryKeys.bookings.forCourt(courtId, dateIso),
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.list({
         court_id: courtId,
@@ -286,7 +287,7 @@ export default function BookCourtPage() {
   });
 
   const { data: dayClosures = [] } = useQuery({
-    queryKey: ["court-closures", courtId, dateIso],
+    queryKey: queryKeys.closures.court(courtId, dateIso),
     queryFn: async () => {
       const { data } = await courtlyApi.courtClosures.list(courtId, {
         date: dateIso,
@@ -297,7 +298,7 @@ export default function BookCourtPage() {
   });
 
   const { data: venueDayClosures = [] } = useQuery({
-    queryKey: ["venue-closures", court?.venue_id, dateIso],
+    queryKey: queryKeys.closures.venue(court?.venue_id, dateIso),
     queryFn: async () => {
       const { data } = await courtlyApi.venueClosures.list(court!.venue_id, {
         date: dateIso,
@@ -326,7 +327,7 @@ export default function BookCourtPage() {
   }, [bookingOccupied, closureOccupied]);
 
   const { data: reviewBundle } = useQuery({
-    queryKey: ["venue-reviews", court?.venue_id],
+    queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
       const { data: payload } = await courtlyApi.venueReviews.bundle(court!.venue_id);
       if (payload == null) {
@@ -373,10 +374,10 @@ export default function BookCourtPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["venue-reviews", court?.venue_id],
+        queryKey: queryKeys.reviews.venue(court?.venue_id),
       });
-      void queryClient.invalidateQueries({ queryKey: ["court", courtId] });
-      void queryClient.invalidateQueries({ queryKey: ["courts"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.detail(courtId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       toast.success("Review removed");
     },
   });
@@ -390,9 +391,9 @@ export default function BookCourtPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["venue-reviews", court?.venue_id],
+        queryKey: queryKeys.reviews.venue(court?.venue_id),
       });
-      void queryClient.invalidateQueries({ queryKey: ["flagged-reviews"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reviews.flagged() });
       setFlagReviewId(null);
       setFlagNote("");
       toast.success("Review flagged for platform review");
@@ -407,12 +408,12 @@ export default function BookCourtPage() {
       return payloads.length;
     },
     onSuccess: (count) => {
-      void queryClient.invalidateQueries({ queryKey: ["bookings"] });
-      void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.my(user?.email, court?.sport) });
       void queryClient.invalidateQueries({
-        queryKey: ["bookings-for-court", courtId],
+        queryKey: queryKeys.bookings.forCourt(courtId, dateIso),
       });
-      void queryClient.invalidateQueries({ queryKey: ["courts"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       setBlockedWarningOpen(false);
       setSummaryOpen(false);
       toast.success(

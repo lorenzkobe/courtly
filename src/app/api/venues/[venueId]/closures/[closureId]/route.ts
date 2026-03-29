@@ -3,8 +3,8 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import {
   deleteRow,
+  getVenueClosureById,
   listVenueAdminAssignments,
-  listVenueClosures,
   listVenues,
   updateRow,
 } from "@/lib/data/courtly-db";
@@ -15,9 +15,9 @@ type Ctx = { params: Promise<{ venueId: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const [venues, closures, assignments] = await Promise.all([
+  const [venues, cur, assignments] = await Promise.all([
     listVenues(),
-    listVenueClosures(),
+    getVenueClosureById(venueId, closureId),
     listVenueAdminAssignments(),
   ]);
   const venue = venues.find((row) => row.id === venueId);
@@ -26,9 +26,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const cur = closures.find(
-    (closure) => closure.id === closureId && closure.venue_id === venueId,
-  );
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as Partial<VenueClosure>;
@@ -77,9 +74,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const [venues, closures, assignments] = await Promise.all([
+  const [venues, cur, assignments] = await Promise.all([
     listVenues(),
-    listVenueClosures(),
+    getVenueClosureById(venueId, closureId),
     listVenueAdminAssignments(),
   ]);
   const venue = venues.find((row) => row.id === venueId);
@@ -88,10 +85,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const idx = closures.findIndex(
-    (closure) => closure.id === closureId && closure.venue_id === venueId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await deleteRow("venue_closures", closureId);
   return NextResponse.json({ ok: true });
 }

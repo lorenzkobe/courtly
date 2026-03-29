@@ -110,7 +110,6 @@ function LoginContent() {
     setSubmitting(true);
     try {
       await login({ email, password });
-      router.replace(nextPath ?? "/dashboard");
     } catch (err) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {
         setError(err.response.data.error);
@@ -138,7 +137,6 @@ function LoginContent() {
       toast.success(
         `We sent a verification email to ${normalizedEmail}. Check your inbox to confirm your account.`,
       );
-      router.replace(nextPath ?? "/dashboard");
     } catch (err) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {
         setError(err.response.data.error);

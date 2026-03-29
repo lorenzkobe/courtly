@@ -24,6 +24,7 @@ import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
 import { homePathForRole } from "@/lib/auth/management";
+import { useNotificationRealtime } from "@/lib/notifications/use-notification-realtime";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { SessionUser } from "@/lib/types/courtly";
@@ -116,6 +117,7 @@ export default function AppLayout({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
+  useNotificationRealtime(user?.id ?? null);
   const homePath = homePathForRole(user?.role);
 
   const sidebar = useMemo(() => sidebarForRole(user?.role), [user?.role]);

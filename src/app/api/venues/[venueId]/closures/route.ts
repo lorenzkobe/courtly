@@ -2,23 +2,20 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import {
+  hasConfirmedBookingConflictForVenue,
   insertRow,
-  listBookings,
-  listCourts,
   listVenueAdminAssignments,
-  listVenueClosures,
+  listVenueClosuresByVenue,
   listVenues,
 } from "@/lib/data/courtly-db";
-import { timeRangesOverlap } from "@/lib/booking-overlap";
 import type { VenueClosure } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
   const { venueId } = await ctx.params;
-  const [venues, closures, assignments] = await Promise.all([
+  const [venues, assignments] = await Promise.all([
     listVenues(),
-    listVenueClosures(),
     listVenueAdminAssignments(),
   ]);
   const venue = venues.find((row) => row.id === venueId);
@@ -28,10 +25,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const date = searchParams.get("date");
 
   if (date) {
-    const list = closures.filter(
-      (closure) => closure.venue_id === venueId && closure.date === date,
-    );
-    return NextResponse.json(list);
+    return NextResponse.json(await listVenueClosuresByVenue(venueId, date));
   }
 
   const user = await readSessionUser();
@@ -39,22 +33,19 @@ export async function GET(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const list = closures
-    .filter((closure) => closure.venue_id === venueId)
-    .sort((a, b) => {
-      const d = a.date.localeCompare(b.date);
-      return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
-    });
+  const list = await listVenueClosuresByVenue(venueId);
+  list.sort((a, b) => {
+    const d = a.date.localeCompare(b.date);
+    return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
+  });
   return NextResponse.json(list);
 }
 
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId } = await ctx.params;
-  const [venues, courts, bookings, assignments] = await Promise.all([
+  const [venues, assignments] = await Promise.all([
     listVenues(),
-    listCourts(),
-    listBookings(),
     listVenueAdminAssignments(),
   ]);
   const venue = venues.find((row) => row.id === venueId);
@@ -85,18 +76,11 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Reason is required" }, { status: 400 });
   }
 
-  const courtIds = new Set(courts.filter((court) => court.venue_id === venueId).map((court) => court.id));
-  const conflicts = bookings.some(
-    (booking) =>
-      courtIds.has(booking.court_id) &&
-      booking.date === date &&
-      booking.status === "confirmed" &&
-      timeRangesOverlap(
-        booking.start_time,
-        booking.end_time,
-        start_time,
-        end_time,
-      ),
+  const conflicts = await hasConfirmedBookingConflictForVenue(
+    venueId,
+    date,
+    start_time,
+    end_time,
   );
   if (conflicts) {
     return NextResponse.json(

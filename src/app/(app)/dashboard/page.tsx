@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import type { Booking } from "@/lib/types/courtly";
 import { formatTimeShort } from "@/lib/booking-range";
@@ -70,12 +71,11 @@ export default function DashboardPage() {
 
   const { data: todaysBookingsRaw = [], isLoading: loadingTodayBookings } =
     useQuery({
-      queryKey: [
-        "dashboard-bookings-today",
-        user?.email,
-        todayIso,
-        selectedSport,
-      ],
+      queryKey: queryKeys.bookings.list({
+        player_email: user?.email,
+        date: todayIso,
+        sport: selectedSport,
+      }),
       queryFn: async () => {
         const { data } = await courtlyApi.bookings.list({
           player_email: user?.email,
@@ -109,7 +109,12 @@ export default function DashboardPage() {
   }, [todaysBookings]);
 
   const { data: tournaments = [] } = useQuery({
-    queryKey: ["tournaments-dashboard", selectedSport],
+    queryKey: queryKeys.tournaments.list({
+      status: "registration_open",
+      limit: 2,
+      sort: "-date",
+      sport: selectedSport,
+    }),
     queryFn: async () => {
       const { data } = await courtlyApi.tournaments.list({
         status: "registration_open",
@@ -122,7 +127,11 @@ export default function DashboardPage() {
   });
 
   const { data: sessions = [] } = useQuery({
-    queryKey: ["sessions-dashboard", selectedSport],
+    queryKey: queryKeys.openPlay.list({
+      status: "open",
+      limit: 3,
+      sport: selectedSport,
+    }),
     queryFn: async () => {
       const { data } = await courtlyApi.openPlay.list({
         status: "open",

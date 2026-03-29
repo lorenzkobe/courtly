@@ -25,6 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp } from "@/lib/format-currency";
 import {
   bookingDurationHours,
@@ -93,7 +94,7 @@ export default function MyBookingsPage() {
   const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
-    queryKey: ["my-bookings", user?.email, selectedSport],
+    queryKey: queryKeys.bookings.my(user?.email, selectedSport),
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.list({
         player_email: user?.email,
@@ -131,17 +132,17 @@ export default function MyBookingsPage() {
   }, [bookings, query, sortBy, statusFilter]);
 
   const { data: registrations = [], isLoading: loadingRegs } = useQuery({
-    queryKey: ["my-registrations", user?.email],
+    queryKey: queryKeys.registrations.my(user?.email),
     queryFn: async () => {
       const { data } = await courtlyApi.registrations.list({
         player_email: user?.email,
       });
       return data;
     },
-    enabled: !!user?.email,
+    enabled: !!user?.email && tab === "tournaments",
   });
 
-  const isLoading = loadingBookings || loadingRegs;
+  const isLoading = tab === "bookings" ? loadingBookings : loadingRegs;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">

@@ -7,7 +7,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { NOTIFICATIONS_QUERY_KEY } from "@/lib/notifications/query-key";
-import { useNotificationRealtime } from "@/lib/notifications/use-notification-realtime";
 import { isSupabasePublicConfigured } from "@/lib/supabase/env";
 import type { Notification } from "@/lib/notifications/types";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +84,6 @@ export default function NotificationBell() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
-  useNotificationRealtime(user?.id ?? null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
@@ -94,7 +92,7 @@ export default function NotificationBell() {
       return listResponse;
     },
     enabled: Boolean(user),
-    staleTime: realtimeOk ? 5 * 60 * 1000 : 0,
+    staleTime: 0,
     refetchInterval: realtimeOk ? false : 30_000,
   });
 

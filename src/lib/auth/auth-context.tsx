@@ -54,7 +54,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSession]);
 
   const login = useCallback(async (input: { email: string; password: string }) => {
-    await courtlyApi.auth.login(input);
+    const { data } = await courtlyApi.auth.login(input);
+    if (data.user) {
+      setUser(data.user);
+      return;
+    }
+
+    // Fallback for unexpected API responses where a session was created
+    // but the user payload is missing.
     await refreshSession();
   }, [refreshSession]);
 

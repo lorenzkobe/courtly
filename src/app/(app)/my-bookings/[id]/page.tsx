@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp } from "@/lib/format-currency";
 import {
   bookingDurationHours,
@@ -57,10 +58,10 @@ function BookingReviewSection({
 
   const invalidateReviews = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: ["venue-reviews", court.venue_id],
+      queryKey: queryKeys.reviews.venue(court.venue_id),
     });
-    void queryClient.invalidateQueries({ queryKey: ["court", court.id] });
-    void queryClient.invalidateQueries({ queryKey: ["courts"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.courts.detail(court.id) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
   }, [queryClient, court.id, court.venue_id]);
 
   const createReviewMut = useMutation({
@@ -213,7 +214,7 @@ export default function BookingDetailPage() {
   const bookingId = params.id;
 
   const { data: booking, isLoading: loadingBooking } = useQuery({
-    queryKey: ["booking", bookingId],
+    queryKey: queryKeys.bookings.detail(bookingId),
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.get(bookingId);
       return data;
@@ -222,7 +223,7 @@ export default function BookingDetailPage() {
   });
 
   const { data: groupMembers = [], isLoading: loadingGroup } = useQuery({
-    queryKey: ["booking-group", booking?.booking_group_id, user?.email],
+    queryKey: queryKeys.bookings.byGroup(booking?.booking_group_id, user?.email),
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.list({
         player_email: user!.email,
@@ -256,7 +257,7 @@ export default function BookingDetailPage() {
   );
 
   const { data: court, isLoading: loadingCourt } = useQuery({
-    queryKey: ["court", booking?.court_id],
+    queryKey: queryKeys.courts.detail(booking?.court_id),
     queryFn: async () => {
       const { data } = await courtlyApi.courts.get(booking!.court_id);
       return data;
@@ -265,7 +266,7 @@ export default function BookingDetailPage() {
   });
 
   const { data: reviewBundle } = useQuery({
-    queryKey: ["venue-reviews", court?.venue_id],
+    queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
       const { data: payload } = await courtlyApi.venueReviews.bundle(
         court!.venue_id,

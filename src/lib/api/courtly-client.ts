@@ -7,6 +7,7 @@ import type {
   ManagedUser,
   OpenPlaySession,
   RevenueSummaryResponse,
+  SessionUser,
   Tournament,
   TournamentRegistration,
   Venue,
@@ -36,7 +37,7 @@ export const courtlyApi = {
         "/api/auth/session",
       ),
     login: (body: { email: string; password: string }) =>
-      http.post("/api/auth/login", body),
+      http.post<{ user: SessionUser | null }>("/api/auth/login", body),
     signup: (body: {
       email: string;
       firstName: string;
