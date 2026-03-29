@@ -61,6 +61,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import {
   availableSegmentsInRange,
   bookedHoursInSelection,
+  formatHourToken,
   formatSegmentLine,
   formatTimeShort,
   hourFromTime,
@@ -248,6 +249,11 @@ export default function BookCourtPage() {
   const [notes, setNotes] = useState("");
   const [blockedWarningOpen, setBlockedWarningOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const effectiveEndTime = useMemo(() => {
+    if (!startTime) return null;
+    if (endTime) return endTime;
+    return formatHourToken(hourFromTime(startTime) + 1);
+  }, [startTime, endTime]);
 
   const { data: court, isLoading } = useQuery({
     queryKey: queryKeys.courts.detail(courtId),
@@ -350,19 +356,19 @@ export default function BookCourtPage() {
   );
 
   const segments = useMemo(() => {
-    if (!startTime || !endTime) return [];
-    return availableSegmentsInRange(startTime, endTime, occupied);
-  }, [startTime, endTime, occupied]);
+    if (!startTime || !effectiveEndTime) return [];
+    return availableSegmentsInRange(startTime, effectiveEndTime, occupied);
+  }, [startTime, effectiveEndTime, occupied]);
 
   const billableHours = totalBillableHours(segments);
   const requestedHours =
-    startTime && endTime
-      ? hourFromTime(endTime) - hourFromTime(startTime)
+    startTime && effectiveEndTime
+      ? hourFromTime(effectiveEndTime) - hourFromTime(startTime)
       : 0;
   const blockedInRange = useMemo(() => {
-    if (!startTime || !endTime) return [];
-    return bookedHoursInSelection(startTime, endTime, occupied);
-  }, [startTime, endTime, occupied]);
+    if (!startTime || !effectiveEndTime) return [];
+    return bookedHoursInSelection(startTime, effectiveEndTime, occupied);
+  }, [startTime, effectiveEndTime, occupied]);
 
   const [flagReviewId, setFlagReviewId] = useState<string | null>(null);
   const [flagNote, setFlagNote] = useState("");
@@ -476,15 +482,15 @@ export default function BookCourtPage() {
       toast.error("You need to be signed in to book.");
       return;
     }
-    if (!startTime || !endTime || !court) {
-      toast.error("Choose a date, start time, and end time.");
+    if (!startTime || !effectiveEndTime || !court) {
+      toast.error("Choose a date and at least one hour.");
       return;
     }
     if (segments.length === 0) {
       toast.error("No available hours in that range — try a different time.");
       return;
     }
-    if (selectionCoversBookedSlots(startTime, endTime, occupied)) {
+    if (selectionCoversBookedSlots(startTime, effectiveEndTime, occupied)) {
       setBlockedWarningOpen(true);
       return;
     }
@@ -675,7 +681,7 @@ export default function BookCourtPage() {
                 {format(selectedDate, "MMM d, yyyy")}
               </dd>
             </div>
-            {startTime && endTime ? (
+            {startTime && effectiveEndTime ? (
               <>
                 <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
                   <dt className="pt-0.5 text-muted-foreground">
@@ -683,7 +689,7 @@ export default function BookCourtPage() {
                   </dt>
                   <dd className="space-y-1 leading-snug sm:text-right">
                     <span className="block font-medium">
-                      {formatTimeShort(startTime)} – {formatTimeShort(endTime)}
+                      {formatTimeShort(startTime)} – {formatTimeShort(effectiveEndTime)}
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {requestedHours} h in your selection
@@ -696,7 +702,7 @@ export default function BookCourtPage() {
                   </dt>
                   <dd className="font-medium leading-relaxed sm:text-right">
                     {bookableRangesLabel ??
-                      `${formatTimeShort(startTime)} – ${formatTimeShort(endTime)}`}
+                      `${formatTimeShort(startTime)} – ${formatTimeShort(effectiveEndTime)}`}
                   </dd>
                 </div>
                 {blockedInRange.length > 0 ? (
@@ -1189,7 +1195,7 @@ export default function BookCourtPage() {
                   Time on {format(selectedDate, "EEE, MMM d")}
                 </Label>
                 <span className="text-xs text-muted-foreground">
-                  Tap start, then end
+                  Tap once for 1 hour, or pick a range
                 </span>
               </div>
               <p className="mb-4 text-xs leading-snug text-muted-foreground">
@@ -1223,9 +1229,9 @@ export default function BookCourtPage() {
                     const isEnd = endTime === time;
                     const isInRange =
                       Boolean(startTime) &&
-                      Boolean(endTime) &&
+                      Boolean(effectiveEndTime) &&
                       time > startTime! &&
-                      time < endTime!;
+                      time < effectiveEndTime!;
                     return (
                       <Button
                         key={time}
@@ -1322,7 +1328,6 @@ export default function BookCourtPage() {
             disabled={
               !user ||
               !startTime ||
-              !endTime ||
               segments.length === 0 ||
               createBookings.isPending
             }
