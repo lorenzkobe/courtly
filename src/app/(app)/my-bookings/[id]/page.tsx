@@ -461,58 +461,64 @@ export default function BookingDetailPage() {
                 <p className="mt-0.5 text-sm text-muted-foreground">{court.name}</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5 rounded-xl border border-border/60 p-4 text-sm">
+                <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Location
                   </p>
-                  <p className="flex items-start gap-2 text-foreground">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    {court.location}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasMapPin
-                      ? "Uses venue map pin."
-                      : "Uses venue address text."}
-                  </p>
+                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+                    <p className="flex min-w-0 flex-1 items-start gap-2 text-foreground">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0">{court.location}</span>
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      asChild
+                    >
+                      <a
+                        href={mapOpenHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                        Open in Map
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-2 rounded-xl border border-border/60 p-4 text-sm">
+                <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Contact
                   </p>
                   <p className="font-medium text-foreground">{court.contact_phone ?? "—"}</p>
-                  <Button variant="outline" size="sm" className="w-full justify-center" asChild>
-                    <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
-                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
-                      Open in Map
-                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                    </a>
-                  </Button>
+                  {court.facebook_url || court.instagram_url ? (
+                    <div className="flex flex-wrap gap-2 pt-0.5">
+                      {court.facebook_url ? (
+                        <a
+                          href={court.facebook_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                        >
+                          Facebook <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                      {court.instagram_url ? (
+                        <a
+                          href={court.instagram_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                        >
+                          Instagram <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
-              {court.facebook_url || court.instagram_url ? (
-                <div className="flex flex-wrap gap-2">
-                  {court.facebook_url ? (
-                    <a
-                      href={court.facebook_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                    >
-                      Facebook <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : null}
-                  {court.instagram_url ? (
-                    <a
-                      href={court.instagram_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                    >
-                      Instagram <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">
                   {court.amenities.map((amenity) => (

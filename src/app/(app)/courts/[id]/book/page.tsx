@@ -918,33 +918,30 @@ export default function BookCourtPage() {
                     {court.contact_phone ?? "—"}
                   </dd>
                 </div>
-                {court.facebook_url ? (
+                {court.facebook_url || court.instagram_url ? (
                   <div>
-                    <dt className="text-muted-foreground">Facebook</dt>
-                    <dd className="mt-0.5">
-                      <a
-                        href={court.facebook_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                      >
-                        Visit page <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </dd>
-                  </div>
-                ) : null}
-                {court.instagram_url ? (
-                  <div>
-                    <dt className="text-muted-foreground">Instagram</dt>
-                    <dd className="mt-0.5">
-                      <a
-                        href={court.instagram_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                      >
-                        Visit profile <ExternalLink className="h-3 w-3" />
-                      </a>
+                    <dt className="text-muted-foreground">Links</dt>
+                    <dd className="mt-0.5 flex flex-wrap gap-2">
+                      {court.facebook_url ? (
+                        <a
+                          href={court.facebook_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                        >
+                          Facebook <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                      {court.instagram_url ? (
+                        <a
+                          href={court.instagram_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                        >
+                          Instagram <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
                     </dd>
                   </div>
                 ) : null}
