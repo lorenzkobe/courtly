@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function safeAuthRedirectPath(raw: string | null): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
@@ -33,7 +33,17 @@ function AuthCallbackContent() {
     let cancelled = false;
 
     async function run() {
-      const supabase = createSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        if (!cancelled) {
+          router.replace(
+            `/login?error=${encodeURIComponent(
+              "Supabase is not configured in the browser (missing NEXT_PUBLIC_SUPABASE_URL or publishable key).",
+            )}`,
+          );
+        }
+        return;
+      }
       try {
         if (code) {
           const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);

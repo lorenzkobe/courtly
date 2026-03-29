@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { insertRow, listManagedUsers, listVenues } from "@/lib/data/courtly-db";
 import type { Venue } from "@/lib/types/courtly";
+import { parseVenueMapCoordsForCreate } from "@/lib/venue-map-coords";
+import {
+  parseRateWindowsFromUnknown,
+  validateVenuePriceRanges,
+} from "@/lib/venue-price-ranges";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -21,6 +26,11 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Partial<Venue> & {
     initial_admin_user_id?: string;
   };
+  const bodyRecord = body as Record<string, unknown>;
+  const mapCoords = parseVenueMapCoordsForCreate(bodyRecord);
+  if (!mapCoords.ok) {
+    return NextResponse.json({ error: mapCoords.error }, { status: 400 });
+  }
   const existingAdminId =
     typeof body.initial_admin_user_id === "string"
       ? body.initial_admin_user_id.trim()
@@ -35,26 +45,33 @@ export async function POST(req: Request) {
     );
   }
 
+  const hourly_rate_windows = parseRateWindowsFromUnknown(body.hourly_rate_windows);
+  const rangeCheck = validateVenuePriceRanges(hourly_rate_windows);
+  if (!rangeCheck.ok) {
+    return NextResponse.json({ error: rangeCheck.error }, { status: 400 });
+  }
+
   const venue: Omit<Venue, "id"> = {
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New venue",
     location: typeof body.location === "string" ? body.location.trim() : "",
     contact_phone:
       typeof body.contact_phone === "string" ? body.contact_phone.trim() : "",
     sport: body.sport ?? "pickleball",
-    hourly_rate: Number(body.hourly_rate) || 0,
-    hourly_rate_windows: Array.isArray(body.hourly_rate_windows)
-      ? body.hourly_rate_windows
-      : [],
-    opens_at: typeof body.opens_at === "string" ? body.opens_at : "07:00",
-    closes_at: typeof body.closes_at === "string" ? body.closes_at : "22:00",
+    hourly_rate_windows,
     status: body.status === "closed" ? "closed" : "active",
     amenities: Array.isArray(body.amenities) ? body.amenities : [],
     image_url: typeof body.image_url === "string" ? body.image_url.trim() : "",
     created_at: new Date().toISOString(),
+    ...(mapCoords.mode === "set"
+      ? {
+          map_latitude: mapCoords.map_latitude,
+          map_longitude: mapCoords.map_longitude,
+        }
+      : {}),
   };
-  if (!venue.location || !venue.contact_phone || !venue.image_url || venue.hourly_rate <= 0) {
+  if (!venue.location || !venue.contact_phone || !venue.image_url) {
     return NextResponse.json(
-      { error: "Location, contact number, image URL, and hourly rate are required" },
+      { error: "Location, contact number, and image URL are required" },
       { status: 400 },
     );
   }

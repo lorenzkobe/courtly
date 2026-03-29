@@ -7,6 +7,7 @@ import {
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
+import { emitReviewCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { withVenueHydration } from "@/lib/court-response";
 import type { CourtReview } from "@/lib/types/courtly";
 
@@ -114,6 +115,13 @@ export async function POST(req: Request, ctx: Ctx) {
     rating: rating as CourtReview["rating"],
     comment: comment || null,
   };
-  const inserted = await insertRow("court_reviews", row);
-  return NextResponse.json({ ...(inserted as CourtReview), created_at: now, updated_at: now });
+  const inserted = (await insertRow("court_reviews", row)) as CourtReview;
+  void emitReviewCreatedToVenueAdmins({
+    venueId,
+    venueName: venue.name,
+    reviewId: inserted.id,
+    reviewerLabel: user.full_name?.trim() || user.email,
+    rating,
+  });
+  return NextResponse.json({ ...inserted, created_at: now, updated_at: now });
 }

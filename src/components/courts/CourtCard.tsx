@@ -3,7 +3,9 @@ import { Heart, MapPin, Clock, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatTimeShort } from "@/lib/booking-range";
 import { formatCourtRateSummary } from "@/lib/court-pricing";
+import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
@@ -73,9 +75,23 @@ export default function CourtCard({
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{court.location}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Clock className="h-3.5 w-3.5" />
-            {court.available_hours?.open} – {court.available_hours?.close}
+          <div className="flex items-start gap-2">
+            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 leading-snug">
+              {(court.hourly_rate_windows ?? []).length ? (
+                <span className="block text-xs text-muted-foreground">
+                  {(court.hourly_rate_windows ?? []).map((w, i) => (
+                    <span key={`${w.start}-${w.end}-${w.hourly_rate}`}>
+                      {i > 0 ? " · " : null}
+                      {formatTimeShort(w.start)}–{formatTimeShort(w.end)}{" "}
+                      {formatPhpCompact(w.hourly_rate)}/hr
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Rates on booking</span>
+              )}
+            </span>
           </div>
           <div className="font-semibold text-foreground tabular-nums">
             {formatCourtRateSummary(court)}

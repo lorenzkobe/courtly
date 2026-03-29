@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 import { format } from "date-fns";
 import axios from "axios";
 import { ArrowLeft, CalendarIcon, Layers, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -134,6 +135,9 @@ function LoginContent() {
         password,
         confirmPassword,
       });
+      toast.success(
+        `We sent a verification email to ${normalizedEmail}. Check your inbox to confirm your account.`,
+      );
       router.replace(nextPath ?? "/dashboard");
     } catch (err) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {

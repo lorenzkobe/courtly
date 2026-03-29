@@ -13,6 +13,14 @@ import {
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { Venue } from "@/lib/types/courtly";
+import {
+  applyVenueMapCoordsToPatch,
+  parseVenueMapCoordsForPatch,
+} from "@/lib/venue-map-coords";
+import {
+  parseRateWindowsFromUnknown,
+  validateVenuePriceRanges,
+} from "@/lib/venue-price-ranges";
 
 function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
   const keys: (keyof Venue)[] = [
@@ -20,10 +28,7 @@ function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
     "location",
     "contact_phone",
     "sport",
-    "hourly_rate",
     "hourly_rate_windows",
-    "opens_at",
-    "closes_at",
     "status",
     "amenities",
     "image_url",
@@ -104,7 +109,26 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
-  const venuePatch = pickVenuePatch(patch);
+  const mapParse = parseVenueMapCoordsForPatch(patch);
+  if (!mapParse.ok) {
+    return NextResponse.json({ error: mapParse.error }, { status: 400 });
+  }
+
+  const patchSansMap = { ...patch };
+  delete patchSansMap.map_latitude;
+  delete patchSansMap.map_longitude;
+
+  const venuePatch = pickVenuePatch(patchSansMap) as Partial<Venue>;
+  applyVenueMapCoordsToPatch(venuePatch as Record<string, unknown>, mapParse);
+
+  if (venuePatch.hourly_rate_windows !== undefined) {
+    const parsed = parseRateWindowsFromUnknown(venuePatch.hourly_rate_windows);
+    const check = validateVenuePriceRanges(parsed);
+    if (!check.ok) {
+      return NextResponse.json({ error: check.error }, { status: 400 });
+    }
+    venuePatch.hourly_rate_windows = parsed;
+  }
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 
   if (

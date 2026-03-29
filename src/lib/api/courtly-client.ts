@@ -13,7 +13,21 @@ import type {
   VenueClosure,
   VenueDetailResponse,
 } from "@/lib/types/courtly";
+
+/** API accepts explicit null to clear nullable map columns on PATCH. */
+export type VenueWritePayload = Omit<Partial<Venue>, "map_latitude" | "map_longitude"> & {
+  map_latitude?: number | null;
+  map_longitude?: number | null;
+};
 import type { NotificationsListResponse } from "@/lib/notifications/types";
+
+export type AdminAssignedVenueSummary = {
+  id: string;
+  name: string;
+  location: string;
+  image_url: string;
+  court_count: number;
+};
 
 export const courtlyApi = {
   auth: {
@@ -185,12 +199,17 @@ export const courtlyApi = {
 
   venues: {
     list: () => http.get<Venue[]>("/api/venues"),
-    create: (data: Partial<Venue>) => http.post<Venue>("/api/venues", data),
+    create: (data: VenueWritePayload) => http.post<Venue>("/api/venues", data),
     get: (id: string) =>
       http.get<VenueDetailResponse>(`/api/venues/${id}`),
-    update: (id: string, data: Partial<Venue>) =>
+    update: (id: string, data: VenueWritePayload) =>
       http.patch<Venue>(`/api/venues/${id}`, data),
     remove: (id: string) => http.delete(`/api/venues/${id}`),
+  },
+
+  assignedVenues: {
+    list: () =>
+      http.get<AdminAssignedVenueSummary[]>("/api/admin/assigned-venues"),
   },
 
   managedUsers: {
@@ -232,7 +251,7 @@ export const courtlyApi = {
 
   notifications: {
     list: () => http.get<NotificationsListResponse>("/api/notifications"),
-    markAllRead: () => http.patch("/api/notifications"),
-    markRead: (id: string) => http.patch(`/api/notifications/${id}`),
+    markAllRead: () => http.patch<{ ok: boolean }>("/api/notifications"),
+    markRead: (id: string) => http.patch<{ ok: boolean }>(`/api/notifications/${id}`),
   },
 };

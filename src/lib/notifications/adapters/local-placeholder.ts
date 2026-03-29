@@ -21,12 +21,20 @@ export class LocalPlaceholderNotificationRepository
     return PLACEHOLDER_RESPONSE;
   }
 
-  async markRead(_notificationId: string, _userId: string): Promise<{ ok: true }> {
+  async markRead(_notificationId: string, _userId: string): Promise<{ ok: true } | { ok: false }> {
+    return { ok: true };
+  }
+
+  async markAllRead(_userId: string): Promise<{ ok: true }> {
     return { ok: true };
   }
 
   async emit(_input: EmitNotificationInput): Promise<void> {
-    // Placeholder only. Actual write/emit behavior is implemented in Supabase phase.
+    // Placeholder only.
+  }
+
+  async emitMany(_inputs: EmitNotificationInput[]): Promise<void> {
+    // Placeholder only.
   }
 }
 

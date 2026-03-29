@@ -7,6 +7,7 @@ import {
   listVenues,
   updateRow,
 } from "@/lib/data/courtly-db";
+import { emitReviewFlagged } from "@/lib/notifications/emit-from-server";
 
 type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
 
@@ -47,6 +48,11 @@ export async function POST(req: Request, ctx: Ctx) {
     flagged_by_user_id: user.id,
     flag_reason: reason || null,
     updated_at: new Date().toISOString(),
+  });
+  void emitReviewFlagged({
+    review: { id: review.id, user_id: review.user_id, venue_id: review.venue_id },
+    venueName: venue.name,
+    flagReason: reason || null,
   });
   return NextResponse.json(updated);
 }

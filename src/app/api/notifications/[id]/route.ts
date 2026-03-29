@@ -13,11 +13,10 @@ export async function PATCH(_req: Request, ctx: Ctx) {
   }
 
   const { id } = await ctx.params;
-  await repo.markRead(id, user.id);
+  const result = await repo.markRead(id, user.id);
+  if (!result.ok) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
-  return NextResponse.json({
-    ok: true,
-    status: "placeholder",
-    message: "Read state persistence will be enabled when Supabase notifications are implemented.",
-  });
+  return NextResponse.json({ ok: true });
 }

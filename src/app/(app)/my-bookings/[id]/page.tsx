@@ -301,11 +301,6 @@ export default function BookingDetailPage() {
     Number.isFinite(court.map_longitude);
   const mapLat = court?.map_latitude ?? 0;
   const mapLon = court?.map_longitude ?? 0;
-  const mapBboxPad = 0.018;
-  const mapEmbedSrc =
-    hasMapPin && court
-      ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - mapBboxPad},${mapLat - mapBboxPad},${mapLon + mapBboxPad},${mapLat + mapBboxPad}&layer=mapnik`
-      : null;
   const mapOpenHref = court
     ? hasMapPin
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
@@ -463,10 +458,27 @@ export default function BookingDetailPage() {
                   {court.establishment_name ?? booking.establishment_name ?? "—"}
                 </p>
                 <p className="text-muted-foreground">{court.name}</p>
-                <p className="flex items-start gap-2 text-muted-foreground">
-                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {court.location}
-                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Location</p>
+                    <p className="flex items-start gap-2 text-foreground">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {court.location}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {hasMapPin
+                        ? "Opens in Google Maps at the venue pin."
+                        : "Opens in Google Maps using this address."}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="shrink-0 self-start" asChild>
+                    <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
+                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                      Open in Map
+                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                    </a>
+                  </Button>
+                </div>
                 <p className="text-muted-foreground">Contact: {court.contact_phone ?? "—"}</p>
               </div>
               {court.amenities?.length ? (
@@ -478,35 +490,6 @@ export default function BookingDetailPage() {
                   ))}
                 </div>
               ) : null}
-              <p className="text-sm text-muted-foreground">
-                {hasMapPin
-                  ? "Use the map below or open Google Maps for directions to the pinned location."
-                  : "Search the address in your maps app for directions."}
-              </p>
-              {mapEmbedSrc ? (
-                <div className="overflow-hidden rounded-2xl border border-border">
-                  <iframe
-                    title={`Map — ${court.name}`}
-                    src={mapEmbedSrc}
-                    className="aspect-video w-full max-h-56 border-0"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={mapOpenHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <MapPin className="mr-1.5 h-3.5 w-3.5" />
-                    Open in Map
-                    <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                  </a>
-                </Button>
-              </div>
             </CardContent>
           </Card>
         ) : null}

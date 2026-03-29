@@ -10,36 +10,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
 
 export default function AdminVenuesPage() {
-  const { data: courts = [], isLoading } = useQuery({
+  const { data: venueCards = [], isLoading } = useQuery({
     queryKey: ["admin-venues"],
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.list({ manageable: true });
+      const { data } = await courtlyApi.assignedVenues.list();
       return data;
     },
   });
-
-  const venueCards = Array.from(
-    courts.reduce<
-      Map<
-        string,
-        { id: string; name: string; location: string; image_url: string; court_count: number }
-      >
-    >((acc, court) => {
-      const existing = acc.get(court.venue_id);
-      if (existing) {
-        existing.court_count += 1;
-        return acc;
-      }
-      acc.set(court.venue_id, {
-        id: court.venue_id,
-        name: court.establishment_name ?? "Venue",
-        location: court.location,
-        image_url: court.image_url,
-        court_count: 1,
-      });
-      return acc;
-    }, new Map()),
-  ).map(([, v]) => v);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -81,7 +58,11 @@ export default function AdminVenuesPage() {
                 </div>
                 <div className="mb-4 space-y-1 text-sm text-muted-foreground">
                   <div>{venue.location}</div>
-                  <div className="text-xs">{venue.court_count} courts</div>
+                  <div className="text-xs">
+                    {venue.court_count}{" "}
+                    {venue.court_count === 1 ? "court" : "courts"}
+                    {venue.court_count === 0 ? " — add one from Manage courts" : ""}
+                  </div>
                 </div>
                 <Button asChild variant="outline" className="w-full">
                   <Link href={`/admin/venues/${venue.id}`}>

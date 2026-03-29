@@ -157,3 +157,48 @@ html {
     font-family: var(--font-heading);
   }
 }
+
+/* Google Places suggestions above app modals (Radix dialog uses z-100). */
+.pac-container {
+  z-index: 200;
+}
+
+/*
+ * Places UI Kit (gmp-place-autocomplete): force light shell to match Courtly inputs.
+ * See https://developers.google.com/maps/documentation/javascript/places-ui-kit/custom-styling
+ */
+.venue-map-pin-picker gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  min-height: 2.25rem;
+  color-scheme: light;
+  --gmp-mat-color-surface: hsl(var(--background));
+  --gmp-mat-color-on-surface: hsl(var(--foreground));
+  --gmp-mat-color-on-surface-variant: hsl(var(--muted-foreground));
+  --gmp-mat-color-primary: hsl(var(--primary));
+  --gmp-mat-color-outline-decorative: hsl(var(--input));
+  --gmp-mat-color-secondary-container: hsl(var(--muted));
+  --gmp-mat-color-on-secondary-container: hsl(var(--foreground));
+  --gmp-mat-color-neutral-container: hsl(var(--muted));
+  --gmp-mat-color-on-neutral-container: hsl(var(--muted-foreground));
+  --gmp-mat-font-family: inherit;
+  border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: hsl(var(--background));
+}
+
+.dark .venue-map-pin-picker gmp-place-autocomplete {
+  color-scheme: dark;
+  --gmp-mat-color-surface: hsl(var(--card));
+  --gmp-mat-color-on-surface: hsl(var(--card-foreground));
+  --gmp-mat-color-on-surface-variant: hsl(var(--muted-foreground));
+  --gmp-mat-color-primary: hsl(var(--primary));
+  --gmp-mat-color-outline-decorative: hsl(var(--border));
+  --gmp-mat-color-secondary-container: hsl(var(--muted));
+  --gmp-mat-color-on-secondary-container: hsl(var(--foreground));
+  --gmp-mat-color-neutral-container: hsl(var(--muted));
+  --gmp-mat-color-on-neutral-container: hsl(var(--muted-foreground));
+  border-color: hsl(var(--border));
+  background-color: hsl(var(--card));
+}

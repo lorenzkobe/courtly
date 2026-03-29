@@ -35,9 +35,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
+import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { formatTimeShort } from "@/lib/booking-range";
+import { formatPhpCompact } from "@/lib/format-currency";
 import type { Court, Venue } from "@/lib/types/courtly";
 import { formatAmenityLabel } from "@/lib/format-amenity";
+import {
+  bookableHourTokensFromRanges,
+  validatePriceRangeFormRows,
+} from "@/lib/venue-price-ranges";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
 const defaultForm = {
@@ -55,14 +63,13 @@ const defaultVenueForm = {
   location: "",
   contact_phone: "",
   sport: "pickleball" as Venue["sport"],
-  hourly_rate: "",
-  opens_at: "07:00",
-  closes_at: "22:00",
   status: "active" as Venue["status"],
   amenities: [] as string[],
   customAmenityDraft: "",
   image_url: "",
   hourly_rate_windows: [] as Array<{ start: string; end: string; rate: string }>,
+  map_latitude: null as number | null,
+  map_longitude: null as number | null,
 };
 
 const amenityOptions = [
@@ -128,6 +135,11 @@ export default function AdminVenueCourtsPage() {
   const venue = venueDetail?.venue;
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
 
+  const venuePriceRangesValidation = useMemo(
+    () => validatePriceRangeFormRows(venueForm.hourly_rate_windows),
+    [venueForm.hourly_rate_windows],
+  );
+
   const upsert = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -155,14 +167,27 @@ export default function AdminVenueCourtsPage() {
 
   const saveVenue = useMutation({
     mutationFn: async () => {
+      const parsed = validatePriceRangeFormRows(venueForm.hourly_rate_windows);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+      const hasMapPin =
+        venueForm.map_latitude != null &&
+        venueForm.map_longitude != null &&
+        Number.isFinite(venueForm.map_latitude) &&
+        Number.isFinite(venueForm.map_longitude);
+      const mapBody = hasMapPin
+        ? {
+            map_latitude: venueForm.map_latitude!,
+            map_longitude: venueForm.map_longitude!,
+          }
+        : { map_latitude: null, map_longitude: null };
+
       await courtlyApi.venues.update(venueId, {
         name: venueForm.name.trim(),
         location: venueForm.location.trim(),
         contact_phone: venueForm.contact_phone.trim(),
         sport: "pickleball",
-        hourly_rate: Number.parseFloat(venueForm.hourly_rate) || 0,
-        opens_at: venueForm.opens_at,
-        closes_at: venueForm.closes_at,
         status: venueForm.status,
         amenities: [
           ...new Set(
@@ -170,18 +195,8 @@ export default function AdminVenueCourtsPage() {
           ),
         ],
         image_url: venueForm.image_url.trim(),
-        hourly_rate_windows: venueForm.hourly_rate_windows
-          .filter(
-            (rateWindow) =>
-              rateWindow.start.trim() &&
-              rateWindow.end.trim() &&
-              rateWindow.rate.trim(),
-          )
-          .map((rateWindow) => ({
-            start: rateWindow.start.trim(),
-            end: rateWindow.end.trim(),
-            hourly_rate: Number.parseFloat(rateWindow.rate) || 0,
-          })),
+        hourly_rate_windows: parsed.windows,
+        ...mapBody,
       });
     },
     onSuccess: () => {
@@ -191,8 +206,10 @@ export default function AdminVenueCourtsPage() {
       toast.success("Venue updated");
       setVenueOpen(false);
     },
-    onError: (e: Error) => {
-      toast.error(e.message || "Could not save venue");
+    onError: (e: unknown) => {
+      toast.error(
+        e instanceof Error && e.message ? e.message : "Could not save venue",
+      );
     },
   });
 
@@ -290,13 +307,18 @@ export default function AdminVenueCourtsPage() {
       location: venue.location,
       contact_phone: venue.contact_phone ?? "",
       sport: "pickleball",
-      hourly_rate: String(venue.hourly_rate),
-      opens_at: venue.opens_at,
-      closes_at: venue.closes_at,
       status: venue.status,
       amenities: [...venue.amenities],
       customAmenityDraft: "",
       image_url: venue.image_url,
+      map_latitude:
+        venue.map_latitude != null && Number.isFinite(venue.map_latitude)
+          ? venue.map_latitude
+          : null,
+      map_longitude:
+        venue.map_longitude != null && Number.isFinite(venue.map_longitude)
+          ? venue.map_longitude
+          : null,
       hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((rateWindow) => ({
         start: rateWindow.start,
         end: rateWindow.end,
@@ -306,19 +328,10 @@ export default function AdminVenueCourtsPage() {
     setVenueOpen(true);
   };
 
-  const closureTimeSlots = useMemo(() => {
-    const open = venue?.opens_at ?? "07:00";
-    const close = venue?.closes_at ?? "22:00";
-    const oh = Number.parseInt(open.split(":")[0] ?? "7", 10);
-    const ch = Number.parseInt(close.split(":")[0] ?? "22", 10);
-    const start = Number.isFinite(oh) ? oh : 7;
-    const end = Number.isFinite(ch) ? ch : 22;
-    const out: string[] = [];
-    for (let h = start; h < end; h++) {
-      out.push(`${String(h).padStart(2, "0")}:00`);
-    }
-    return out;
-  }, [venue?.opens_at, venue?.closes_at]);
+  const closureTimeSlots = useMemo(
+    () => bookableHourTokensFromRanges(venue?.hourly_rate_windows ?? []),
+    [venue?.hourly_rate_windows],
+  );
   const allClosureHoursSelected =
     closureTimeSlots.length > 0 &&
     selectedClosureTimes.length === closureTimeSlots.length;
@@ -403,16 +416,6 @@ export default function AdminVenueCourtsPage() {
               <p className="font-medium text-foreground">{formatStatusLabel(venue.sport)}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Hourly rate</p>
-              <p className="font-medium text-foreground">PHP {venue.hourly_rate}/hr</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Open hours</p>
-              <p className="font-medium text-foreground">
-                {venue.opens_at} - {venue.closes_at}
-              </p>
-            </div>
-            <div>
               <p className="text-muted-foreground">Status</p>
               <p className="font-medium text-foreground">
                 {venue.status === "active" ? "Active" : "Inactive"}
@@ -433,12 +436,13 @@ export default function AdminVenueCourtsPage() {
               )}
             </div>
             <div className="sm:col-span-2">
-              <p className="text-muted-foreground">Rates by time range</p>
+              <p className="text-muted-foreground">Price ranges</p>
               {(venue.hourly_rate_windows?.length ?? 0) > 0 ? (
                 <ul className="mt-1 space-y-1 text-foreground">
                   {venue.hourly_rate_windows!.map((rateWindow) => (
                     <li key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}>
-                      {rateWindow.start} - {rateWindow.end}: PHP {rateWindow.hourly_rate}/hr
+                      {formatTimeShort(rateWindow.start)} – {formatTimeShort(rateWindow.end)}:{" "}
+                      {formatPhpCompact(rateWindow.hourly_rate)}/hr
                     </li>
                   ))}
                 </ul>
@@ -537,7 +541,7 @@ export default function AdminVenueCourtsPage() {
       </Dialog>
 
       <Dialog open={venueOpen} onOpenChange={setVenueOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading">Edit venue</DialogTitle>
           </DialogHeader>
@@ -559,6 +563,27 @@ export default function AdminVenueCourtsPage() {
               />
             </div>
             <div>
+              <VenueMapPinPicker
+                key={venueId}
+                showPlaceSearch={false}
+                value={
+                  venueForm.map_latitude != null &&
+                  venueForm.map_longitude != null &&
+                  Number.isFinite(venueForm.map_latitude) &&
+                  Number.isFinite(venueForm.map_longitude)
+                    ? { lat: venueForm.map_latitude, lng: venueForm.map_longitude }
+                    : null
+                }
+                onChange={(next) =>
+                  setVenueForm((prev) => ({
+                    ...prev,
+                    map_latitude: next?.lat ?? null,
+                    map_longitude: next?.lng ?? null,
+                  }))
+                }
+              />
+            </div>
+            <div>
               <Label>Contact number *</Label>
               <Input
                 className="mt-1.5"
@@ -567,45 +592,16 @@ export default function AdminVenueCourtsPage() {
                 placeholder="+63 9XX XXX XXXX or landline"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Sport</Label>
-                <Select value="pickleball" disabled>
-                  <SelectTrigger className="mt-1.5 bg-muted/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pickleball">Pickleball</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Hourly rate *</Label>
-                <Input
-                  className="mt-1.5"
-                  type="number"
-                  value={venueForm.hourly_rate}
-                  onChange={(e) => setVenueForm({ ...venueForm, hourly_rate: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Opens *</Label>
-                <Input
-                  className="mt-1.5"
-                  value={venueForm.opens_at}
-                  onChange={(e) => setVenueForm({ ...venueForm, opens_at: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Closes *</Label>
-                <Input
-                  className="mt-1.5"
-                  value={venueForm.closes_at}
-                  onChange={(e) => setVenueForm({ ...venueForm, closes_at: e.target.value })}
-                />
-              </div>
+            <div>
+              <Label>Sport</Label>
+              <Select value="pickleball" disabled>
+                <SelectTrigger className="mt-1.5 bg-muted/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pickleball">Pickleball</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Availability</Label>
@@ -686,19 +682,25 @@ export default function AdminVenueCourtsPage() {
                 </Button>
               </div>
             </div>
-            <div className="space-y-2 rounded-lg border border-border/60 p-3">
-              <div className="flex items-center justify-between">
-                <Label>Rates by time range</Label>
+            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <Label>Price ranges *</Label>
+                  <p className="mt-1 max-w-prose text-xs text-muted-foreground">
+                    Non-overlapping hours (e.g. 7am–5pm at one rate, 5pm–10pm at another).
+                  </p>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="shrink-0 self-start"
                   onClick={() =>
                     setVenueForm((prev) => ({
                       ...prev,
                       hourly_rate_windows: [
                         ...prev.hourly_rate_windows,
-                        { start: "17:00", end: "22:00", rate: "" },
+                        { start: "07:00", end: "22:00", rate: "" },
                       ],
                     }))
                   }
@@ -708,61 +710,95 @@ export default function AdminVenueCourtsPage() {
               </div>
               {venueForm.hourly_rate_windows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No extra time ranges configured.
+                  Add at least one start–end range and price per hour.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   {venueForm.hourly_rate_windows.map((row, i) => (
-                    <div key={i} className="grid grid-cols-4 gap-2">
-                      <Input
-                        value={row.start}
-                        onChange={(e) =>
-                          setVenueForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[i] = { ...next[i]!, start: e.target.value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                        placeholder="Start"
-                      />
-                      <Input
-                        value={row.end}
-                        onChange={(e) =>
-                          setVenueForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[i] = { ...next[i]!, end: e.target.value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                        placeholder="End"
-                      />
-                      <Input
-                        type="number"
-                        value={row.rate}
-                        onChange={(e) =>
-                          setVenueForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[i] = { ...next[i]!, rate: e.target.value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                        placeholder="Rate"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="text-destructive"
-                        onClick={() =>
-                          setVenueForm((prev) => ({
-                            ...prev,
-                            hourly_rate_windows: prev.hourly_rate_windows.filter(
-                              (_, idx) => idx !== i,
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </Button>
+                    <div
+                      key={i}
+                      className="rounded-xl border border-border/50 bg-background p-4 shadow-sm"
+                    >
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
+                        <div className="min-w-0 space-y-1.5">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`admin-range-start-${i}`}
+                          >
+                            Start
+                          </Label>
+                          <VenueTimeInput
+                            id={`admin-range-start-${i}`}
+                            value={row.start}
+                            onChange={(value) =>
+                              setVenueForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, start: value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-1.5">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`admin-range-end-${i}`}
+                          >
+                            End
+                          </Label>
+                          <VenueTimeInput
+                            id={`admin-range-end-${i}`}
+                            value={row.end}
+                            onChange={(value) =>
+                              setVenueForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, end: value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-1.5 sm:col-span-2">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`admin-range-rate-${i}`}
+                          >
+                            Rate (PHP / hr)
+                          </Label>
+                          <Input
+                            id={`admin-range-rate-${i}`}
+                            type="number"
+                            inputMode="decimal"
+                            className="h-11 w-full"
+                            value={row.rate}
+                            onChange={(e) =>
+                              setVenueForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, rate: e.target.value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                            placeholder="e.g. 450"
+                          />
+                        </div>
+                        <div className="flex justify-end sm:col-span-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-11 shrink-0 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() =>
+                              setVenueForm((prev) => ({
+                                ...prev,
+                                hourly_rate_windows: prev.hourly_rate_windows.filter(
+                                  (_, idx) => idx !== i,
+                                ),
+                              }))
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -776,11 +812,19 @@ export default function AdminVenueCourtsPage() {
                 onChange={(e) => setVenueForm({ ...venueForm, image_url: e.target.value })}
               />
             </div>
+            {!venuePriceRangesValidation.ok ? (
+              <p
+                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                role="alert"
+              >
+                {venuePriceRangesValidation.error}
+              </p>
+            ) : null}
             <Button
               className="w-full font-heading font-semibold"
               type="button"
               onClick={() => saveVenue.mutate()}
-              disabled={saveVenue.isPending}
+              disabled={saveVenue.isPending || !venuePriceRangesValidation.ok}
             >
               {saveVenue.isPending ? "Saving..." : "Save Venue"}
             </Button>
@@ -878,7 +922,7 @@ export default function AdminVenueCourtsPage() {
                           )
                         }
                       >
-                        {time}
+                        {formatTimeShort(time)}
                       </Button>
                     );
                   })}

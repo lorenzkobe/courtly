@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type {
   Booking,
   Court,
@@ -25,10 +26,14 @@ export async function listVenues(): Promise<Venue[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("venues").select("*");
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as Venue),
-    created_at: toIsoString((row as { created_at: string | null }).created_at),
-  }));
+  return (data ?? []).map((row) => {
+    const v = row as Venue;
+    return {
+      ...v,
+      hourly_rate_windows: v.hourly_rate_windows ?? [],
+      created_at: toIsoString((row as { created_at: string | null }).created_at),
+    };
+  });
 }
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {
@@ -71,6 +76,8 @@ export async function listCourts(): Promise<Court[]> {
   if (error) throw error;
   return (data ?? []).map((row) => {
     const venue = (row as { venues?: Venue | null }).venues;
+    const windows = venue?.hourly_rate_windows ?? [];
+    const span = pricingSpanFromRanges(windows);
     return {
       id: (row as { id: string }).id,
       venue_id: (row as { venue_id: string }).venue_id,
@@ -83,10 +90,9 @@ export async function listCourts(): Promise<Court[]> {
       location: venue?.location ?? "",
       sport: venue?.sport ?? "pickleball",
       image_url: venue?.image_url ?? "",
-      hourly_rate: venue?.hourly_rate ?? 0,
-      hourly_rate_windows: venue?.hourly_rate_windows ?? [],
+      hourly_rate_windows: windows,
       amenities: venue?.amenities ?? [],
-      available_hours: { open: venue?.opens_at ?? "07:00", close: venue?.closes_at ?? "22:00" },
+      available_hours: span ?? { open: "07:00", close: "22:00" },
       establishment_name: venue?.name,
       contact_phone: venue?.contact_phone,
       map_latitude: venue?.map_latitude,
@@ -117,6 +123,7 @@ export async function listBookings(): Promise<Booking[]> {
       end_time: (row as { end_time: string }).end_time,
       player_name: (row as { player_name?: string }).player_name,
       player_email: (row as { player_email?: string }).player_email,
+      user_id: (row as { user_id?: string | null }).user_id ?? null,
       players_count: (row as { players_count?: number }).players_count,
       court_subtotal: Number((row as { court_subtotal?: number }).court_subtotal ?? 0),
       booking_fee: Number((row as { booking_fee?: number }).booking_fee ?? 0),

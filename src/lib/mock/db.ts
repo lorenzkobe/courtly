@@ -1,3 +1,8 @@
+/**
+ * Legacy in-memory dataset — not wired into API routes. The app reads/writes
+ * real data via Supabase (`src/lib/data/courtly-db.ts`). Kept only as a
+ * reference shape for types or future local-only demos; safe to delete if unused.
+ */
 import type {
   Booking,
   Court,
@@ -31,10 +36,10 @@ const venues: Venue[] = [
     location: "Bonifacio Global City, Taguig",
     contact_phone: "+63 917 800 1001",
     sport: "pickleball",
-    hourly_rate: 45,
-    hourly_rate_windows: [{ start: "17:00", end: "22:00", hourly_rate: 60 }],
-    opens_at: "07:00",
-    closes_at: "22:00",
+    hourly_rate_windows: [
+      { start: "07:00", end: "17:00", hourly_rate: 45 },
+      { start: "17:00", end: "22:00", hourly_rate: 60 },
+    ],
     amenities: ["lights", "parking", "restrooms", "seating"],
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
     created_at: new Date().toISOString(),
@@ -47,10 +52,7 @@ const venues: Venue[] = [
     location: "Cebu City",
     contact_phone: "+63 32 410 2200",
     sport: "pickleball",
-    hourly_rate: 40,
-    hourly_rate_windows: [],
-    opens_at: "08:00",
-    closes_at: "21:00",
+    hourly_rate_windows: [{ start: "08:00", end: "21:00", hourly_rate: 40 }],
     status: "active",
     amenities: ["lights", "parking", "water_fountain"],
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
@@ -104,7 +106,10 @@ const courts: Court[] = [
     location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
-    hourly_rate: 45,
+    hourly_rate_windows: [
+      { start: "07:00", end: "17:00", hourly_rate: 45 },
+      { start: "17:00", end: "22:00", hourly_rate: 60 },
+    ],
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
     type: "indoor",
@@ -118,7 +123,10 @@ const courts: Court[] = [
     location: "Bonifacio Global City, Taguig",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-bgcs-cover/800/450",
-    hourly_rate: 45,
+    hourly_rate_windows: [
+      { start: "07:00", end: "17:00", hourly_rate: 45 },
+      { start: "17:00", end: "22:00", hourly_rate: 60 },
+    ],
     amenities: ["lights", "parking", "restrooms", "seating"],
     available_hours: { open: "07:00", close: "22:00" },
     type: "indoor",
@@ -132,7 +140,7 @@ const courts: Court[] = [
     location: "Cebu City",
     sport: "pickleball",
     image_url: "https://picsum.photos/seed/courtly-cebu-cover/800/450",
-    hourly_rate: 40,
+    hourly_rate_windows: [{ start: "08:00", end: "21:00", hourly_rate: 40 }],
     amenities: ["lights", "parking", "water_fountain"],
     available_hours: { open: "08:00", close: "21:00" },
     type: "indoor",

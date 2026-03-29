@@ -3,8 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Building2, Plus, Trash2 } from "lucide-react";
+import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
+import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -31,20 +33,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import type { ManagedUser, Venue } from "@/lib/types/courtly";
+import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { formatStatusLabel } from "@/lib/utils";
+
+type PriceRangeRow = { start: string; end: string; rate: string };
 
 const emptyForm = {
   name: "",
   location: "",
   contact_phone: "",
   sport: "pickleball" as Venue["sport"],
-  hourly_rate: "",
-  opens_at: "07:00",
-  closes_at: "22:00",
   amenities: [] as string[],
   customAmenityDraft: "",
   image_url: "",
   initial_admin_user_id: "" as string,
+  hourly_rate_windows: [] as PriceRangeRow[],
+  map_latitude: null as number | null,
+  map_longitude: null as number | null,
 };
 
 const amenityOptions = [
@@ -94,21 +99,39 @@ export default function SuperadminVenuesPage() {
     (managedUser) => managedUser.role === "admin",
   );
 
+  const priceRangeFormValidation = useMemo(
+    () => validatePriceRangeFormRows(form.hourly_rate_windows),
+    [form.hourly_rate_windows],
+  );
+
   const saveAccount = useMutation({
     mutationFn: async () => {
+      const parsed = validatePriceRangeFormRows(form.hourly_rate_windows);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+      const hasMapPin =
+        form.map_latitude != null &&
+        form.map_longitude != null &&
+        Number.isFinite(form.map_latitude) &&
+        Number.isFinite(form.map_longitude);
+      const mapBody = hasMapPin
+        ? { map_latitude: form.map_latitude!, map_longitude: form.map_longitude! }
+        : editing
+          ? { map_latitude: null, map_longitude: null }
+          : {};
       const body = {
         name: form.name.trim(),
         location: form.location.trim(),
         contact_phone: form.contact_phone.trim(),
         sport: form.sport,
-        hourly_rate: Number.parseFloat(form.hourly_rate) || 0,
-        opens_at: form.opens_at,
-        closes_at: form.closes_at,
+        hourly_rate_windows: parsed.windows,
         amenities: [
           ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
         ],
         image_url: form.image_url.trim(),
         initial_admin_user_id: form.initial_admin_user_id.trim() || undefined,
+        ...mapBody,
       };
       if (editing) {
         await courtlyApi.venues.update(editing.id, body);
@@ -124,8 +147,10 @@ export default function SuperadminVenuesPage() {
       setEditing(null);
       setForm(emptyForm);
     },
-    onError: () => {
-      toast.error("Could not save venue");
+    onError: (e: unknown) => {
+      toast.error(
+        e instanceof Error && e.message ? e.message : "Could not save venue",
+      );
     },
   });
 
@@ -151,7 +176,10 @@ export default function SuperadminVenuesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      hourly_rate_windows: [{ start: "07:00", end: "22:00", rate: "" }],
+    });
     setDialogOpen(true);
   };
 
@@ -168,13 +196,26 @@ export default function SuperadminVenuesPage() {
       location: a.location,
       contact_phone: a.contact_phone ?? "",
       sport: a.sport,
-      hourly_rate: String(a.hourly_rate),
-      opens_at: a.opens_at,
-      closes_at: a.closes_at,
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
       image_url: a.image_url ?? "",
       initial_admin_user_id: assignedAdminId,
+      map_latitude:
+        a.map_latitude != null && Number.isFinite(a.map_latitude)
+          ? a.map_latitude
+          : null,
+      map_longitude:
+        a.map_longitude != null && Number.isFinite(a.map_longitude)
+          ? a.map_longitude
+          : null,
+      hourly_rate_windows:
+        (a.hourly_rate_windows ?? []).length > 0
+          ? (a.hourly_rate_windows ?? []).map((w) => ({
+              start: w.start,
+              end: w.end,
+              rate: String(w.hourly_rate),
+            }))
+          : [{ start: "07:00", end: "22:00", rate: "" }],
     });
     setDialogOpen(true);
   };
@@ -292,7 +333,7 @@ export default function SuperadminVenuesPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-md">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading">
               {editing ? "Edit venue" : "New venue"}
@@ -319,6 +360,27 @@ export default function SuperadminVenuesPage() {
               />
             </div>
             <div>
+              <VenueMapPinPicker
+                key={editing?.id ?? "new-venue"}
+                showPlaceSearch={!editing}
+                value={
+                  form.map_latitude != null &&
+                  form.map_longitude != null &&
+                  Number.isFinite(form.map_latitude) &&
+                  Number.isFinite(form.map_longitude)
+                    ? { lat: form.map_latitude, lng: form.map_longitude }
+                    : null
+                }
+                onChange={(next) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    map_latitude: next?.lat ?? null,
+                    map_longitude: next?.lng ?? null,
+                  }))
+                }
+              />
+            </div>
+            <div>
               <Label>Contact number *</Label>
               <Input
                 className="mt-1.5"
@@ -327,47 +389,141 @@ export default function SuperadminVenuesPage() {
                 placeholder="+63 9XX XXX XXXX or landline"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Hourly rate *</Label>
-                <Input
-                  className="mt-1.5"
-                  type="number"
-                  value={form.hourly_rate}
-                  onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Sport</Label>
-                <Select value="pickleball" disabled>
-                  <SelectTrigger className="mt-1.5 bg-muted/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pickleball">Pickleball</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label>Sport</Label>
+              <Select value="pickleball" disabled>
+                <SelectTrigger className="mt-1.5 bg-muted/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pickleball">Pickleball</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Opens *</Label>
-                <Input
-                  className="mt-1.5"
-                  value={form.opens_at}
-                  onChange={(e) => setForm({ ...form, opens_at: e.target.value })}
-                  placeholder="07:00"
-                />
+            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <Label>Price ranges *</Label>
+                  <p className="mt-1 max-w-prose text-xs text-muted-foreground">
+                    Ranges must not overlap (each hour belongs to at most one range).
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 self-start"
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      hourly_rate_windows: [
+                        ...prev.hourly_rate_windows,
+                        { start: "07:00", end: "22:00", rate: "" },
+                      ],
+                    }))
+                  }
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  Add
+                </Button>
               </div>
-              <div>
-                <Label>Closes *</Label>
-                <Input
-                  className="mt-1.5"
-                  value={form.closes_at}
-                  onChange={(e) => setForm({ ...form, closes_at: e.target.value })}
-                  placeholder="22:00"
-                />
-              </div>
+              {form.hourly_rate_windows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add at least one time range and rate.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {form.hourly_rate_windows.map((row, i) => (
+                    <div
+                      key={i}
+                      className="rounded-xl border border-border/50 bg-background p-4 shadow-sm"
+                    >
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
+                        <div className="min-w-0 space-y-1.5">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`superadmin-range-start-${i}`}
+                          >
+                            Start
+                          </Label>
+                          <VenueTimeInput
+                            id={`superadmin-range-start-${i}`}
+                            value={row.start}
+                            onChange={(value) =>
+                              setForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, start: value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-1.5">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`superadmin-range-end-${i}`}
+                          >
+                            End
+                          </Label>
+                          <VenueTimeInput
+                            id={`superadmin-range-end-${i}`}
+                            value={row.end}
+                            onChange={(value) =>
+                              setForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, end: value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-1.5 sm:col-span-2">
+                          <Label
+                            className="text-xs text-muted-foreground"
+                            htmlFor={`superadmin-range-rate-${i}`}
+                          >
+                            Rate (PHP / hr)
+                          </Label>
+                          <Input
+                            id={`superadmin-range-rate-${i}`}
+                            type="number"
+                            inputMode="decimal"
+                            className="h-11 w-full"
+                            value={row.rate}
+                            onChange={(e) =>
+                              setForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[i] = { ...next[i]!, rate: e.target.value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                            placeholder="e.g. 450"
+                          />
+                        </div>
+                        <div className="flex justify-end sm:col-span-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-11 w-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Remove range"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                hourly_rate_windows: prev.hourly_rate_windows.filter(
+                                  (_, idx) => idx !== i,
+                                ),
+                              }))
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <Label className="mb-2 block">Amenities</Label>
@@ -480,6 +636,14 @@ export default function SuperadminVenuesPage() {
               ) : null}
             </div>
           </div>
+          {!priceRangeFormValidation.ok ? (
+            <p
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+              role="alert"
+            >
+              {priceRangeFormValidation.error}
+            </p>
+          ) : null}
           <DialogFooter className="gap-2 sm:gap-0">
             {editing ? (
               <Button
@@ -508,7 +672,7 @@ export default function SuperadminVenuesPage() {
                 !form.location.trim() ||
                 !form.contact_phone.trim() ||
                 !form.image_url.trim() ||
-                !form.hourly_rate.trim() ||
+                !priceRangeFormValidation.ok ||
                 (!editing && !form.initial_admin_user_id.trim())
               }
               onClick={() => saveAccount.mutate()}

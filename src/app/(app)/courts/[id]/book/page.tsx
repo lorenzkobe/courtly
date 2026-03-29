@@ -1,7 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { addDays, format, isBefore, startOfDay, startOfMonth } from "date-fns";
+import {
+  addDays,
+  format,
+  isBefore,
+  isSameDay,
+  startOfDay,
+  startOfMonth,
+} from "date-fns";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -55,6 +62,7 @@ import {
   formatSegmentLine,
   formatTimeShort,
   hourFromTime,
+  isBookableHourStartInPast,
   occupiedHourStarts,
   occupiedHourStartsFromClosures,
   selectionCoversBookedSlots,
@@ -63,33 +71,12 @@ import {
 } from "@/lib/booking-range";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
+import { bookableHourTokensFromRanges } from "@/lib/venue-price-ranges";
 import { canCourtVenueAdminFlagReview, isSuperadmin } from "@/lib/auth/management";
-import type { Booking, Court } from "@/lib/types/courtly";
+import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { cn } from "@/lib/utils";
-
-const DEFAULT_SLOT_OPEN = 6;
-const DEFAULT_SLOT_CLOSE = 22;
-
-/** Hourly start times from venue open → last slot before close (e.g. 07:00–22:00 → 07..21). */
-function timeSlotsFromVenueHours(open: string, close: string): string[] {
-  const oh = Number.parseInt(open.split(":")[0] ?? "", 10);
-  const ch = Number.parseInt(close.split(":")[0] ?? "", 10);
-  const start = Number.isFinite(oh) ? oh : DEFAULT_SLOT_OPEN;
-  const end = Number.isFinite(ch) ? ch : DEFAULT_SLOT_CLOSE;
-  if (start >= end) {
-    return Array.from({ length: DEFAULT_SLOT_CLOSE - DEFAULT_SLOT_OPEN }, (_, i) => {
-      const h = DEFAULT_SLOT_OPEN + i;
-      return `${String(h).padStart(2, "0")}:00`;
-    });
-  }
-  const slots: string[] = [];
-  for (let h = start; h < end; h++) {
-    slots.push(`${String(h).padStart(2, "0")}:00`);
-  }
-  return slots;
-}
 
 function buildBookingPayloads(
   segments: BookingSegment[],
@@ -338,17 +325,22 @@ export default function BookCourtPage() {
     return merged;
   }, [bookingOccupied, closureOccupied]);
 
-  const { data: courtReviews = [] } = useQuery({
+  const { data: reviewBundle } = useQuery({
     queryKey: ["venue-reviews", court?.venue_id],
     queryFn: async () => {
       const { data: payload } = await courtlyApi.venueReviews.bundle(court!.venue_id);
-      if (payload == null) return [];
-      if (Array.isArray(payload)) return payload;
-      if (Array.isArray(payload.reviews)) return payload.reviews;
-      return [];
+      if (payload == null) {
+        return { court: undefined, reviews: [] as CourtReview[] };
+      }
+      if (Array.isArray(payload)) {
+        return { court: undefined, reviews: payload };
+      }
+      const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
+      return { ...payload, reviews };
     },
     enabled: !!court?.venue_id,
   });
+  const courtReviews = reviewBundle?.reviews ?? [];
 
   const galleryUrls = useMemo(
     () => (court ? courtGalleryUrls(court) : []),
@@ -436,6 +428,7 @@ export default function BookCourtPage() {
   });
 
   const handleTimeSelect = (time: string) => {
+    if (isBookableHourStartInPast(time, selectedDate)) return;
     if (!startTime || (startTime && endTime)) {
       if (occupied.has(time)) return;
       setStartTime(time);
@@ -512,10 +505,7 @@ export default function BookCourtPage() {
   }
 
   const timeSlots = court
-    ? timeSlotsFromVenueHours(
-        court.available_hours?.open ?? "07:00",
-        court.available_hours?.close ?? "22:00",
-      )
+    ? bookableHourTokensFromRanges(court.hourly_rate_windows ?? [])
     : [];
 
   if (!court) {
@@ -546,11 +536,6 @@ export default function BookCourtPage() {
     Number.isFinite(court.map_longitude);
   const mapLat = court.map_latitude ?? 0;
   const mapLon = court.map_longitude ?? 0;
-  const mapBboxPad = 0.018;
-  const mapEmbedSrc = hasMapPin
-    ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapLon - mapBboxPad},${mapLat - mapBboxPad},${mapLon + mapBboxPad},${mapLat + mapBboxPad}&layer=mapnik`
-    : null;
-  /** Full map in browser: Google Maps. Embedded iframe above stays OpenStreetMap. */
   const mapOpenHref = hasMapPin
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
@@ -754,9 +739,6 @@ export default function BookCourtPage() {
                             {formatPhpCompact(rateWindow.hourly_rate)}/hr
                           </li>
                         ))}
-                        <li>
-                          Other hours: {formatPhpCompact(court.hourly_rate)}/hr
-                        </li>
                       </ul>
                     ) : null}
                   </dd>
@@ -884,16 +866,18 @@ export default function BookCourtPage() {
                     {formatAmenityLabel(court.surface)}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">Hours</dt>
-                  <dd className="mt-0.5 font-medium text-foreground">
-                    {court.available_hours.open} – {court.available_hours.close}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Rate</dt>
-                  <dd className="mt-0.5 font-medium text-foreground">
-                    {formatCourtRateSummary(court)}
+                <div className="sm:col-span-2">
+                  <dt className="text-muted-foreground">Rates by time</dt>
+                  <dd className="mt-1 space-y-1 font-medium text-foreground">
+                    {(court.hourly_rate_windows ?? []).map((rateWindow) => (
+                      <div
+                        key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                      >
+                        {formatTimeShort(rateWindow.start)} –{" "}
+                        {formatTimeShort(rateWindow.end)}:{" "}
+                        {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                      </div>
+                    ))}
                   </dd>
                 </div>
                 <div>
@@ -944,26 +928,20 @@ export default function BookCourtPage() {
               </div>
 
               <div className="space-y-3 border-t border-border/60 pt-6">
-                <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
-                  <MapPin className="h-4 w-4 text-primary" aria-hidden />
-                  {hasMapPin ? "Map pin" : "Location"}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {hasMapPin
-                    ? "Pinned location for this venue. Open the map to zoom or get directions."
-                    : "Search this address in your maps app."}
-                </p>
-                <div className="overflow-hidden rounded-2xl border border-border">
-                  <iframe
-                    title={`Map — ${court.name}`}
-                      src={mapEmbedSrc ?? undefined}
-                    className="aspect-16/10 w-full max-h-64 border-0"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button variant="outline" size="sm" asChild>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
+                      <MapPin className="h-4 w-4 text-primary" aria-hidden />
+                      Location
+                    </h3>
+                    <p className="text-sm text-foreground">{court.location}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {hasMapPin
+                        ? "Opens in Google Maps at the venue pin."
+                        : "Opens in Google Maps using this address."}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="shrink-0 self-start sm:mt-7" asChild>
                     <a
                       href={mapOpenHref}
                       target="_blank"
@@ -1179,18 +1157,29 @@ export default function BookCourtPage() {
                 </span>
               </div>
               <p className="mb-4 text-xs leading-snug text-muted-foreground">
-                Only hours within{" "}
-                <span className="font-medium text-foreground">
-                  {court.available_hours.open} – {court.available_hours.close}
-                </span>{" "}
-                are shown. Your range can span unavailable hours — you&apos;ll
-                only pay for free hours (we&apos;ll confirm if anything is
-                blocked).
+                Times shown are bookable priced hours for this venue. Your range
+                can include unavailable slots — you only pay for open hours
+                (we&apos;ll confirm if anything is blocked).
+                {isSameDay(startOfDay(selectedDate), startOfDay(new Date())) ? (
+                  <>
+                    {" "}
+                    Hours that have already started today are not selectable.
+                  </>
+                ) : null}
               </p>
+              {timeSlots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No bookable hours are configured for this venue yet.
+                </p>
+              ) : null}
               <div className="max-h-[min(52vh,22rem)] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
-                <div className="grid grid-cols-3 gap-2 px-0.5 pb-1 pt-1 sm:grid-cols-4 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
                   {timeSlots.map((time) => {
                     const isUnavailable = occupied.has(time);
+                    const isPastHour = isBookableHourStartInPast(
+                      time,
+                      selectedDate,
+                    );
                     const fromClosureOnly =
                       closureOccupied.has(time) && !bookingOccupied.has(time);
                     const isStart = startTime === time;
@@ -1215,13 +1204,17 @@ export default function BookCourtPage() {
                                 : "secondary"
                               : "outline"
                         }
-                        disabled={isUnavailable && !pickingEnd}
+                        disabled={
+                          (isUnavailable && !pickingEnd) || isPastHour
+                        }
                         onClick={() => handleTimeSelect(time)}
                         className={cn(
-                          "relative flex items-center justify-center px-1.5 text-sm font-medium tabular-nums",
+                          "relative flex min-w-0 items-center justify-center px-2 text-xs font-medium tabular-nums sm:text-sm",
                           showMarker
                             ? "min-h-11 flex-col gap-0.5 py-1"
                             : "h-10 shrink-0",
+                          isPastHour &&
+                            "cursor-not-allowed border-muted-foreground/25 bg-muted/50 text-muted-foreground opacity-65",
                           isUnavailable &&
                             fromClosureOnly &&
                             "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
@@ -1246,7 +1239,7 @@ export default function BookCourtPage() {
                             End
                           </span>
                         ) : null}
-                        <span>{time}</span>
+                        <span>{formatTimeShort(time)}</span>
                       </Button>
                     );
                   })}

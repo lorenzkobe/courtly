@@ -7,6 +7,7 @@ import {
   listVenueAdminAssignments,
   updateRow,
 } from "@/lib/data/courtly-db";
+import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
 import type { Booking } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -130,7 +131,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
     admin_note_updated_by_name: patch.admin_note_updated_by_name ?? null,
     admin_note_updated_at: patch.admin_note_updated_at ?? null,
   });
-  // TODO(notifications): emit placeholder event hook for booking changes/completion
-  // when Supabase notifications are wired.
+  await emitBookingLifecycleNotifications({
+    prev: booking,
+    nextRow: updated as Record<string, unknown>,
+    bookingId: id,
+  });
   return NextResponse.json(hydrateBooking(updated as Booking));
 }

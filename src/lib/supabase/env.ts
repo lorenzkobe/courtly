@@ -1,24 +1,32 @@
-type PublicEnvKey = "NEXT_PUBLIC_SUPABASE_URL";
-
-function readPublicEnvVar(key: PublicEnvKey): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`${key} is required`);
-  }
-  return value;
-}
-
-export function getSupabasePublicEnv() {
+/** True when browser-safe Supabase env is present (inlined by Next at build time). */
+export function isSupabasePublicConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return Boolean(url && publishableKey);
+}
+
+/**
+ * Read public Supabase env for the browser bundle.
+ * Use literal `process.env.NEXT_PUBLIC_*` only — Next inlines those at compile time;
+ * `process.env[someKey]` is not replaced and is undefined on the client.
+ */
+export function getSupabasePublicEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is required");
+  }
   if (!publishableKey) {
     throw new Error(
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY is required",
     );
   }
   return {
-    url: readPublicEnvVar("NEXT_PUBLIC_SUPABASE_URL"),
+    url,
     anonKey: publishableKey,
   };
 }

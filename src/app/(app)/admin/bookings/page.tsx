@@ -802,7 +802,7 @@ export default function AdminBookingsPage() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label htmlFor="admin-booking-filter-time-from">Time from (HH:mm)</Label>
+                <Label htmlFor="admin-booking-filter-time-from">Time from</Label>
                 <Input
                   id="admin-booking-filter-time-from"
                   className="mt-1.5"
@@ -814,7 +814,7 @@ export default function AdminBookingsPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="admin-booking-filter-time-to">Time through (HH:mm)</Label>
+                <Label htmlFor="admin-booking-filter-time-to">Time through</Label>
                 <Input
                   id="admin-booking-filter-time-to"
                   className="mt-1.5"

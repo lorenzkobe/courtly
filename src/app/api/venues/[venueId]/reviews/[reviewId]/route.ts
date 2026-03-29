@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isSuperadmin } from "@/lib/auth/management";
 import { deleteRow, listCourtReviews, listVenues, updateRow } from "@/lib/data/courtly-db";
+import { emitReviewFlagCleared } from "@/lib/notifications/emit-from-server";
 import type { CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
@@ -23,6 +24,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   };
 
   if (isSuperadmin(user) && body.clear_flag === true) {
+    const before = { ...review };
     const updated = await updateRow("court_reviews", reviewId, {
       ...review,
       flagged: false,
@@ -31,6 +33,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
       flag_reason: null,
       updated_at: new Date().toISOString(),
     });
+    void emitReviewFlagCleared({ review: before, venueName: venue.name });
     return NextResponse.json(updated);
   }
 

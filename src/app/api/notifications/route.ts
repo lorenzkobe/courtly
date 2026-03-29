@@ -20,9 +20,6 @@ export async function PATCH() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    status: "placeholder",
-    message: "Mark-all-read will be enabled when Supabase notifications are implemented.",
-  });
+  await repo.markAllRead(user.id);
+  return NextResponse.json({ ok: true });
 }

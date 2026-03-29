@@ -3,6 +3,7 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import { insertRow, listBookings, listCourts, listVenueAdminAssignments, listVenues } from "@/lib/data/courtly-db";
+import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -55,6 +56,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const sessionUser = await readSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = (await req.json()) as Partial<Booking>;
   const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
   const court = courts.find((row) => row.id === body.court_id);
@@ -96,7 +102,7 @@ export async function POST(req: Request) {
   }
 
   const booking: Booking = {
-    id: crypto.randomUUID(),
+    id: "",
     court_id: body.court_id as string,
     court_name: body.court_name,
     establishment_name: court
@@ -117,9 +123,10 @@ export async function POST(req: Request) {
     total_cost,
     status: (body.status as Booking["status"]) ?? "confirmed",
     notes: body.notes,
-    created_date: new Date().toISOString(),
+    created_date: "",
   };
-  await insertRow("bookings", {
+  const inserted = (await insertRow("bookings", {
+    user_id: sessionUser.id,
     court_id: booking.court_id,
     booking_group_id: booking.booking_group_id ?? null,
     date: booking.date,
@@ -133,8 +140,22 @@ export async function POST(req: Request) {
     total_cost: booking.total_cost ?? null,
     status: booking.status,
     notes: booking.notes ?? null,
+  })) as { id: string; created_at: string };
+
+  void emitBookingCreatedToVenueAdmins({
+    venueId: venue.id,
+    venueName: venue.name,
+    courtName: court.name ?? "Court",
+    bookingId: inserted.id,
+    bookerLabel: sessionUser.full_name?.trim() || sessionUser.email,
+    bookerUserId: sessionUser.id,
   });
-  // TODO(notifications): emit placeholder event hook for "booking created"
-  // when Supabase notifications are wired.
-  return NextResponse.json(hydrateBooking(booking));
+
+  return NextResponse.json(
+    hydrateBooking({
+      ...booking,
+      id: inserted.id,
+      created_date: inserted.created_at,
+    }),
+  );
 }

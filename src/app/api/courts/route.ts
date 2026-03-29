@@ -8,7 +8,9 @@ import {
   listVenueAdminAssignments,
   listVenues,
 } from "@/lib/data/courtly-db";
+import { emitCourtCreatedToSuperadmins } from "@/lib/notifications/emit-from-server";
 import { withVenueHydration } from "@/lib/court-response";
+import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type { Court, CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -65,7 +67,6 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json()) as Partial<Court>;
-  const id = `court-${crypto.randomUUID().slice(0, 8)}`;
   const venue_id =
     typeof body.venue_id === "string" ? body.venue_id.trim() : "";
   if (!venue_id) {
@@ -94,29 +95,36 @@ export async function POST(req: Request) {
     );
   }
 
+  const windows = venue.hourly_rate_windows ?? [];
+  const span = pricingSpanFromRanges(windows);
+  const courtName =
+    typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New court";
   const court: Court = {
-    id,
+    id: "",
     venue_id,
-    name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New court",
+    name: courtName,
     location: venue.location,
     sport: venue.sport,
     image_url: venue.image_url,
-    hourly_rate: venue.hourly_rate,
-    hourly_rate_windows: venue.hourly_rate_windows ?? [],
+    hourly_rate_windows: windows,
     amenities: venue.amenities,
-    available_hours: { open: venue.opens_at, close: venue.closes_at },
+    available_hours: span ?? { open: "07:00", close: "22:00" },
     type: "indoor",
     surface: "sport_court",
     status: "active",
   };
-  await insertRow("courts", {
+  const inserted = (await insertRow("courts", {
     venue_id: court.venue_id,
     name: court.name,
     status: court.status,
     type: court.type,
     surface: court.surface,
+  })) as { id: string };
+  const persisted: Court = { ...court, id: inserted.id };
+  void emitCourtCreatedToSuperadmins({
+    courtId: inserted.id,
+    courtName: court.name,
+    venueName: venue.name,
   });
-  // TODO(notifications): emit placeholder event hook for "court created"
-  // to superadmin recipients when Supabase notifications are wired.
-  return NextResponse.json(withVenueHydration(court, venues, reviews));
+  return NextResponse.json(withVenueHydration(persisted, venues, reviews));
 }

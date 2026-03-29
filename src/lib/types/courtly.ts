@@ -64,10 +64,8 @@ export type Venue = {
   location: string;
   contact_phone: string;
   sport: CourtSport;
-  hourly_rate: number;
-  hourly_rate_windows?: CourtRateWindow[];
-  opens_at: string;
-  closes_at: string;
+  /** Non-overlapping [start, end) price ranges; sole source for bookable hours and rates. */
+  hourly_rate_windows: CourtRateWindow[];
   status: VenueStatus;
   amenities: string[];
   image_url: string;
@@ -111,12 +109,10 @@ export type Court = {
   /** Deprecated but retained for compatibility in current UI. */
   surface: "concrete" | "asphalt" | "wood" | "sport_court";
   /** Derived on read from linked venue. */
-  hourly_rate: number;
-  /** Derived on read from linked venue. */
-  hourly_rate_windows?: CourtRateWindow[];
+  hourly_rate_windows: CourtRateWindow[];
   /** Derived on read from linked venue. */
   amenities: string[];
-  /** Derived on read from linked venue. */
+  /** Earliest range start / latest range end (filters); gaps between ranges may exist. */
   available_hours: { open: string; close: string };
   /** Populated on read APIs from reviews table — not stored on court row. */
   review_summary?: CourtReviewSummary;
@@ -137,6 +133,8 @@ export type Booking = {
   end_time: string;
   player_name?: string;
   player_email?: string;
+  /** Profile id when the booking is tied to a logged-in user (from DB). */
+  user_id?: string | null;
   players_count?: number;
   /** Amount attributed to the court before booking fee (reservation subtotal). */
   court_subtotal?: number;

@@ -1,3 +1,5 @@
+import { isSameDay, set, startOfDay } from "date-fns";
+
 import type { Booking, CourtClosure } from "@/lib/types/courtly";
 
 export type BookingSegment = {
@@ -10,15 +12,23 @@ export function hourFromTime(time: string): number {
   return Number.parseInt(time.split(":")[0] ?? "0", 10);
 }
 
-/** e.g. `09:00` → `9:00` for display */
+/** `HH:mm` → 12-hour label, e.g. `09:00` → `9:00 AM`, `12:00` → `12:00 PM`. */
 export function formatTimeShort(token: string): string {
   const [h, minutePart = "00"] = token.split(":");
-  const hour = Number.parseInt(h ?? "0", 10);
-  const mins = (minutePart ?? "00").slice(0, 2);
-  if (mins && mins !== "00") {
-    return `${hour}:${mins.padStart(2, "0")}`;
+  const hour24 = Number.parseInt(h ?? "0", 10);
+  const minsRaw = (minutePart ?? "00").slice(0, 2);
+  const minsNum = Number.parseInt(minsRaw, 10);
+  if (!Number.isFinite(hour24) || hour24 < 0 || hour24 > 23) {
+    return token;
   }
-  return `${hour}:00`;
+  const isPm = hour24 >= 12;
+  let h12 = hour24 % 12;
+  if (h12 === 0) h12 = 12;
+  const suffix = isPm ? "PM" : "AM";
+  if (Number.isFinite(minsNum) && minsNum !== 0) {
+    return `${h12}:${String(minsNum).padStart(2, "0")} ${suffix}`;
+  }
+  return `${h12}:00 ${suffix}`;
 }
 
 export function formatSegmentLine(s: BookingSegment): string {
@@ -33,6 +43,28 @@ export function bookingDurationHours(
 
 export function formatHourToken(h: number): string {
   return `${String(h).padStart(2, "0")}:00`;
+}
+
+/**
+ * True when `hourToken` (e.g. `"14:00"`) is the start of an hour that has
+ * already begun on `selectedDate` relative to `now` (local). Only applies when
+ * `selectedDate` is the same calendar day as `now`.
+ */
+export function isBookableHourStartInPast(
+  hourToken: string,
+  selectedDate: Date,
+  now: Date = new Date(),
+): boolean {
+  const day = startOfDay(selectedDate);
+  if (!isSameDay(day, startOfDay(now))) return false;
+  const h = hourFromTime(hourToken);
+  const slotStart = set(day, {
+    hours: h,
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  return now.getTime() >= slotStart.getTime();
 }
 
 /** Hour starts blocked by court closures on a given calendar date (yyyy-MM-dd). */
