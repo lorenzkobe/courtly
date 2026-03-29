@@ -248,6 +248,13 @@ export type RevenueByCourtRow = {
   court_net: number;
   booking_fees: number;
   customer_total: number;
+  rate_breakdown?: RevenueRateBreakdownRow[];
+};
+
+export type RevenueRateBreakdownRow = {
+  hourly_rate: number;
+  hours_booked: number;
+  court_subtotal: number;
 };
 
 export type RevenueByAccountRow = {

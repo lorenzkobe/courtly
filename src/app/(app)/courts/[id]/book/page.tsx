@@ -52,7 +52,6 @@ import {
   hourlyRateForHourStart,
   segmentTotalCost,
   segmentsTotalCost,
-  formatCourtRateSummary,
 } from "@/lib/court-pricing";
 import {
   splitBookingAmounts,
@@ -369,6 +368,35 @@ export default function BookCourtPage() {
     if (!startTime || !effectiveEndTime) return [];
     return bookedHoursInSelection(startTime, effectiveEndTime, occupied);
   }, [startTime, effectiveEndTime, occupied]);
+  const selectedRateLines = useMemo(() => {
+    if (!court || segments.length === 0) return [];
+
+    const hourSlices: Array<{ start: string; end: string; rate: number }> = [];
+    for (const segment of segments) {
+      const startHour = hourFromTime(segment.start_time);
+      const endHour = hourFromTime(segment.end_time);
+      for (let hour = startHour; hour < endHour; hour++) {
+        const start = formatHourToken(hour);
+        const end = formatHourToken(hour + 1);
+        hourSlices.push({
+          start,
+          end,
+          rate: hourlyRateForHourStart(court, start),
+        });
+      }
+    }
+
+    const merged: Array<{ start: string; end: string; rate: number }> = [];
+    for (const slice of hourSlices) {
+      const prev = merged[merged.length - 1];
+      if (prev && prev.rate === slice.rate && prev.end === slice.start) {
+        prev.end = slice.end;
+      } else {
+        merged.push({ ...slice });
+      }
+    }
+    return merged;
+  }, [court, segments]);
 
   const [flagReviewId, setFlagReviewId] = useState<string | null>(null);
   const [flagNote, setFlagNote] = useState("");
@@ -685,24 +713,16 @@ export default function BookCourtPage() {
               <>
                 <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
                   <dt className="pt-0.5 text-muted-foreground">
-                    Requested range
+                    Selected time/s
                   </dt>
                   <dd className="space-y-1 leading-snug sm:text-right">
-                    <span className="block font-medium">
-                      {formatTimeShort(startTime)} – {formatTimeShort(effectiveEndTime)}
+                    <span className="block font-medium leading-relaxed">
+                      {bookableRangesLabel ??
+                        `${formatTimeShort(startTime)} – ${formatTimeShort(effectiveEndTime)}`}
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {requestedHours} h in your selection
                     </span>
-                  </dd>
-                </div>
-                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
-                  <dt className="pt-0.5 text-muted-foreground">
-                    Bookable time
-                  </dt>
-                  <dd className="font-medium leading-relaxed sm:text-right">
-                    {bookableRangesLabel ??
-                      `${formatTimeShort(startTime)} – ${formatTimeShort(effectiveEndTime)}`}
                   </dd>
                 </div>
                 {blockedInRange.length > 0 ? (
@@ -734,17 +754,21 @@ export default function BookCourtPage() {
                   <dt className="text-muted-foreground">Rate</dt>
                   <dd className="space-y-1 text-right font-medium">
                     <span className="inline-flex items-center justify-end">
-                      {formatCourtRateSummary(court)}
+                      {selectedRateLines.length === 1
+                        ? `${formatPhpCompact(selectedRateLines[0]!.rate)}/hr`
+                        : selectedRateLines.length > 1
+                          ? "Multiple rates"
+                          : "—"}
                     </span>
-                    {(court.hourly_rate_windows?.length ?? 0) > 0 ? (
+                    {selectedRateLines.length > 0 ? (
                       <ul className="ml-auto max-w-48 list-inside list-disc text-xs font-normal text-muted-foreground">
-                        {court.hourly_rate_windows!.map((rateWindow) => (
+                        {selectedRateLines.map((line) => (
                           <li
-                            key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                            key={`${line.start}-${line.end}-${line.rate}`}
                           >
-                            {formatTimeShort(rateWindow.start)}–
-                            {formatTimeShort(rateWindow.end)}:{" "}
-                            {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                            {formatTimeShort(line.start)}–
+                            {formatTimeShort(line.end)}:{" "}
+                            {formatPhpCompact(line.rate)}/hr
                           </li>
                         ))}
                       </ul>
@@ -813,7 +837,7 @@ export default function BookCourtPage() {
       </Button>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
-        <div className="space-y-6 lg:pr-4">
+        <div className="order-2 space-y-6 lg:order-1 lg:pr-4">
           <CourtGalleryCarousel
             key={galleryUrls.join("|")}
             urls={galleryUrls}
@@ -1096,7 +1120,7 @@ export default function BookCourtPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="order-1 space-y-6 lg:order-2">
         {establishmentCourts.length > 0 ? (
           <Card className="border-border/60">
             <CardContent className="p-4">

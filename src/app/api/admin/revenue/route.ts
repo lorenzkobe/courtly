@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { manageableCourtIds } from "@/lib/auth/management";
 import { listBookings, listCourts, listVenueAdminAssignments, listVenues } from "@/lib/data/courtly-db";
+import { formatHourToken, hourFromTime } from "@/lib/booking-range";
+import { hourlyRateForHourStart } from "@/lib/court-pricing";
 import {
   filterBookingsByDateRange,
   normalizeDateRange,
   parseIsoDateParam,
 } from "@/lib/revenue-filters";
 import { aggregateRevenueByCourt } from "@/lib/revenue-aggregate";
-import type { RevenueByAccountRow, Venue } from "@/lib/types/courtly";
+import type { Booking, Court, RevenueByAccountRow, RevenueRateBreakdownRow, Venue } from "@/lib/types/courtly";
 
 function attachVenueNames(
   rows: ReturnType<typeof aggregateRevenueByCourt>,
@@ -28,6 +30,47 @@ type Roll = {
   customer_total: number;
   booking_count: number;
 };
+
+function buildCourtRateBreakdownMap(
+  bookings: Booking[],
+  courts: Court[],
+): Map<string, RevenueRateBreakdownRow[]> {
+  const courtMap = new Map(courts.map((court) => [court.id, court] as const));
+  const byCourtRate = new Map<string, Map<number, { hours_booked: number; court_subtotal: number }>>();
+
+  for (const booking of bookings) {
+    if (booking.status !== "confirmed" && booking.status !== "completed") continue;
+    const court = courtMap.get(booking.court_id);
+    if (!court) continue;
+    const startHour = hourFromTime(booking.start_time);
+    const endHour = hourFromTime(booking.end_time);
+    if (!Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) continue;
+    const rateMap =
+      byCourtRate.get(booking.court_id) ??
+      new Map<number, { hours_booked: number; court_subtotal: number }>();
+    for (let hour = startHour; hour < endHour; hour += 1) {
+      const hourlyRate = hourlyRateForHourStart(court, formatHourToken(hour));
+      const current = rateMap.get(hourlyRate) ?? { hours_booked: 0, court_subtotal: 0 };
+      current.hours_booked += 1;
+      current.court_subtotal += hourlyRate;
+      rateMap.set(hourlyRate, current);
+    }
+    byCourtRate.set(booking.court_id, rateMap);
+  }
+
+  const out = new Map<string, RevenueRateBreakdownRow[]>();
+  for (const [courtId, rateMap] of byCourtRate) {
+    const rows = [...rateMap.entries()]
+      .map(([hourly_rate, agg]) => ({
+        hourly_rate,
+        hours_booked: agg.hours_booked,
+        court_subtotal: agg.court_subtotal,
+      }))
+      .sort((a, b) => b.hourly_rate - a.hourly_rate);
+    out.set(courtId, rows);
+  }
+  return out;
+}
 
 function platformVenueRows(
   venues: Venue[],
@@ -133,7 +176,12 @@ export async function GET(req: Request) {
   );
   bookings = filterBookingsByDateRange(bookings, dateFrom, dateTo);
 
-  const byCourt = attachVenueNames(aggregateRevenueByCourt(bookings, courts), allVenues);
+  const byCourtBase = attachVenueNames(aggregateRevenueByCourt(bookings, courts), allVenues);
+  const rateBreakdownMap = buildCourtRateBreakdownMap(bookings, courts);
+  const byCourt = byCourtBase.map((row) => ({
+    ...row,
+    rate_breakdown: rateBreakdownMap.get(row.court_id) ?? [],
+  }));
 
   const totals = byCourt.reduce(
     (acc, row) => ({
