@@ -39,8 +39,10 @@ function canReadBooking(
   return false;
 }
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
+  const { searchParams } = new URL(req.url);
+  const includeGroup = searchParams.get("include_group") === "true";
   const { id } = await ctx.params;
   const [bookings, assignments, courts] = await Promise.all([
     listBookings(),
@@ -54,7 +56,23 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (!canReadBooking(user, booking, assignments, courts)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(hydrateBooking(booking));
+
+  if (!includeGroup) {
+    return NextResponse.json(hydrateBooking(booking));
+  }
+
+  const groupSegments = booking.booking_group_id
+    ? bookings
+      .filter((row) => row.booking_group_id === booking.booking_group_id)
+      .filter((row) => canReadBooking(user, row, assignments, courts))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+      .map(hydrateBooking)
+    : [hydrateBooking(booking)];
+
+  return NextResponse.json({
+    booking: hydrateBooking(booking),
+    group_segments: groupSegments,
+  });
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {

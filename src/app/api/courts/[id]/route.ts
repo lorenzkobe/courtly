@@ -6,6 +6,7 @@ import {
   getCourtById,
   getCourtWithReviewSummary,
   hasActiveConfirmedBookingsForCourt,
+  listCourtsByVenue,
   listVenueAdminAssignments,
   updateRow,
 } from "@/lib/data/courtly-db";
@@ -17,11 +18,22 @@ function withReviewSummary(court: Court) {
   return court;
 }
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
+  const { searchParams } = new URL(req.url);
+  const includeContext = searchParams.get("include_context") === "true";
   const { id } = await ctx.params;
   const court = await getCourtWithReviewSummary(id);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(withReviewSummary(court));
+  if (!includeContext) {
+    return NextResponse.json(withReviewSummary(court));
+  }
+
+  const siblingCourts = (await listCourtsByVenue(court.venue_id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return NextResponse.json({
+    court: withReviewSummary(court),
+    sibling_courts: siblingCourts,
+  });
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {

@@ -92,9 +92,9 @@ export default function NotificationBell() {
       return listResponse;
     },
     enabled: Boolean(user),
-    staleTime: 0,
+    staleTime: 15_000,
     // Fallback refresh to avoid stale badge count if realtime delivery fails.
-    refetchInterval: 30_000,
+    refetchInterval: realtimeOk ? 120_000 : 30_000,
   });
 
   const markRead = useMutation({

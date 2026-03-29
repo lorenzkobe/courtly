@@ -264,29 +264,16 @@ export default function BookCourtPage() {
     return formatHourToken(hourFromTime(startTime) + 1);
   }, [startTime, endTime]);
 
-  const { data: court, isLoading } = useQuery({
+  const { data: courtContext, isLoading } = useQuery({
     queryKey: queryKeys.courts.detail(courtId),
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.get(courtId);
+      const { data } = await courtlyApi.courts.getWithContext(courtId);
       return data;
     },
     enabled: !!courtId,
   });
-
-  const { data: establishmentCourts = [] } = useQuery({
-    queryKey: queryKeys.courts.byVenue(court?.venue_id, court?.sport),
-    queryFn: async () => {
-      const { data } = await courtlyApi.courts.list({
-        status: "active",
-        sport: court!.sport,
-      });
-      if (!court?.venue_id) return [court!];
-      return data
-        .filter((row) => row.venue_id === court.venue_id)
-        .sort((a, b) => a.name.localeCompare(b.name));
-    },
-    enabled: !!court,
-  });
+  const court = courtContext?.court;
+  const establishmentCourts = courtContext?.sibling_courts ?? [];
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
 

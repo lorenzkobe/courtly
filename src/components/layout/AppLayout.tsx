@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
@@ -116,9 +116,18 @@ export default function AppLayout({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
   const { user, logout } = useAuth();
   useNotificationRealtime(user?.id ?? null);
   const homePath = homePathForRole(user?.role);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   const sidebar = useMemo(() => sidebarForRole(user?.role), [user?.role]);
   const navItems = sidebar.items;
@@ -224,7 +233,7 @@ export default function AppLayout({
             </span>
           </Link>
           <div className="flex items-center gap-1">
-            <NotificationBell />
+            {isDesktop === false ? <NotificationBell /> : null}
             <Button
               variant="ghost"
               size="icon"
@@ -276,11 +285,11 @@ export default function AppLayout({
           {showSportPicker ? (
             <div className="hidden items-center justify-between border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:flex lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
               <SportPicker layout="toolbar" id="app-shell-sport" />
-              <NotificationBell />
+              {isDesktop !== false ? <NotificationBell /> : null}
             </div>
           ) : (
             <div className="hidden justify-end border-b border-border bg-background px-4 py-2.5 sm:px-6 lg:flex lg:sticky lg:top-0 lg:z-30 lg:bg-background/95 lg:py-3 lg:backdrop-blur supports-backdrop-filter:lg:bg-background/80">
-              <NotificationBell />
+              {isDesktop !== false ? <NotificationBell /> : null}
             </div>
           )}
           {children}

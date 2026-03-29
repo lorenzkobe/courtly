@@ -1,10 +1,13 @@
 import { http } from "@/lib/http-client";
 import type {
   Booking,
+  BookingDetailGroupResponse,
   CourtDayAvailability,
+  CourtDetailContextResponse,
   Court,
   CourtClosure,
   CourtReview,
+  DashboardOverviewResponse,
   ManagedUser,
   OpenPlaySession,
   RevenueSummaryResponse,
@@ -62,6 +65,10 @@ export const courtlyApi = {
       sport?: string;
     }) => http.get<Court[]>("/api/courts", { params }),
     get: (id: string) => http.get<Court>(`/api/courts/${id}`),
+    getWithContext: (id: string) =>
+      http.get<CourtDetailContextResponse>(`/api/courts/${id}`, {
+        params: { include_context: true },
+      }),
     create: (data: Partial<Court>) => http.post<Court>("/api/courts", data),
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
@@ -157,6 +164,10 @@ export const courtlyApi = {
       booking_group_id?: string;
     }) => http.get<Booking[]>("/api/bookings", { params }),
     get: (id: string) => http.get<Booking>(`/api/bookings/${id}`),
+    getWithGroup: (id: string) =>
+      http.get<BookingDetailGroupResponse>(`/api/bookings/${id}`, {
+        params: { include_group: true },
+      }),
     create: (data: Partial<Booking>) =>
       http.post<Booking>("/api/bookings", data),
     update: (id: string, data: Partial<Booking>) =>
@@ -259,5 +270,10 @@ export const courtlyApi = {
     list: () => http.get<NotificationsListResponse>("/api/notifications"),
     markAllRead: () => http.patch<{ ok: boolean }>("/api/notifications"),
     markRead: (id: string) => http.patch<{ ok: boolean }>(`/api/notifications/${id}`),
+  },
+
+  dashboard: {
+    overview: (params?: { sport?: string; date?: string }) =>
+      http.get<DashboardOverviewResponse>("/api/dashboard/overview", { params }),
   },
 };

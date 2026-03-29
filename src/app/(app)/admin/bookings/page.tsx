@@ -200,35 +200,21 @@ export default function AdminBookingsPage() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [bookings]);
 
-  const { data: detailBooking } = useQuery({
-    queryKey: ["admin-booking-detail", detailId],
+  const { data: detailPayload } = useQuery({
+    queryKey: ["admin-booking-detail", detailId, "with-group"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.get(detailId!);
+      const { data } = await courtlyApi.bookings.getWithGroup(detailId!);
       return data;
     },
     enabled: !!detailId,
   });
-
-  const { data: detailGroup = [] } = useQuery({
-    queryKey: [
-      "admin-booking-group",
-      detailBooking?.booking_group_id,
-      detailId,
-    ],
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        manageable: true,
-        booking_group_id: detailBooking!.booking_group_id!,
-      });
-      return data.sort((a, b) => a.start_time.localeCompare(b.start_time));
-    },
-    enabled: !!detailBooking?.booking_group_id,
-  });
+  const detailBooking = detailPayload?.booking;
+  const detailGroup = detailPayload?.group_segments;
 
   const detailSegments = useMemo(() => {
     if (!detailBooking) return [];
-    if (detailBooking.booking_group_id && detailGroup.length > 0) {
-      return detailGroup;
+    if (detailBooking.booking_group_id && (detailGroup?.length ?? 0) > 0) {
+      return detailGroup ?? [];
     }
     return [detailBooking];
   }, [detailBooking, detailGroup]);
@@ -262,7 +248,6 @@ export default function AdminBookingsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-group"] });
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking updated");
     },
@@ -290,7 +275,9 @@ export default function AdminBookingsPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-booking-detail", detailId, "with-group"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note saved");
     },
@@ -307,7 +294,9 @@ export default function AdminBookingsPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-booking-detail", detailId, "with-group"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note deleted");
     },

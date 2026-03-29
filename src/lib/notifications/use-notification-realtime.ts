@@ -21,8 +21,7 @@ export function useNotificationRealtime(userId: string | null) {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        // Refetch active views immediately, then mark cache stale for any inactive view.
-        void queryClient.refetchQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY], type: "active" });
+        // Invalidate is enough here; active observers refetch automatically.
         void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });
       }, DEBOUNCE_MS);
     };
