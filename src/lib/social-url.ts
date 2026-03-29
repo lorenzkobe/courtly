@@ -10,15 +10,21 @@ const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   instagram: "Instagram",
 };
 
+function withDefaultProtocol(value: string): string {
+  const hasProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+  return hasProtocol ? value : `https://${value}`;
+}
+
 export function validateSocialUrl(value: unknown, platform: SocialPlatform): string | null {
   if (typeof value !== "string" || value.trim().length === 0) {
     return null;
   }
 
   const raw = value.trim();
+  const candidate = withDefaultProtocol(raw);
   let parsed: URL;
   try {
-    parsed = new URL(raw);
+    parsed = new URL(candidate);
   } catch {
     return `${SOCIAL_LABELS[platform]} URL is invalid.`;
   }
@@ -39,5 +45,7 @@ export function validateSocialUrl(value: unknown, platform: SocialPlatform): str
 
 export function normalizeSocialUrl(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value.trim();
+  const raw = value.trim();
+  if (!raw) return "";
+  return withDefaultProtocol(raw);
 }
