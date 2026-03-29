@@ -46,6 +46,7 @@ import {
   bookableHourTokensFromRanges,
   validatePriceRangeFormRows,
 } from "@/lib/venue-price-ranges";
+import { validateSocialUrl } from "@/lib/social-url";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
 const defaultForm = {
@@ -62,6 +63,8 @@ const defaultVenueForm = {
   name: "",
   location: "",
   contact_phone: "",
+  facebook_url: "",
+  instagram_url: "",
   sport: "pickleball" as Venue["sport"],
   status: "active" as Venue["status"],
   amenities: [] as string[],
@@ -139,6 +142,14 @@ export default function AdminVenueCourtsPage() {
     () => validatePriceRangeFormRows(venueForm.hourly_rate_windows),
     [venueForm.hourly_rate_windows],
   );
+  const facebookUrlError = useMemo(
+    () => validateSocialUrl(venueForm.facebook_url, "facebook"),
+    [venueForm.facebook_url],
+  );
+  const instagramUrlError = useMemo(
+    () => validateSocialUrl(venueForm.instagram_url, "instagram"),
+    [venueForm.instagram_url],
+  );
 
   const upsert = useMutation({
     mutationFn: async () => {
@@ -187,6 +198,8 @@ export default function AdminVenueCourtsPage() {
         name: venueForm.name.trim(),
         location: venueForm.location.trim(),
         contact_phone: venueForm.contact_phone.trim(),
+        facebook_url: venueForm.facebook_url.trim(),
+        instagram_url: venueForm.instagram_url.trim(),
         sport: "pickleball",
         status: venueForm.status,
         amenities: [
@@ -306,6 +319,8 @@ export default function AdminVenueCourtsPage() {
       name: venue.name,
       location: venue.location,
       contact_phone: venue.contact_phone ?? "",
+      facebook_url: venue.facebook_url ?? "",
+      instagram_url: venue.instagram_url ?? "",
       sport: "pickleball",
       status: venue.status,
       amenities: [...venue.amenities],
@@ -410,6 +425,36 @@ export default function AdminVenueCourtsPage() {
             <div>
               <p className="text-muted-foreground">Contact</p>
               <p className="font-medium text-foreground">{venue.contact_phone || "-"}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Facebook</p>
+              {venue.facebook_url ? (
+                <a
+                  href={venue.facebook_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  {venue.facebook_url}
+                </a>
+              ) : (
+                <p className="font-medium text-foreground">-</p>
+              )}
+            </div>
+            <div>
+              <p className="text-muted-foreground">Instagram</p>
+              {venue.instagram_url ? (
+                <a
+                  href={venue.instagram_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  {venue.instagram_url}
+                </a>
+              ) : (
+                <p className="font-medium text-foreground">-</p>
+              )}
             </div>
             <div>
               <p className="text-muted-foreground">Sport</p>
@@ -591,6 +636,30 @@ export default function AdminVenueCourtsPage() {
                 onChange={(e) => setVenueForm({ ...venueForm, contact_phone: e.target.value })}
                 placeholder="+63 9XX XXX XXXX or landline"
               />
+            </div>
+            <div>
+              <Label>Facebook page link</Label>
+              <Input
+                className="mt-1.5"
+                value={venueForm.facebook_url}
+                onChange={(e) => setVenueForm({ ...venueForm, facebook_url: e.target.value })}
+                placeholder="https://facebook.com/your-page"
+              />
+              {facebookUrlError ? (
+                <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
+              ) : null}
+            </div>
+            <div>
+              <Label>Instagram page link</Label>
+              <Input
+                className="mt-1.5"
+                value={venueForm.instagram_url}
+                onChange={(e) => setVenueForm({ ...venueForm, instagram_url: e.target.value })}
+                placeholder="https://instagram.com/your-page"
+              />
+              {instagramUrlError ? (
+                <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
+              ) : null}
             </div>
             <div>
               <Label>Sport</Label>
@@ -824,7 +893,12 @@ export default function AdminVenueCourtsPage() {
               className="w-full font-heading font-semibold"
               type="button"
               onClick={() => saveVenue.mutate()}
-              disabled={saveVenue.isPending || !venuePriceRangesValidation.ok}
+              disabled={
+                saveVenue.isPending ||
+                !venuePriceRangesValidation.ok ||
+                Boolean(facebookUrlError) ||
+                Boolean(instagramUrlError)
+              }
             >
               {saveVenue.isPending ? "Saving..." : "Save Venue"}
             </Button>

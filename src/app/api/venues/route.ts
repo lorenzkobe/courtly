@@ -7,6 +7,7 @@ import {
   parseRateWindowsFromUnknown,
   validateVenuePriceRanges,
 } from "@/lib/venue-price-ranges";
+import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -51,11 +52,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: rangeCheck.error }, { status: 400 });
   }
 
+  const facebookUrl = normalizeSocialUrl(body.facebook_url);
+  const facebookError = validateSocialUrl(facebookUrl, "facebook");
+  if (facebookError) {
+    return NextResponse.json({ error: facebookError }, { status: 400 });
+  }
+  const instagramUrl = normalizeSocialUrl(body.instagram_url);
+  const instagramError = validateSocialUrl(instagramUrl, "instagram");
+  if (instagramError) {
+    return NextResponse.json({ error: instagramError }, { status: 400 });
+  }
+
   const venue: Omit<Venue, "id"> = {
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New venue",
     location: typeof body.location === "string" ? body.location.trim() : "",
     contact_phone:
       typeof body.contact_phone === "string" ? body.contact_phone.trim() : "",
+    facebook_url: facebookUrl,
+    instagram_url: instagramUrl,
     sport: body.sport ?? "pickleball",
     hourly_rate_windows,
     status: body.status === "closed" ? "closed" : "active",

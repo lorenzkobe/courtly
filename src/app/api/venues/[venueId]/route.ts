@@ -21,12 +21,15 @@ import {
   parseRateWindowsFromUnknown,
   validateVenuePriceRanges,
 } from "@/lib/venue-price-ranges";
+import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 
 function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
   const keys: (keyof Venue)[] = [
     "name",
     "location",
     "contact_phone",
+    "facebook_url",
+    "instagram_url",
     "sport",
     "hourly_rate_windows",
     "status",
@@ -128,6 +131,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return NextResponse.json({ error: check.error }, { status: 400 });
     }
     venuePatch.hourly_rate_windows = parsed;
+  }
+  if (Object.prototype.hasOwnProperty.call(venuePatch, "facebook_url")) {
+    const value = normalizeSocialUrl(venuePatch.facebook_url);
+    const error = validateSocialUrl(value, "facebook");
+    if (error) {
+      return NextResponse.json({ error }, { status: 400 });
+    }
+    venuePatch.facebook_url = value;
+  }
+  if (Object.prototype.hasOwnProperty.call(venuePatch, "instagram_url")) {
+    const value = normalizeSocialUrl(venuePatch.instagram_url);
+    const error = validateSocialUrl(value, "instagram");
+    if (error) {
+      return NextResponse.json({ error }, { status: 400 });
+    }
+    venuePatch.instagram_url = value;
   }
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 

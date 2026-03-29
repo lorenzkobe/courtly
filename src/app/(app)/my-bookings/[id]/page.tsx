@@ -481,6 +481,36 @@ export default function BookingDetailPage() {
                   </Button>
                 </div>
                 <p className="text-muted-foreground">Contact: {court.contact_phone ?? "—"}</p>
+                <p className="text-muted-foreground">
+                  Facebook:{" "}
+                  {court.facebook_url ? (
+                    <a
+                      href={court.facebook_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-primary hover:underline"
+                    >
+                      View page
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                <p className="text-muted-foreground">
+                  Instagram:{" "}
+                  {court.instagram_url ? (
+                    <a
+                      href={court.instagram_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-primary hover:underline"
+                    >
+                      View page
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </p>
               </div>
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">

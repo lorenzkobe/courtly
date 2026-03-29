@@ -55,6 +55,8 @@ function mapCourtRow(row: unknown): Court {
     available_hours: span ?? { open: "07:00", close: "22:00" },
     establishment_name: venue?.name,
     contact_phone: venue?.contact_phone,
+    facebook_url: venue?.facebook_url,
+    instagram_url: venue?.instagram_url,
     map_latitude: venue?.map_latitude,
     map_longitude: venue?.map_longitude,
   };

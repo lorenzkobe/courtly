@@ -15,6 +15,8 @@ export function withVenueHydration(
     ...court,
     establishment_name: venue?.name ?? court.establishment_name,
     contact_phone: venue?.contact_phone ?? court.contact_phone,
+    facebook_url: venue?.facebook_url ?? court.facebook_url,
+    instagram_url: venue?.instagram_url ?? court.instagram_url,
     location: venue?.location ?? court.location,
     sport: venue?.sport ?? court.sport,
     image_url: venue?.image_url ?? court.image_url,

@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import {
+  hourlyRateForHourStart,
   segmentTotalCost,
   segmentsTotalCost,
   formatCourtRateSummary,
@@ -887,6 +888,40 @@ export default function BookCourtPage() {
                     {court.contact_phone ?? "—"}
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-muted-foreground">Facebook</dt>
+                  <dd className="mt-0.5">
+                    {court.facebook_url ? (
+                      <a
+                        href={court.facebook_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        View page <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="font-medium text-foreground">—</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Instagram</dt>
+                  <dd className="mt-0.5">
+                    {court.instagram_url ? (
+                      <a
+                        href={court.instagram_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        View page <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="font-medium text-foreground">—</span>
+                    )}
+                  </dd>
+                </div>
                 <div className="sm:col-span-2">
                   <dt className="mb-2 text-muted-foreground">Amenities</dt>
                   <dd className="flex flex-wrap gap-1.5">
@@ -1181,6 +1216,7 @@ export default function BookCourtPage() {
                       time,
                       selectedDate,
                     );
+                    const hourlyRate = hourlyRateForHourStart(court, time);
                     const fromClosureOnly =
                       closureOccupied.has(time) && !bookingOccupied.has(time);
                     const isStart = startTime === time;
@@ -1190,7 +1226,6 @@ export default function BookCourtPage() {
                       Boolean(endTime) &&
                       time > startTime! &&
                       time < endTime!;
-                    const showMarker = isStart || (isEnd && !isStart);
                     return (
                       <Button
                         key={time}
@@ -1210,10 +1245,7 @@ export default function BookCourtPage() {
                         }
                         onClick={() => handleTimeSelect(time)}
                         className={cn(
-                          "relative flex min-w-0 items-center justify-center px-2 text-xs font-medium tabular-nums sm:text-sm",
-                          showMarker
-                            ? "min-h-11 flex-col gap-0.5 py-1"
-                            : "h-10 shrink-0",
+                          "relative flex h-14 min-w-0 shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium tabular-nums sm:text-sm",
                           isPastHour &&
                             "cursor-not-allowed border-muted-foreground/25 bg-muted/50 text-muted-foreground opacity-65",
                           isUnavailable &&
@@ -1241,6 +1273,9 @@ export default function BookCourtPage() {
                           </span>
                         ) : null}
                         <span>{formatTimeShort(time)}</span>
+                        <span className="text-[10px] font-medium text-muted-foreground">
+                          {hourlyRate > 0 ? `${formatPhpCompact(hourlyRate)}/hr` : "—"}
+                        </span>
                       </Button>
                     );
                   })}

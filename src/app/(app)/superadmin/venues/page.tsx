@@ -32,6 +32,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatAmenityLabel } from "@/lib/format-amenity";
+import { validateSocialUrl } from "@/lib/social-url";
 import type { ManagedUser, Venue } from "@/lib/types/courtly";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { formatStatusLabel } from "@/lib/utils";
@@ -42,6 +43,8 @@ const emptyForm = {
   name: "",
   location: "",
   contact_phone: "",
+  facebook_url: "",
+  instagram_url: "",
   sport: "pickleball" as Venue["sport"],
   amenities: [] as string[],
   customAmenityDraft: "",
@@ -103,6 +106,14 @@ export default function SuperadminVenuesPage() {
     () => validatePriceRangeFormRows(form.hourly_rate_windows),
     [form.hourly_rate_windows],
   );
+  const facebookUrlError = useMemo(
+    () => validateSocialUrl(form.facebook_url, "facebook"),
+    [form.facebook_url],
+  );
+  const instagramUrlError = useMemo(
+    () => validateSocialUrl(form.instagram_url, "instagram"),
+    [form.instagram_url],
+  );
 
   const saveAccount = useMutation({
     mutationFn: async () => {
@@ -124,6 +135,8 @@ export default function SuperadminVenuesPage() {
         name: form.name.trim(),
         location: form.location.trim(),
         contact_phone: form.contact_phone.trim(),
+        facebook_url: form.facebook_url.trim(),
+        instagram_url: form.instagram_url.trim(),
         sport: form.sport,
         hourly_rate_windows: parsed.windows,
         amenities: [
@@ -195,6 +208,8 @@ export default function SuperadminVenuesPage() {
       name: a.name,
       location: a.location,
       contact_phone: a.contact_phone ?? "",
+      facebook_url: a.facebook_url ?? "",
+      instagram_url: a.instagram_url ?? "",
       sport: a.sport,
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
@@ -388,6 +403,30 @@ export default function SuperadminVenuesPage() {
                 onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
                 placeholder="+63 9XX XXX XXXX or landline"
               />
+            </div>
+            <div>
+              <Label>Facebook page link</Label>
+              <Input
+                className="mt-1.5"
+                value={form.facebook_url}
+                onChange={(e) => setForm({ ...form, facebook_url: e.target.value })}
+                placeholder="https://facebook.com/your-page"
+              />
+              {facebookUrlError ? (
+                <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
+              ) : null}
+            </div>
+            <div>
+              <Label>Instagram page link</Label>
+              <Input
+                className="mt-1.5"
+                value={form.instagram_url}
+                onChange={(e) => setForm({ ...form, instagram_url: e.target.value })}
+                placeholder="https://instagram.com/your-page"
+              />
+              {instagramUrlError ? (
+                <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
+              ) : null}
             </div>
             <div>
               <Label>Sport</Label>
@@ -673,6 +712,8 @@ export default function SuperadminVenuesPage() {
                 !form.contact_phone.trim() ||
                 !form.image_url.trim() ||
                 !priceRangeFormValidation.ok ||
+                Boolean(facebookUrlError) ||
+                Boolean(instagramUrlError) ||
                 (!editing && !form.initial_admin_user_id.trim())
               }
               onClick={() => saveAccount.mutate()}

@@ -63,6 +63,8 @@ export type Venue = {
   name: string;
   location: string;
   contact_phone: string;
+  facebook_url?: string;
+  instagram_url?: string;
   sport: CourtSport;
   /** Non-overlapping [start, end) price ranges; sole source for bookable hours and rates. */
   hourly_rate_windows: CourtRateWindow[];
@@ -90,6 +92,10 @@ export type Court = {
   establishment_name?: string;
   /** Derived on read from linked venue. */
   contact_phone?: string;
+  /** Derived on read from linked venue. */
+  facebook_url?: string;
+  /** Derived on read from linked venue. */
+  instagram_url?: string;
   /** Derived on read from linked venue. */
   location: string;
   /** Derived on read from linked venue. */
