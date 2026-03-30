@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isHoldActive, retryCooldownActive } from "@/lib/bookings/payment-hold";
 import { createPaymongoPaymentLink } from "@/lib/paymongo/client";
+import { getPublicAppUrl } from "@/lib/supabase/app-url";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBookingById, listBookingsByGroupIdAdmin } from "@/lib/data/courtly-db";
 
@@ -47,6 +48,7 @@ export async function POST(_: Request, ctx: Ctx) {
     return NextResponse.json({ error: "No pending booking to retry." }, { status: 409 });
   }
   const totalCost = pendingRows.reduce((sum, row) => sum + (row.total_cost ?? 0), 0);
+  const appUrl = getPublicAppUrl();
   const link = await createPaymongoPaymentLink({
     amount: toCentavos(totalCost),
     description: `Courtly booking ${groupId ?? booking.id}`,
@@ -57,6 +59,12 @@ export async function POST(_: Request, ctx: Ctx) {
       user_email: user.email,
       retry: "true",
     },
+    ...(appUrl
+      ? {
+          successUrl: `${appUrl}/courts/${booking.court_id}/book?payment=success&booking_id=${booking.id}`,
+          failedUrl: `${appUrl}/courts/${booking.court_id}/book?payment=failed&booking_id=${booking.id}`,
+        }
+      : {}),
   });
 
   const nextAttemptCount =

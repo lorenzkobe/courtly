@@ -22,8 +22,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -261,6 +261,7 @@ export default function BookCourtPage() {
   const paramCourtId = params.id;
   const [activeCourtId, setActiveCourtId] = useState(paramCourtId);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
@@ -272,6 +273,7 @@ export default function BookCourtPage() {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const reconciledBookingIdsRef = useRef<Set<string>>(new Set());
 
   const selectedSet = useMemo(() => new Set(selectedSlots), [selectedSlots]);
 
@@ -497,6 +499,22 @@ export default function BookCourtPage() {
     },
   });
 
+  const reconcilePayment = useMutation({
+    mutationFn: async (bookingId: string) => {
+      const { data } = await courtlyApi.bookings.reconcilePayment(bookingId);
+      return data;
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: bookingSurfaceKey });
+      if (result.status === "confirmed") {
+        toast.success("Payment verified. Booking confirmed.");
+      } else if (result.status === "cancelled") {
+        toast.error("Payment received too late for this slot. Refund review required.");
+      }
+    },
+  });
+
   useEffect(() => {
     const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -532,6 +550,34 @@ export default function BookCourtPage() {
       };
     });
   }, [activePendingBooking]);
+
+  useEffect(() => {
+    if (!activePendingBooking) return;
+    if (reconcilePayment.isPending) return;
+    const bookingId = activePendingBooking.id;
+    if (reconciledBookingIdsRef.current.has(bookingId)) return;
+    reconciledBookingIdsRef.current.add(bookingId);
+    void reconcilePayment.mutateAsync(bookingId);
+  }, [activePendingBooking, reconcilePayment]);
+
+  useEffect(() => {
+    const paymentResult = searchParams.get("payment");
+    const bookingId = searchParams.get("booking_id");
+    if (!paymentResult || !bookingId) return;
+    if (paymentResult === "success") {
+      void reconcilePayment.mutateAsync(bookingId);
+    } else if (paymentResult === "failed") {
+      toast.error("Payment was not completed. You can retry while hold is active.");
+    }
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("payment");
+    next.delete("booking_id");
+    const query = next.toString();
+    router.replace(
+      query ? `/courts/${activeCourtId}/book?${query}` : `/courts/${activeCourtId}/book`,
+      { scroll: false },
+    );
+  }, [searchParams, router, reconcilePayment, activeCourtId]);
 
   useEffect(() => {
     if (!paymentOverlay) return;

@@ -36,6 +36,8 @@ export type PaymongoCreateLinkInput = {
   description: string;
   remarks?: string;
   metadata: Record<string, string>;
+  successUrl?: string;
+  failedUrl?: string;
 };
 
 export type PaymongoCreateLinkResult = {
@@ -53,6 +55,14 @@ export async function createPaymongoPaymentLink(
         description: input.description,
         remarks: input.remarks ?? "Courtly booking",
         metadata: input.metadata,
+        ...(input.successUrl || input.failedUrl
+          ? {
+              redirect: {
+                ...(input.successUrl ? { success: input.successUrl } : {}),
+                ...(input.failedUrl ? { failed: input.failedUrl } : {}),
+              },
+            }
+          : {}),
       },
     },
   };
@@ -95,6 +105,28 @@ export async function createPaymongoRefund(params: {
     }),
   });
   return { id: payload.data.id };
+}
+
+export async function retrievePaymongoLinkStatus(params: {
+  linkId: string;
+}): Promise<{ status: string; amount?: number; paymentId?: string | null }> {
+  const payload = await paymongoRequest<{
+    data: {
+      attributes: {
+        status: string;
+        amount?: number;
+        payments?: Array<{ id?: string }>;
+      };
+    };
+  }>(`/links/${params.linkId}`, {
+    method: "GET",
+  });
+  const firstPaymentId = payload.data.attributes.payments?.[0]?.id ?? null;
+  return {
+    status: payload.data.attributes.status,
+    amount: payload.data.attributes.amount,
+    paymentId: firstPaymentId,
+  };
 }
 
 type PaymongoSignature = {

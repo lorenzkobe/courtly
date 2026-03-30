@@ -3,6 +3,7 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import { createPaymongoPaymentLink } from "@/lib/paymongo/client";
+import { getPublicAppUrl } from "@/lib/supabase/app-url";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   hasBlockingBookingConflictForCourt,
@@ -36,9 +37,11 @@ export async function POST(req: Request) {
   }
 
   const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
+  const appUrl = getPublicAppUrl();
   const holdExpiresAt = holdExpiresAtFrom();
   const bookingGroupId = crypto.randomUUID();
   const rows: Array<Record<string, unknown>> = [];
+  let firstCourtId: string | null = null;
   let totalCost = 0;
 
   for (const body of payloads) {
@@ -68,6 +71,7 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
+    if (!firstCourtId) firstCourtId = court.id;
 
     let courtSubtotal = body.court_subtotal;
     let bookingFee = body.booking_fee;
@@ -131,6 +135,12 @@ export async function POST(req: Request) {
       user_id: sessionUser.id,
       user_email: sessionUser.email,
     },
+    ...(appUrl && firstCourtId
+      ? {
+          successUrl: `${appUrl}/courts/${firstCourtId}/book?payment=success&booking_id=${bookingId}`,
+          failedUrl: `${appUrl}/courts/${firstCourtId}/book?payment=failed&booking_id=${bookingId}`,
+        }
+      : {}),
   });
   const { error: updateError } = await supabase
     .from("bookings")
