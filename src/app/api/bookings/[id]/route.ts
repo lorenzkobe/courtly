@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
+  applyPlayerMobileVisibility,
+  enrichBookingsWithProfileMobile,
+} from "@/lib/booking-player-mobile";
+import {
   getBookingById,
   getCourtById,
   listBookingsFiltered,
@@ -73,7 +77,13 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   if (!includeGroup) {
-    return NextResponse.json(hydrateBooking(booking));
+    const [enriched] = await enrichBookingsWithProfileMobile(
+      [hydrateBooking(booking)],
+      user,
+    );
+    return NextResponse.json(
+      applyPlayerMobileVisibility(enriched ?? hydrateBooking(booking), user),
+    );
   }
 
   const groupSegments = booking.booking_group_id
@@ -89,15 +99,35 @@ export async function GET(req: Request, ctx: Ctx) {
         readable.push(segment);
       }
     }
+    const [enrichedBooking] = await enrichBookingsWithProfileMobile(
+      [hydrateBooking(booking)],
+      user,
+    );
+    const enrichedSegments = await enrichBookingsWithProfileMobile(readable, user);
     return NextResponse.json({
-      booking: hydrateBooking(booking),
-      group_segments: readable,
+      booking: applyPlayerMobileVisibility(
+        enrichedBooking ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: enrichedSegments.map((seg) =>
+        applyPlayerMobileVisibility(hydrateBooking(seg), user),
+      ),
     });
   }
 
+  const [enrichedBooking] = await enrichBookingsWithProfileMobile(
+    [hydrateBooking(booking)],
+    user,
+  );
+  const enrichedGroupSegments = await enrichBookingsWithProfileMobile(groupSegments, user);
   return NextResponse.json({
-    booking: hydrateBooking(booking),
-    group_segments: groupSegments,
+    booking: applyPlayerMobileVisibility(
+      enrichedBooking ?? hydrateBooking(booking),
+      user,
+    ),
+    group_segments: enrichedGroupSegments.map((seg) =>
+      applyPlayerMobileVisibility(hydrateBooking(seg), user),
+    ),
   });
 }
 

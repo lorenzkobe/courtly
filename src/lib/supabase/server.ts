@@ -14,9 +14,14 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          cookieStore.set(name, value, options);
-        });
+        // In Server Components, cookies are read-only; ignore writes there.
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        } catch {
+          // noop: cookie mutations are not always allowed in this execution context
+        }
       },
     },
   });

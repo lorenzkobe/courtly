@@ -491,6 +491,10 @@ export default function AdminBookingsPage() {
                   <dd>{detailBooking.player_name ?? "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt>
                   <dd className="break-all">{detailBooking.player_email ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Contact number</dt>
+                  <dd className="tabular-nums">
+                    {detailBooking.player_mobile_number?.trim() || "—"}
+                  </dd>
                   <dt className="text-muted-foreground">Date</dt>
                   <dd>
                     {detailBooking.date

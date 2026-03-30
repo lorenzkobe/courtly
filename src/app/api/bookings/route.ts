@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  applyPlayerMobileVisibility,
+  enrichBookingsWithProfileMobile,
+} from "@/lib/booking-player-mobile";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import {
@@ -39,12 +43,14 @@ export async function GET(req: Request) {
   const bookingGroupId = searchParams.get("booking_group_id");
 
   let allowedCourtIds: string[] | undefined;
+  let manageableViewer: Awaited<ReturnType<typeof readSessionUser>> = null;
 
   if (manageable) {
     const user = await readSessionUser();
     if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    manageableViewer = user;
     if (user.role === "admin") {
       const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
       const venueIds = [...new Set(assignments.map((assignment) => assignment.venue_id))];
@@ -70,7 +76,14 @@ export async function GET(req: Request) {
   list.sort((a, b) =>
     String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),
   );
-  return NextResponse.json(list.map(hydrateBooking));
+  const viewerForMobile = manageable ? manageableViewer : null;
+  const hydrated = list.map(hydrateBooking);
+  const enriched = await enrichBookingsWithProfileMobile(hydrated, viewerForMobile);
+  return NextResponse.json(
+    enriched.map((b) =>
+      applyPlayerMobileVisibility(hydrateBooking(b), viewerForMobile),
+    ),
+  );
 }
 
 export async function POST(req: Request) {

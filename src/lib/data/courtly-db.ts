@@ -62,6 +62,10 @@ function mapCourtRow(row: unknown): Court {
   };
 }
 
+/** Courts/venue embed + optional `profiles.mobile_number` (same query as booking). */
+const BOOKING_SELECT_WITH_COURTS_AND_PROFILE =
+  "*, courts(id,name,venue_id,venues(id,name,sport)), profiles!bookings_user_id_fkey(mobile_number)";
+
 function mapBookingRow(row: unknown): Booking {
   const record = row as {
     id: string;
@@ -85,9 +89,23 @@ function mapBookingRow(row: unknown): Booking {
     admin_note_updated_at?: string;
     created_at: string | null;
     courts?: { name?: string; venue_id?: string; venues?: Venue | null } | null;
+    profiles?: { mobile_number?: string | null } | null;
   };
   const court = record.courts;
   const venue = court?.venues ?? null;
+
+  let player_mobile_number: string | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(record, "profiles")) {
+    const prof = record.profiles;
+    if (prof == null) {
+      player_mobile_number = null;
+    } else {
+      const raw = prof.mobile_number;
+      player_mobile_number =
+        typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+    }
+  }
+
   return {
     id: record.id,
     court_id: record.court_id,
@@ -102,6 +120,7 @@ function mapBookingRow(row: unknown): Booking {
     player_name: record.player_name,
     player_email: record.player_email,
     user_id: record.user_id ?? null,
+    ...(player_mobile_number !== undefined ? { player_mobile_number } : {}),
     players_count: record.players_count,
     court_subtotal: Number(record.court_subtotal ?? 0),
     booking_fee: Number(record.booking_fee ?? 0),
@@ -208,7 +227,9 @@ export async function listBookings(): Promise<Booking[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("bookings")
-    .select("*, courts(id,name,venue_id,venues(id,name,sport))");
+    .select(
+      "*, courts(id,name,venue_id,venues(id,name,sport))",
+    );
   if (error) throw error;
   return (data ?? []).map(mapBookingRow);
 }
@@ -227,7 +248,7 @@ export async function listBookingsFiltered(
   const supabase = await createSupabaseServerClient();
   let query = supabase
     .from("bookings")
-    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
     .order("created_at", { ascending: false });
 
   if (params.courtId) {
@@ -283,7 +304,7 @@ export async function getBookingById(id: string): Promise<Booking | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("bookings")
-    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;

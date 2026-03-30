@@ -141,6 +141,8 @@ export type Booking = {
   player_email?: string;
   /** Profile id when the booking is tied to a logged-in user (from DB). */
   user_id?: string | null;
+  /** Hydrated on read for venue admins / superadmin from `profiles.mobile_number`. */
+  player_mobile_number?: string | null;
   players_count?: number;
   /** Amount attributed to the court before booking fee (reservation subtotal). */
   court_subtotal?: number;
