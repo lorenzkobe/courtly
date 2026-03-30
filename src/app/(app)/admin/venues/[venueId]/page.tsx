@@ -422,7 +422,9 @@ export default function AdminVenueCourtsPage() {
             ))}
           </div>
         </div>
-      ) : (
+      ) : null}
+
+      {!showVenueWorkspaceSkeleton ? (
         <>
       <PageHeader
         title={venueName}
@@ -559,7 +561,7 @@ export default function AdminVenueCourtsPage() {
       )}
 
         </>
-      )}
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
