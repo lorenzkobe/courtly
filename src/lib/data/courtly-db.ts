@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { reviewSummaryForVenue } from "@/lib/review-summary";
 import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type {
@@ -372,6 +373,16 @@ type PaginationParams = {
   limit: number;
 };
 
+type AutoCompletionBookingRow = {
+  id: string;
+  booking_group_id: string | null;
+  court_id: string;
+  user_id: string | null;
+  player_email: string | null;
+  date: string;
+  end_time: string;
+};
+
 export async function listBookingsFiltered(
   params: ListBookingsFilteredParams,
 ): Promise<Booking[]> {
@@ -516,6 +527,17 @@ export async function listBookingsByIds(bookingIds: string[]): Promise<Booking[]
   return (data ?? []).map(mapBookingRow);
 }
 
+export async function listBookingsByIdsAdmin(bookingIds: string[]): Promise<Booking[]> {
+  if (bookingIds.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .in("id", bookingIds);
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
 export async function listBookingsByPlayerOnDate(
   playerEmail: string,
   date: string,
@@ -544,6 +566,63 @@ export async function getBookingById(id: string): Promise<Booking | null> {
     .maybeSingle();
   if (error) throw error;
   return data ? mapBookingRow(data) : null;
+}
+
+export async function listConfirmedBookingsForAutoCompletion(
+  params: {
+    upToDate: string;
+    limit: number;
+  },
+): Promise<AutoCompletionBookingRow[]> {
+  const supabase = createSupabaseAdminClient();
+  const safeLimit = Math.max(1, Math.min(params.limit, 1000));
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("id, booking_group_id, court_id, user_id, player_email, date, end_time")
+    .eq("status", "confirmed")
+    .lte("date", params.upToDate)
+    .order("date", { ascending: true })
+    .order("end_time", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(safeLimit);
+  if (error) throw error;
+  return (data ?? []) as AutoCompletionBookingRow[];
+}
+
+export async function listConfirmedBookingsByGroupIds(
+  bookingGroupIds: string[],
+): Promise<AutoCompletionBookingRow[]> {
+  if (bookingGroupIds.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("id, booking_group_id, court_id, user_id, player_email, date, end_time")
+    .eq("status", "confirmed")
+    .in("booking_group_id", bookingGroupIds)
+    .order("date", { ascending: true })
+    .order("end_time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as AutoCompletionBookingRow[];
+}
+
+export async function markBookingsCompletedByIds(
+  bookingIds: string[],
+): Promise<Array<{ id: string; booking_group_id: string | null; court_id: string; user_id: string | null }>> {
+  if (bookingIds.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .update({ status: "completed" } as never)
+    .eq("status", "confirmed")
+    .in("id", bookingIds)
+    .select("id, booking_group_id, court_id, user_id");
+  if (error) throw error;
+  return (data ?? []) as Array<{
+    id: string;
+    booking_group_id: string | null;
+    court_id: string;
+    user_id: string | null;
+  }>;
 }
 
 export async function hasActiveConfirmedBookingsForCourt(courtId: string): Promise<boolean> {
@@ -830,6 +909,28 @@ export async function hasReviewForBooking(bookingId: string): Promise<boolean> {
     .eq("booking_id", bookingId);
   if (error) throw error;
   return (count ?? 0) > 0;
+}
+
+export async function getReviewByUserForVenue(
+  userId: string,
+  venueId: string,
+): Promise<CourtReview | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("court_reviews")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("venue_id", venueId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    ...(data as CourtReview),
+    booking_id: (data as { booking_id: string }).booking_id,
+    created_at: toIsoString((data as { created_at: string | null }).created_at),
+    updated_at: toIsoString((data as { updated_at: string | null }).updated_at),
+    flagged_at: (data as { flagged_at?: string | null }).flagged_at ?? undefined,
+  };
 }
 
 export async function listTournaments(): Promise<Tournament[]> {

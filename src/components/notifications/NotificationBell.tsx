@@ -12,9 +12,9 @@ import { useState } from "react";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { NOTIFICATIONS_QUERY_KEY } from "@/lib/notifications/query-key";
+import { useNotificationRealtime } from "@/lib/notifications/use-notification-realtime";
 import { isSupabasePublicConfigured } from "@/lib/supabase/env";
 import type { Notification } from "@/lib/notifications/types";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -91,8 +91,16 @@ export default function NotificationBell() {
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
   const [open, setOpen] = useState(false);
+  useNotificationRealtime(user?.id ?? null);
 
-  const { data, isLoading, isError, isFetchingNextPage, fetchNextPage } =
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetchingNextPage,
+    fetchNextPage,
+    refetch,
+  } =
     useInfiniteQuery({
       queryKey: [...NOTIFICATIONS_QUERY_KEY, "paged", PAGE_LIMIT],
       queryFn: async ({ pageParam }) => {
@@ -150,6 +158,10 @@ export default function NotificationBell() {
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
+        if (nextOpen) {
+          // Always refresh when user opens the notifications popover.
+          void refetch();
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -172,16 +184,10 @@ export default function NotificationBell() {
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold">Notifications</p>
             <div className="flex items-center gap-2">
-              {live ? (
-                realtimeOk ? (
-                  <Badge variant="secondary" className="text-xs">
-                    Live
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-xs">
-                    Refreshes ~30s
-                  </Badge>
-                )
+              {live && !realtimeOk ? (
+                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                  Refreshes ~30s
+                </span>
               ) : null}
               <Button
                 type="button"

@@ -76,6 +76,70 @@ async function fetchBookingOwnerUserId(bookingId: string): Promise<string | null
   }
 }
 
+async function fetchBookingVenueId(bookingId: string): Promise<string | null> {
+  try {
+    const sb = createSupabaseAdminClient();
+    const { data, error } = await sb
+      .from("bookings")
+      .select("courts(venue_id)")
+      .eq("id", bookingId)
+      .maybeSingle();
+    if (error) {
+      console.error("[courtly:notifications]", error);
+      return null;
+    }
+    const venueId = (data as { courts?: { venue_id?: string } | null } | null)?.courts
+      ?.venue_id;
+    return typeof venueId === "string" && venueId.length > 0 ? venueId : null;
+  } catch (e) {
+    console.error("[courtly:notifications]", e);
+    return null;
+  }
+}
+
+async function hasVenueReviewByUser(userId: string, venueId: string): Promise<boolean> {
+  try {
+    const sb = createSupabaseAdminClient();
+    const { count, error } = await sb
+      .from("court_reviews")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("venue_id", venueId);
+    if (error) {
+      console.error("[courtly:notifications]", error);
+      return false;
+    }
+    return (count ?? 0) > 0;
+  } catch (e) {
+    console.error("[courtly:notifications]", e);
+    return false;
+  }
+}
+
+export async function emitBookingCompletedReviewReminderIfNeeded(params: {
+  userId: string | null | undefined;
+  bookingId: string;
+  venueId?: string | null;
+}): Promise<void> {
+  const userId = params.userId ?? null;
+  if (!userId) return;
+  const venueId = params.venueId ?? (await fetchBookingVenueId(params.bookingId));
+  if (!venueId) return;
+  if (await hasVenueReviewByUser(userId, venueId)) return;
+  await safeEmitMany([
+    {
+      user_id: userId,
+      type: "booking_completed_review_reminder",
+      title: "How was your visit?",
+      body: "Leave a review for your completed booking.",
+      metadata: {
+        booking_id: params.bookingId,
+        target_path: `/my-bookings/${params.bookingId}`,
+      },
+    },
+  ]);
+}
+
 function snapshotFromBooking(b: Booking): BookingNotifySnapshot {
   return {
     user_id: b.user_id ?? null,
@@ -145,6 +209,7 @@ export async function emitBookingLifecycleNotifications(params: {
   prev: Booking;
   nextRow: Record<string, unknown>;
   bookingId: string;
+  skipReviewReminder?: boolean;
 }): Promise<void> {
   try {
     await emitBookingLifecycleNotificationsInner(params);
@@ -157,6 +222,7 @@ async function emitBookingLifecycleNotificationsInner(params: {
   prev: Booking;
   nextRow: Record<string, unknown>;
   bookingId: string;
+  skipReviewReminder?: boolean;
 }): Promise<void> {
   const prev = snapshotFromBooking(params.prev);
   const next = snapshotFromBookingRow(params.nextRow, prev);
@@ -183,18 +249,13 @@ async function emitBookingLifecycleNotificationsInner(params: {
   }
 
   if (next.status === "completed" && prev.status !== "completed") {
-    await safeEmitMany([
-      {
-        user_id: uid,
-        type: "booking_completed_review_reminder",
-        title: "How was your visit?",
-        body: "Leave a review for your completed booking.",
-        metadata: {
-          booking_id: params.bookingId,
-          target_path: `/my-bookings/${params.bookingId}`,
-        },
-      },
-    ]);
+    if (!params.skipReviewReminder) {
+      await emitBookingCompletedReviewReminderIfNeeded({
+        userId: uid,
+        bookingId: params.bookingId,
+        venueId: next.court_id === prev.court_id ? params.prev.venue_id : undefined,
+      });
+    }
     return;
   }
 

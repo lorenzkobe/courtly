@@ -3,10 +3,11 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
   getVenueById,
   getBookingById,
-  hasReviewForBooking,
+  getReviewByUserForVenue,
   insertRow,
   listCourtReviewsByVenue,
   listCourtsByVenue,
+  updateRow,
 } from "@/lib/data/courtly-db";
 import { emitReviewCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { reviewSummaryForVenue } from "@/lib/review-summary";
@@ -92,14 +93,23 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (await hasReviewForBooking(bookingId)) {
-    return NextResponse.json(
-      { error: "This booking already has a review" },
-      { status: 409 },
-    );
+  const now = new Date().toISOString();
+  const existingReview = await getReviewByUserForVenue(user.id, venueId);
+  if (existingReview) {
+    const updated = (await updateRow("court_reviews", existingReview.id, {
+      ...existingReview,
+      booking_id: bookingId,
+      rating: rating as CourtReview["rating"],
+      comment: comment || null,
+      updated_at: now,
+    })) as CourtReview;
+    return NextResponse.json({
+      ...updated,
+      created_at: existingReview.created_at,
+      updated_at: now,
+    });
   }
 
-  const now = new Date().toISOString();
   const row = {
     venue_id: venueId,
     user_id: user.id,
