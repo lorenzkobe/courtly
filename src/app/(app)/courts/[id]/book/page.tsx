@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  addDays,
   format,
   isBefore,
   isSameDay,
@@ -254,7 +253,7 @@ export default function BookCourtPage() {
   const { user } = useAuth();
   const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
 
-  const [selectedDate, setSelectedDate] = useState(addDays(new Date(), 1));
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [startTime, setStartTime] = useState<string | null>(null);
   const [endTime, setEndTime] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
