@@ -130,6 +130,7 @@ export default function AdminVenueCourtsPage() {
   const venueCourts = workspace?.courts ?? [];
   const venue = workspace?.venue;
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
+  const showVenueWorkspaceSkeleton = isLoading && !venue;
 
   const venuePriceRangesValidation = useMemo(
     () => validatePriceRangeFormRows(venueForm.hourly_rate_windows),
@@ -388,6 +389,41 @@ export default function AdminVenueCourtsPage() {
         </Link>
       </Button>
 
+      {showVenueWorkspaceSkeleton ? (
+        <div className="space-y-6" aria-busy="true" aria-label="Loading venue">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-9 w-[min(18rem,85vw)] max-w-md" />
+              <Skeleton className="h-4 w-56" />
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Skeleton className="h-10 w-36" />
+              <Skeleton className="h-10 w-28" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </div>
+          <Card className="border-border/50">
+            <CardContent className="grid gap-4 p-5 sm:grid-cols-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-5 w-full max-w-sm" />
+                </div>
+              ))}
+              <div className="space-y-2 sm:col-span-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            </CardContent>
+          </Card>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Skeleton key={i} className="h-40 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
       <PageHeader
         title={venueName}
         subtitle="Manage courts for this venue"
@@ -487,13 +523,7 @@ export default function AdminVenueCourtsPage() {
         </Card>
       ) : null}
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
-          ))}
-        </div>
-      ) : (
+      {!isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {venueCourts.map((court) => (
             <Card
@@ -520,6 +550,15 @@ export default function AdminVenueCourtsPage() {
             </Card>
           ))}
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-40 rounded-xl" />
+          ))}
+        </div>
+      )}
+
+        </>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -578,6 +617,21 @@ export default function AdminVenueCourtsPage() {
           <DialogHeader>
             <DialogTitle className="font-heading">Edit venue</DialogTitle>
           </DialogHeader>
+          {venueOpen && !venue ? (
+            <div
+              className="space-y-4 py-1"
+              aria-busy="true"
+              aria-label="Loading venue details"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ))}
+              <Skeleton className="h-32 w-full rounded-xl" />
+            </div>
+          ) : (
           <div className="space-y-4">
             <div>
               <Label>Venue name *</Label>
@@ -891,6 +945,7 @@ export default function AdminVenueCourtsPage() {
               {saveVenue.isPending ? "Saving..." : "Save Venue"}
             </Button>
           </div>
+          )}
         </DialogContent>
       </Dialog>
 
