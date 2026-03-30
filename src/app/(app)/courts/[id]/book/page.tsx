@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import {
@@ -462,8 +463,10 @@ export default function BookCourtPage() {
       );
       router.push("/my-bookings");
     },
-    onError: () => {
-      toast.error("Could not complete booking. Please try again.");
+    onError: (err: unknown) => {
+      toast.error(
+        apiErrorMessage(err, "Could not complete booking. Please try again."),
+      );
     },
   });
 

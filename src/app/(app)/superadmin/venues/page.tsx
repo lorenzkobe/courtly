@@ -5,7 +5,6 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
@@ -34,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -183,9 +183,7 @@ export default function SuperadminVenuesPage() {
       setForm(emptyForm);
     },
     onError: (e: unknown) => {
-      toast.error(
-        e instanceof Error && e.message ? e.message : "Could not save venue",
-      );
+      toast.error(apiErrorMessage(e, "Could not save venue"));
     },
   });
 
@@ -201,10 +199,7 @@ export default function SuperadminVenuesPage() {
       setForm(emptyForm);
     },
     onError: (err: unknown) => {
-      const msg = isAxiosError(err)
-        ? (err.response?.data as { error?: string })?.error
-        : undefined;
-      toast.error(msg ?? "Could not remove account");
+      toast.error(apiErrorMessage(err, "Could not remove account"));
     },
   });
 

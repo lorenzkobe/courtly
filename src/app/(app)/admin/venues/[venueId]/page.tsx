@@ -37,6 +37,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import {
   formatBookableHourSlotRange,
@@ -91,15 +92,6 @@ const amenityOptions = [
 
 function normAmenity(s: string) {
   return s.trim().toLowerCase();
-}
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
 }
 
 export default function AdminVenueCourtsPage() {
@@ -165,8 +157,8 @@ export default function AdminVenueCourtsPage() {
       setEditing(null);
       setForm(defaultForm);
     },
-    onError: (e: Error) => {
-      toast.error(e.message || "Could not save the court.");
+    onError: (e: unknown) => {
+      toast.error(apiErrorMessage(e, "Could not save the court."));
     },
   });
 
@@ -213,9 +205,7 @@ export default function AdminVenueCourtsPage() {
       setVenueOpen(false);
     },
     onError: (e: unknown) => {
-      toast.error(
-        e instanceof Error && e.message ? e.message : "Could not save venue",
-      );
+      toast.error(apiErrorMessage(e, "Could not save venue"));
     },
   });
 
@@ -229,7 +219,7 @@ export default function AdminVenueCourtsPage() {
       toast.success("Court deleted");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not delete court"));
+      toast.error(apiErrorMessage(error, "Could not delete court"));
     },
   });
 
@@ -284,7 +274,7 @@ export default function AdminVenueCourtsPage() {
       void queryClient.invalidateQueries({ queryKey: ["court-closures"] });
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not apply unavailability"));
+      toast.error(apiErrorMessage(error, "Could not apply unavailability"));
     },
   });
 

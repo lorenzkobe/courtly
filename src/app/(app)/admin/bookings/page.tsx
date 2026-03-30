@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
@@ -38,15 +39,6 @@ import { isSuperadmin } from "@/lib/auth/management";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import type { Booking } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
-}
 
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
@@ -281,7 +273,7 @@ export default function AdminBookingsPage() {
       toast.success("Booking updated");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not update booking"));
+      toast.error(apiErrorMessage(error, "Could not update booking"));
     },
   });
 
@@ -300,7 +292,7 @@ export default function AdminBookingsPage() {
       toast.success("Note saved");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not save note"));
+      toast.error(apiErrorMessage(error, "Could not save note"));
     },
   });
 
@@ -319,7 +311,7 @@ export default function AdminBookingsPage() {
       toast.success("Note deleted");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not delete note"));
+      toast.error(apiErrorMessage(error, "Could not delete note"));
     },
   });
 

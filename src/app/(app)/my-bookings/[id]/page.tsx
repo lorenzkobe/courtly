@@ -23,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp } from "@/lib/format-currency";
@@ -77,7 +78,8 @@ function BookingReviewSection({
       invalidateReviews();
       toast.success("Thanks for your review!");
     },
-    onError: () => toast.error("Could not save review"),
+    onError: (err: unknown) =>
+      toast.error(apiErrorMessage(err, "Could not save review")),
   });
 
   const updateReviewMut = useMutation({
@@ -92,7 +94,8 @@ function BookingReviewSection({
       invalidateReviews();
       toast.success("Review updated");
     },
-    onError: () => toast.error("Could not update review"),
+    onError: (err: unknown) =>
+      toast.error(apiErrorMessage(err, "Could not update review")),
   });
 
   const deleteReviewMut = useMutation({
@@ -104,6 +107,8 @@ function BookingReviewSection({
       invalidateReviews();
       toast.success("Review removed");
     },
+    onError: (err: unknown) =>
+      toast.error(apiErrorMessage(err, "Could not remove review")),
   });
 
   return (

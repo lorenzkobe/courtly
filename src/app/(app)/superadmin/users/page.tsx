@@ -5,7 +5,6 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { format } from "date-fns";
 import { CalendarIcon, Copy, Plus, Send, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -37,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import type { ManagedUser } from "@/lib/types/courtly";
@@ -150,12 +150,7 @@ export default function SuperadminUsersPage() {
     [directoryPages?.pages],
   );
 
-  const listErrorMessage = isAxiosError(error)
-    ? (error.response?.data as { error?: string; detail?: string })?.error ??
-      error.message
-    : error instanceof Error
-      ? error.message
-      : "Could not load users.";
+  const listErrorMessage = apiErrorMessage(error, "Could not load users.");
 
   const accounts = useMemo(
     () => (directoryPages?.pages ?? []).flatMap((page) => page.venues.items),
@@ -232,10 +227,7 @@ export default function SuperadminUsersPage() {
       setForm(emptyForm);
     },
     onError: (err: unknown) => {
-      const msg = isAxiosError(err)
-        ? (err.response?.data as { error?: string })?.error
-        : undefined;
-      toast.error(msg ?? "Could not save user");
+      toast.error(apiErrorMessage(err, "Could not save user"));
     },
   });
 
@@ -260,10 +252,7 @@ export default function SuperadminUsersPage() {
       toast.success("Done.");
     },
     onError: (err: unknown) => {
-      const msg = isAxiosError(err)
-        ? (err.response?.data as { error?: string })?.error
-        : undefined;
-      toast.error(msg ?? "Could not resend invitation");
+      toast.error(apiErrorMessage(err, "Could not resend invitation"));
     },
   });
 
@@ -279,10 +268,7 @@ export default function SuperadminUsersPage() {
       setForm(emptyForm);
     },
     onError: (err: unknown) => {
-      const msg = isAxiosError(err)
-        ? (err.response?.data as { error?: string })?.error
-        : undefined;
-      toast.error(msg ?? "Could not remove user");
+      toast.error(apiErrorMessage(err, "Could not remove user"));
     },
   });
 
