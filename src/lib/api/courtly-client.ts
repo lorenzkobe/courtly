@@ -5,6 +5,7 @@ import type {
   BookingDetailContextResponse,
   BookingDetailGroupResponse,
   CourtBookingSurfaceResponse,
+  CursorPage,
   CourtDayAvailability,
   CourtDetailContextResponse,
   Court,
@@ -13,9 +14,10 @@ import type {
   DashboardOverviewResponse,
   ManagedUser,
   OpenPlaySession,
+  MyBookingsOverviewResponse,
   RevenueSummaryResponse,
   SessionUser,
-  SuperadminDirectoryResponse,
+  SuperadminDirectoryPagedResponse,
   Tournament,
   TournamentRegistration,
   Venue,
@@ -171,6 +173,19 @@ export const courtlyApi = {
       sport?: string;
       booking_group_id?: string;
     }) => http.get<Booking[]>("/api/bookings", { params }),
+    listPaged: (params?: {
+      court_id?: string;
+      date?: string;
+      player_email?: string;
+      manageable?: boolean;
+      sport?: string;
+      booking_group_id?: string;
+      cursor?: string | null;
+      limit?: number;
+    }) =>
+      http.get<CursorPage<Booking>>("/api/bookings", {
+        params,
+      }),
     get: (id: string) => http.get<Booking>(`/api/bookings/${id}`),
     getWithGroup: (id: string) =>
       http.get<BookingDetailGroupResponse>(`/api/bookings/${id}`, {
@@ -254,7 +269,11 @@ export const courtlyApi = {
   },
 
   superadmin: {
-    directory: () => http.get<SuperadminDirectoryResponse>("/api/superadmin/directory"),
+    directory: (params?: {
+      users_cursor?: string | null;
+      venues_cursor?: string | null;
+      limit?: number;
+    }) => http.get<SuperadminDirectoryPagedResponse>("/api/superadmin/directory", { params }),
   },
 
   assignedVenues: {
@@ -293,14 +312,20 @@ export const courtlyApi = {
   },
 
   flaggedReviews: {
-    list: () =>
-      http.get<{
-        reviews: (CourtReview & { court_name: string })[];
-      }>("/api/admin/flagged-reviews"),
+    list: (params?: { cursor?: string | null; limit?: number }) =>
+      http.get<
+        CursorPage<
+          CourtReview & {
+            court_name: string;
+            venue_name: string;
+          }
+        >
+      >("/api/admin/flagged-reviews", { params }),
   },
 
   notifications: {
-    list: () => http.get<NotificationsListResponse>("/api/notifications"),
+    list: (params?: { cursor?: string | null; limit?: number }) =>
+      http.get<NotificationsListResponse>("/api/notifications", { params }),
     markAllRead: () => http.patch<{ ok: boolean }>("/api/notifications"),
     markRead: (id: string) => http.patch<{ ok: boolean }>(`/api/notifications/${id}`),
   },
@@ -311,10 +336,11 @@ export const courtlyApi = {
   },
 
   me: {
-    bookingsOverview: (params?: { sport?: string }) =>
-      http.get<{
-        bookings: Booking[];
-        registrations: TournamentRegistration[];
-      }>("/api/me/bookings-overview", { params }),
+    bookingsOverview: (params?: {
+      sport?: string;
+      bookings_cursor?: string | null;
+      registrations_cursor?: string | null;
+      limit?: number;
+    }) => http.get<MyBookingsOverviewResponse>("/api/me/bookings-overview", { params }),
   },
 };

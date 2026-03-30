@@ -17,8 +17,12 @@ const PLACEHOLDER_RESPONSE: NotificationsListResponse = {
 export class LocalPlaceholderNotificationRepository
   implements NotificationRepository
 {
-  async listForUser(userId: string): Promise<NotificationsListResponse> {
+  async listForUser(
+    userId: string,
+    options?: { offset?: number; limit?: number },
+  ): Promise<NotificationsListResponse> {
     void userId;
+    void options;
     return PLACEHOLDER_RESPONSE;
   }
 

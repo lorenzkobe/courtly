@@ -338,3 +338,19 @@ export type SuperadminDirectoryResponse = {
   venues: Venue[];
   managed_users: ManagedUser[];
 };
+
+export type CursorPage<T> = {
+  items: T[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
+export type MyBookingsOverviewResponse = {
+  bookings: CursorPage<Booking>;
+  registrations: CursorPage<TournamentRegistration>;
+};
+
+export type SuperadminDirectoryPagedResponse = {
+  venues: CursorPage<Venue>;
+  managed_users: CursorPage<ManagedUser>;
+};

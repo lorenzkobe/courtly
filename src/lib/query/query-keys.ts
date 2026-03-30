@@ -55,6 +55,28 @@ export const queryKeys = {
           booking_group_id: normalized(params?.booking_group_id),
         },
       ] as const,
+    listPaged: (params?: {
+      court_id?: string;
+      date?: string;
+      player_email?: string;
+      manageable?: boolean;
+      sport?: string;
+      booking_group_id?: string;
+      limit?: number;
+    }) =>
+      [
+        "bookings",
+        "list-paged",
+        {
+          court_id: normalized(params?.court_id),
+          date: normalized(params?.date),
+          player_email: normalized(params?.player_email),
+          manageable: params?.manageable ?? false,
+          sport: normalized(params?.sport),
+          booking_group_id: normalized(params?.booking_group_id),
+          limit: params?.limit ?? null,
+        },
+      ] as const,
     detail: (bookingId: NullableString) =>
       ["bookings", "detail", normalized(bookingId)] as const,
     my: (email: NullableString, sport?: NullableString) =>
@@ -124,10 +146,19 @@ export const queryKeys = {
   },
   notifications: {
     all: () => ["notifications"] as const,
+    paged: (limit?: number) => ["notifications", "paged", { limit: limit ?? null }] as const,
   },
   me: {
-    bookingsOverview: (email: NullableString, sport?: NullableString) =>
-      ["me", "bookings-overview", { email: normalized(email), sport: normalized(sport) }] as const,
+    bookingsOverview: (
+      email: NullableString,
+      sport?: NullableString,
+      limit?: number,
+    ) =>
+      [
+        "me",
+        "bookings-overview",
+        { email: normalized(email), sport: normalized(sport), limit: limit ?? null },
+      ] as const,
   },
   admin: {
     venueWorkspace: (venueId: NullableString) =>
@@ -135,6 +166,8 @@ export const queryKeys = {
   },
   superadmin: {
     directory: () => ["superadmin", "directory"] as const,
+    directoryPaged: (limit?: number) =>
+      ["superadmin", "directory", "paged", { limit: limit ?? null }] as const,
   },
   closures: {
     court: (courtId: NullableString, date?: NullableString) =>
@@ -170,5 +203,7 @@ export const queryKeys = {
     venue: (venueId: NullableString) =>
       ["reviews", "venue", normalized(venueId)] as const,
     flagged: () => ["reviews", "flagged"] as const,
+    flaggedPaged: (limit?: number) =>
+      ["reviews", "flagged", "paged", { limit: limit ?? null }] as const,
   },
 };

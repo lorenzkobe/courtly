@@ -3,7 +3,11 @@
 import { formatDistanceToNow } from "date-fns";
 import { Bell, CheckCheck } from "lucide-react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useState } from "react";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -82,24 +86,31 @@ function NotificationRow({
 }
 
 export default function NotificationBell() {
+  const PAGE_LIMIT = 15;
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
   const [open, setOpen] = useState(false);
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: NOTIFICATIONS_QUERY_KEY,
-    queryFn: async () => {
-      const { data: listResponse } = await courtlyApi.notifications.list();
-      return listResponse;
-    },
-    // Keep this active while authenticated so realtime invalidations can update
-    // the badge count immediately, even before the popover is opened.
-    enabled: Boolean(user),
-    staleTime: 15_000,
-    // Poll only when realtime is not configured.
-    refetchInterval: realtimeOk ? false : 30_000,
-  });
+  const { data, isLoading, isError, isFetchingNextPage, fetchNextPage } =
+    useInfiniteQuery({
+      queryKey: [...NOTIFICATIONS_QUERY_KEY, "paged", PAGE_LIMIT],
+      queryFn: async ({ pageParam }) => {
+        const { data: listResponse } = await courtlyApi.notifications.list({
+          cursor: pageParam,
+          limit: PAGE_LIMIT,
+        });
+        return listResponse;
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (lastPage) => lastPage.next_cursor ?? null,
+      // Keep this active while authenticated so realtime invalidations can update
+      // the badge count immediately, even before the popover is opened.
+      enabled: Boolean(user),
+      staleTime: 15_000,
+      // Poll only when realtime is not configured.
+      refetchInterval: realtimeOk ? false : 30_000,
+    });
 
   const markRead = useMutation({
     mutationFn: async (id: string) => {
@@ -128,9 +139,11 @@ export default function NotificationBell() {
     return null;
   }
 
-  const items = data?.items ?? [];
-  const unread = data?.unread_count ?? 0;
-  const live = data?.status === "live";
+  const pages = data?.pages ?? [];
+  const items = pages.flatMap((page) => page.items);
+  const unread = pages[0]?.unread_count ?? 0;
+  const live = pages[0]?.status === "live";
+  const hasMore = pages[pages.length - 1]?.has_more ?? false;
 
   return (
     <Popover
@@ -207,6 +220,20 @@ export default function NotificationBell() {
               ))}
             </ul>
           )}
+          {!isLoading && hasMore ? (
+            <div className="px-2 pb-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more notifications"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>

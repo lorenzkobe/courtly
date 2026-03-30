@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Calendar, Clock, ListFilter, Search, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -141,6 +141,7 @@ function AdminBookingNoteFields({
 }
 
 export default function AdminBookingsPage() {
+  const PAGE_LIMIT = 25;
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
   const queryClient = useQueryClient();
@@ -167,14 +168,31 @@ export default function AdminBookingsPage() {
     queryKeysToInvalidate: adminRealtimeKeys,
   });
 
-  const { data: bookings = [], isLoading } = useQuery({
-    queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({ manageable: true });
+  const {
+    data: bookingsPages,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["admin-bookings", globalAdmin ? "all" : "managed", PAGE_LIMIT],
+    queryFn: async ({ pageParam }) => {
+      const { data } = await courtlyApi.bookings.listPaged({
+        manageable: true,
+        limit: PAGE_LIMIT,
+        cursor: pageParam,
+      });
       return data;
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
     staleTime: 20_000,
   });
+  const bookings = useMemo(
+    () => (bookingsPages?.pages ?? []).flatMap((page) => page.items),
+    [bookingsPages?.pages],
+  );
+  const hasMoreBookings =
+    bookingsPages?.pages?.[bookingsPages.pages.length - 1]?.has_more ?? false;
 
   const openFilterDialog = useCallback(() => {
     if (!filterDialogOpen) {
@@ -261,17 +279,6 @@ export default function AdminBookingsPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking updated");
-    },
-    onMutate: async ({ id, status }) => {
-      queryClient.setQueriesData(
-        { queryKey: ["admin-bookings"] },
-        (old: Booking[] | undefined) =>
-          old?.map((booking) =>
-            booking.id === id
-              ? { ...booking, status: status as typeof booking.status }
-              : booking,
-          ),
-      );
     },
     onError: (error) => {
       toast.error(mutationErrorMessage(error, "Could not update booking"));
@@ -933,6 +940,18 @@ export default function AdminBookingsPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreBookings ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

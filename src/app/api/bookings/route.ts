@@ -7,6 +7,7 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import {
   listBookingsFiltered,
+  listBookingsFilteredPage,
   listCourtIdsByVenueIds,
   insertRow,
   insertRows,
@@ -15,6 +16,8 @@ import {
   listVenues,
 } from "@/lib/data/courtly-db";
 import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
+import { logApiMetrics, payloadBytesOf } from "@/lib/observability/api-metrics";
+import { decodeOffsetCursor, encodeOffsetCursor, parseLimit } from "@/lib/pagination/cursor";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -34,6 +37,7 @@ function toBookingPayloadList(body: unknown): Partial<Booking>[] {
 }
 
 export async function GET(req: Request) {
+  const startedAt = Date.now();
   const { searchParams } = new URL(req.url);
   const courtId = searchParams.get("court_id");
   const date = searchParams.get("date");
@@ -41,6 +45,8 @@ export async function GET(req: Request) {
   const manageable = searchParams.get("manageable") === "true";
   const sport = searchParams.get("sport") as CourtSport | null;
   const bookingGroupId = searchParams.get("booking_group_id");
+  const cursorRaw = searchParams.get("cursor");
+  const limitRaw = searchParams.get("limit");
 
   let allowedCourtIds: string[] | undefined;
   let manageableViewer: Awaited<ReturnType<typeof readSessionUser>> = null;
@@ -64,6 +70,43 @@ export async function GET(req: Request) {
     }
   }
 
+  const cursorProvided = cursorRaw != null || limitRaw != null;
+  const viewerForMobile = manageable ? manageableViewer : null;
+  if (cursorProvided) {
+    const limit = parseLimit(limitRaw);
+    const offset = decodeOffsetCursor(cursorRaw);
+    const page = await listBookingsFilteredPage({
+      courtIds: allowedCourtIds,
+      bookingGroupId: bookingGroupId ?? undefined,
+      courtId: courtId ?? undefined,
+      date: date ?? undefined,
+      playerEmail: playerEmail ?? undefined,
+      offset,
+      limit,
+    });
+    let list = page.items;
+    if (sport) list = list.filter((booking) => bookingSport(booking) === sport);
+    const hydrated = list.map(hydrateBooking);
+    const enriched = await enrichBookingsWithProfileMobile(hydrated, viewerForMobile);
+    const items = enriched.map((b) =>
+      applyPlayerMobileVisibility(hydrateBooking(b), viewerForMobile),
+    );
+    const body = {
+      items,
+      has_more: page.hasMore,
+      next_cursor: page.hasMore ? encodeOffsetCursor(offset + page.items.length) : null,
+    };
+    logApiMetrics({
+      route: "/api/bookings",
+      duration_ms: Date.now() - startedAt,
+      limit,
+      cursor: cursorRaw,
+      payload_bytes: payloadBytesOf(body),
+      row_counts: { items: items.length },
+    });
+    return NextResponse.json(body);
+  }
+
   let list = await listBookingsFiltered({
     courtIds: allowedCourtIds,
     bookingGroupId: bookingGroupId ?? undefined,
@@ -72,18 +115,21 @@ export async function GET(req: Request) {
     playerEmail: playerEmail ?? undefined,
   });
   if (sport) list = list.filter((booking) => bookingSport(booking) === sport);
-
   list.sort((a, b) =>
     String(b.created_date ?? "").localeCompare(String(a.created_date ?? "")),
   );
-  const viewerForMobile = manageable ? manageableViewer : null;
   const hydrated = list.map(hydrateBooking);
   const enriched = await enrichBookingsWithProfileMobile(hydrated, viewerForMobile);
-  return NextResponse.json(
-    enriched.map((b) =>
-      applyPlayerMobileVisibility(hydrateBooking(b), viewerForMobile),
-    ),
+  const body = enriched.map((b) =>
+    applyPlayerMobileVisibility(hydrateBooking(b), viewerForMobile),
   );
+  logApiMetrics({
+    route: "/api/bookings",
+    duration_ms: Date.now() - startedAt,
+    payload_bytes: payloadBytesOf(body),
+    row_counts: { items: body.length },
+  });
+  return NextResponse.json(body);
 }
 
 export async function POST(req: Request) {

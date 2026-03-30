@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Calendar,
@@ -34,7 +34,7 @@ import {
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
-import type { Booking } from "@/lib/types/courtly";
+import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
@@ -87,6 +87,7 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
 }
 
 export default function MyBookingsPage() {
+  const PAGE_LIMIT = 20;
   const [tab, setTab] = useState("bookings");
   const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("confirmed");
   const [query, setQuery] = useState("");
@@ -94,21 +95,43 @@ export default function MyBookingsPage() {
   const { user } = useAuth();
   const selectedSport = useSelectedSport((s) => s.sport);
 
-  const { data: overview, isLoading } = useQuery({
-    queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport),
-    queryFn: async () => {
+  const { data, isLoading, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
+    queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT),
+    queryFn: async ({ pageParam }) => {
+      const cursorParam = (pageParam ?? {
+        bookings_cursor: null,
+        registrations_cursor: null,
+      }) as { bookings_cursor: string | null; registrations_cursor: string | null };
       const { data } = await courtlyApi.me.bookingsOverview({
         sport: selectedSport,
+        bookings_cursor: cursorParam.bookings_cursor,
+        registrations_cursor: cursorParam.registrations_cursor,
+        limit: PAGE_LIMIT,
       });
       return data;
     },
+    initialPageParam: {
+      bookings_cursor: null as string | null,
+      registrations_cursor: null as string | null,
+    },
+    getNextPageParam: (lastPage) => ({
+      bookings_cursor: lastPage.bookings.next_cursor,
+      registrations_cursor: lastPage.registrations.next_cursor,
+    }),
     enabled: !!user?.email,
   });
-  const bookings = useMemo(() => overview?.bookings ?? [], [overview?.bookings]);
-  const registrations = useMemo(
-    () => overview?.registrations ?? [],
-    [overview?.registrations],
+  const pages = useMemo(
+    () => (data?.pages ?? []) as MyBookingsOverviewResponse[],
+    [data?.pages],
   );
+  const bookings = useMemo(() => pages.flatMap((page) => page.bookings.items), [pages]);
+  const registrations = useMemo(
+    () => pages.flatMap((page) => page.registrations.items),
+    [pages],
+  );
+  const latestPage = pages.length > 0 ? pages[pages.length - 1] : undefined;
+  const hasMoreBookings = latestPage?.bookings.has_more ?? false;
+  const hasMoreRegistrations = latestPage?.registrations.has_more ?? false;
   const bookingsRealtimeKeys = useMemo(() => [queryKeys.bookings.all()], []);
   useBookingsRealtime({
     playerEmail: user?.email,
@@ -142,7 +165,7 @@ export default function MyBookingsPage() {
     return groups;
   }, [bookings, query, sortBy, statusFilter]);
 
-  const tabLoading = isLoading;
+  const tabLoading = isLoading && pages.length === 0;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -320,6 +343,18 @@ export default function MyBookingsPage() {
                 </Card>
               );
             })}
+            {hasMoreBookings ? (
+              <div className="flex justify-center pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  {isFetchingNextPage ? "Loading..." : "Load more"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         )
       ) : registrations.length === 0 ? (
@@ -364,6 +399,18 @@ export default function MyBookingsPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreRegistrations ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

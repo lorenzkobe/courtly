@@ -1,6 +1,10 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
@@ -77,21 +81,45 @@ function adminDirectoryLabel(u: ManagedUser) {
 }
 
 export default function SuperadminVenuesPage() {
+  const PAGE_LIMIT = 20;
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Venue | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [confirmRemoveVenueId, setConfirmRemoveVenueId] = useState<string | null>(null);
 
-  const { data: directory, isLoading } = useQuery({
-    queryKey: queryKeys.superadmin.directory(),
-    queryFn: async () => {
-      const { data } = await courtlyApi.superadmin.directory();
-      return data;
-    },
-  });
-  const venues = directory?.venues ?? [];
-  const managedUsers = directory?.managed_users ?? [];
+  const { data: directoryPages, isLoading, isFetchingNextPage, fetchNextPage } =
+    useInfiniteQuery({
+      queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+      queryFn: async ({ pageParam }) => {
+        const { data } = await courtlyApi.superadmin.directory({
+          limit: PAGE_LIMIT,
+          users_cursor: pageParam.users_cursor,
+          venues_cursor: pageParam.venues_cursor,
+        });
+        return data;
+      },
+      initialPageParam: {
+        users_cursor: null as string | null,
+        venues_cursor: null as string | null,
+      },
+      getNextPageParam: (lastPage) => ({
+        users_cursor: lastPage.managed_users.next_cursor,
+        venues_cursor: lastPage.venues.next_cursor,
+      }),
+    });
+  const venues = useMemo(
+    () => (directoryPages?.pages ?? []).flatMap((page) => page.venues.items),
+    [directoryPages?.pages],
+  );
+  const managedUsers = useMemo(
+    () =>
+      (directoryPages?.pages ?? []).flatMap((page) => page.managed_users.items),
+    [directoryPages?.pages],
+  );
+  const hasMoreVenues =
+    directoryPages?.pages?.[directoryPages.pages.length - 1]?.venues.has_more ??
+    false;
 
   const adminOptions = managedUsers.filter(
     (managedUser) => managedUser.role === "admin",
@@ -148,7 +176,7 @@ export default function SuperadminVenuesPage() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       toast.success(editing ? "Venue updated" : "Venue created");
       setDialogOpen(false);
       setEditing(null);
@@ -166,7 +194,7 @@ export default function SuperadminVenuesPage() {
       await courtlyApi.venues.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       toast.success("Venue removed");
       setDialogOpen(false);
       setEditing(null);
@@ -337,6 +365,18 @@ export default function SuperadminVenuesPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreVenues ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
 

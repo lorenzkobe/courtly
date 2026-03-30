@@ -367,6 +367,11 @@ type ListBookingsFilteredParams = {
   bookingGroupId?: string;
 };
 
+type PaginationParams = {
+  offset: number;
+  limit: number;
+};
+
 export async function listBookingsFiltered(
   params: ListBookingsFilteredParams,
 ): Promise<Booking[]> {
@@ -398,6 +403,49 @@ export async function listBookingsFiltered(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map(mapBookingRow);
+}
+
+export async function listBookingsFilteredPage(
+  params: ListBookingsFilteredParams & PaginationParams,
+): Promise<{
+  items: Booking[];
+  hasMore: boolean;
+}> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("bookings")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
+    .order("created_at", { ascending: false });
+
+  if (params.courtId) {
+    query = query.eq("court_id", params.courtId);
+  }
+  if (params.date) {
+    query = query.eq("date", params.date);
+  }
+  if (params.playerEmail) {
+    query = query.eq("player_email", params.playerEmail);
+  }
+  if (params.bookingGroupId) {
+    query = query.eq("booking_group_id", params.bookingGroupId);
+  }
+  if (params.courtIds && params.courtIds.length > 0) {
+    query = query.in("court_id", params.courtIds);
+  }
+  if (params.courtIds && params.courtIds.length === 0) {
+    return { items: [], hasMore: false };
+  }
+
+  const start = Math.max(0, params.offset);
+  const end = start + Math.max(1, params.limit) + 1 - 1;
+  const { data, error } = await query.range(start, end);
+  if (error) throw error;
+  const list = (data ?? []).map(mapBookingRow);
+  const hasMore = list.length > params.limit;
+  return {
+    items: hasMore ? list.slice(0, params.limit) : list,
+    hasMore,
+  };
 }
 
 type ListRevenueBookingsParams = {
@@ -718,6 +766,34 @@ export async function listFlaggedCourtReviews(): Promise<CourtReview[]> {
   }));
 }
 
+export async function listFlaggedCourtReviewsPage(params: PaginationParams): Promise<{
+  items: CourtReview[];
+  hasMore: boolean;
+}> {
+  const supabase = await createSupabaseServerClient();
+  const start = Math.max(0, params.offset);
+  const end = start + Math.max(1, params.limit) + 1 - 1;
+  const { data, error } = await supabase
+    .from("court_reviews")
+    .select("*")
+    .eq("flagged", true)
+    .order("flagged_at", { ascending: false })
+    .range(start, end);
+  if (error) throw error;
+  const list = (data ?? []).map((row) => ({
+    ...(row as CourtReview),
+    booking_id: (row as { booking_id: string }).booking_id,
+    created_at: toIsoString((row as { created_at: string | null }).created_at),
+    updated_at: toIsoString((row as { updated_at: string | null }).updated_at),
+    flagged_at: (row as { flagged_at?: string | null }).flagged_at ?? undefined,
+  }));
+  const hasMore = list.length > params.limit;
+  return {
+    items: hasMore ? list.slice(0, params.limit) : list,
+    hasMore,
+  };
+}
+
 export async function listReviewSummaryByVenueIds(
   venueIds: string[],
 ): Promise<Map<string, { average_rating: number; review_count: number }>> {
@@ -836,6 +912,62 @@ export async function listTournamentRegistrationsByPlayer(
     ...(row as TournamentRegistration),
     created_date: toIsoString((row as { created_at: string | null }).created_at),
   }));
+}
+
+export async function listTournamentRegistrationsByPlayerPage(
+  playerEmail: string,
+  params: PaginationParams,
+): Promise<{
+  items: TournamentRegistration[];
+  hasMore: boolean;
+}> {
+  const supabase = await createSupabaseServerClient();
+  const start = Math.max(0, params.offset);
+  const end = start + Math.max(1, params.limit) + 1 - 1;
+  const { data, error } = await supabase
+    .from("tournament_registrations")
+    .select("*")
+    .eq("player_email", playerEmail)
+    .order("created_at", { ascending: false })
+    .range(start, end);
+  if (error) throw error;
+  const list = (data ?? []).map((row) => ({
+    ...(row as TournamentRegistration),
+    created_date: toIsoString((row as { created_at: string | null }).created_at),
+  }));
+  const hasMore = list.length > params.limit;
+  return {
+    items: hasMore ? list.slice(0, params.limit) : list,
+    hasMore,
+  };
+}
+
+export async function listVenuesPage(params: PaginationParams): Promise<{
+  items: Venue[];
+  hasMore: boolean;
+}> {
+  const supabase = await createSupabaseServerClient();
+  const start = Math.max(0, params.offset);
+  const end = start + Math.max(1, params.limit) + 1 - 1;
+  const { data, error } = await supabase
+    .from("venues")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(start, end);
+  if (error) throw error;
+  const list = (data ?? []).map((row) => {
+    const v = row as Venue;
+    return {
+      ...v,
+      hourly_rate_windows: v.hourly_rate_windows ?? [],
+      created_at: toIsoString((row as { created_at: string | null }).created_at),
+    };
+  });
+  const hasMore = list.length > params.limit;
+  return {
+    items: hasMore ? list.slice(0, params.limit) : list,
+    hasMore,
+  };
 }
 
 export async function listOpenPlay(): Promise<OpenPlaySession[]> {

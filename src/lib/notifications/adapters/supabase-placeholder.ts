@@ -81,15 +81,20 @@ function rowToNotification(row: NotificationRow) {
 }
 
 export class SupabaseNotificationRepository implements NotificationRepository {
-  async listForUser(userId: string): Promise<NotificationsListResponse> {
+  async listForUser(
+    userId: string,
+    options?: { offset?: number; limit?: number },
+  ): Promise<NotificationsListResponse> {
     const supabase = await createSupabaseServerClient();
+    const limit = Math.min(Math.max(1, options?.limit ?? 20), 50);
+    const offset = Math.max(0, options?.offset ?? 0);
     const [listResult, countResult] = await Promise.all([
       supabase
         .from("notifications")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
-        .limit(100),
+        .range(offset, offset + limit),
       supabase
         .from("notifications")
         .select("*", { count: "exact", head: true })
@@ -100,13 +105,17 @@ export class SupabaseNotificationRepository implements NotificationRepository {
     if (listResult.error) throw listResult.error;
     if (countResult.error) throw countResult.error;
 
-    const items = (listResult.data ?? []).map((row) =>
+    const mapped = (listResult.data ?? []).map((row) =>
       rowToNotification(row as NotificationRow),
     );
+    const hasMore = mapped.length > limit;
+    const items = hasMore ? mapped.slice(0, limit) : mapped;
     return {
       items,
       unread_count: countResult.count ?? 0,
       status: "live",
+      has_more: hasMore,
+      next_cursor: hasMore ? String(offset + items.length) : null,
     };
   }
 

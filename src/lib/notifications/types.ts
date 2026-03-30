@@ -43,4 +43,6 @@ export type NotificationsListResponse = {
   items: Notification[];
   unread_count: number;
   status: "live" | "placeholder";
+  has_more?: boolean;
+  next_cursor?: string | null;
 };

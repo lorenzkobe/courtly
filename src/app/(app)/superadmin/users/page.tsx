@@ -1,6 +1,10 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { format } from "date-fns";
 import { CalendarIcon, Copy, Plus, Send, Trash2 } from "lucide-react";
@@ -98,6 +102,7 @@ type UserSort =
   | "created_asc";
 
 export default function SuperadminUsersPage() {
+  const PAGE_LIMIT = 20;
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedUser | null>(null);
@@ -114,21 +119,35 @@ export default function SuperadminUsersPage() {
   const [sortBy, setSortBy] = useState<UserSort>("name_asc");
 
   const {
-    data: directory,
+    data: directoryPages,
     isLoading,
     isError,
     error,
     refetch,
-  } = useQuery({
-    queryKey: queryKeys.superadmin.directory(),
-    queryFn: async () => {
-      const { data } = await courtlyApi.superadmin.directory();
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+    queryFn: async ({ pageParam }) => {
+      const { data } = await courtlyApi.superadmin.directory({
+        limit: PAGE_LIMIT,
+        users_cursor: pageParam.users_cursor,
+        venues_cursor: pageParam.venues_cursor,
+      });
       return data;
     },
+    initialPageParam: {
+      users_cursor: null as string | null,
+      venues_cursor: null as string | null,
+    },
+    getNextPageParam: (lastPage) => ({
+      users_cursor: lastPage.managed_users.next_cursor,
+      venues_cursor: lastPage.venues.next_cursor,
+    }),
   });
   const users = useMemo(
-    () => directory?.managed_users ?? [],
-    [directory?.managed_users],
+    () => (directoryPages?.pages ?? []).flatMap((page) => page.managed_users.items),
+    [directoryPages?.pages],
   );
 
   const listErrorMessage = isAxiosError(error)
@@ -138,7 +157,13 @@ export default function SuperadminUsersPage() {
       ? error.message
       : "Could not load users.";
 
-  const accounts = directory?.venues ?? [];
+  const accounts = useMemo(
+    () => (directoryPages?.pages ?? []).flatMap((page) => page.venues.items),
+    [directoryPages?.pages],
+  );
+  const hasMoreUsers =
+    directoryPages?.pages?.[directoryPages.pages.length - 1]?.managed_users.has_more ??
+    false;
 
   const visibleUsers = useMemo(() => {
     let list = [...users];
@@ -194,7 +219,7 @@ export default function SuperadminUsersPage() {
       return { mode: "create" as const };
     },
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       if (result.mode === "create") {
         toast.success(
           "Invitation sent. The user will get an email with a link to set their password.",
@@ -220,7 +245,7 @@ export default function SuperadminUsersPage() {
       return data;
     },
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       if (data.emailed) {
         toast.success(data.message ?? "Invitation sent.");
         return;
@@ -247,7 +272,7 @@ export default function SuperadminUsersPage() {
       await courtlyApi.managedUsers.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       toast.success("User removed");
       setDialogOpen(false);
       setEditing(null);
@@ -448,6 +473,18 @@ export default function SuperadminUsersPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreUsers ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
 

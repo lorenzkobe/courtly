@@ -15,7 +15,10 @@ export type EmitNotificationInput = {
 };
 
 export interface NotificationRepository {
-  listForUser(userId: string): Promise<NotificationsListResponse>;
+  listForUser(
+    userId: string,
+    options?: { offset?: number; limit?: number },
+  ): Promise<NotificationsListResponse>;
   markRead(
     notificationId: string,
     userId: string,
