@@ -7,7 +7,9 @@ import {
   Calendar,
   Clock,
   ExternalLink,
+  Loader2,
   MapPin,
+  RefreshCcw,
   Star,
   Trash2,
 } from "lucide-react";
@@ -219,6 +221,7 @@ export default function BookingDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const bookingId = params.id;
+  const queryClient = useQueryClient();
   const bookingRealtimeKeys = useMemo(
     () => [["my-booking-detail", bookingId, "with-group"], queryKeys.bookings.all()],
     [bookingId],
@@ -236,6 +239,31 @@ export default function BookingDetailPage() {
       return data;
     },
     enabled: !!bookingId,
+  });
+
+  const reconcilePaymentMut = useMutation({
+    mutationFn: async () => {
+      const { data } = await courtlyApi.bookings.reconcilePayment(bookingId);
+      return data;
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["my-booking-detail", bookingId, "with-group"],
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      if (result.status === "confirmed") {
+        toast.success("Payment verified. Booking confirmed.");
+        return;
+      }
+      if (result.status === "cancelled") {
+        toast.error("Payment could not be applied to this slot. Support may be needed.");
+        return;
+      }
+      toast.message("Payment is still pending.");
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Could not check payment status."));
+    },
   });
   const booking = bookingPayload?.booking;
   const groupMembers = bookingPayload?.group_segments;
@@ -418,6 +446,24 @@ export default function BookingDetailPage() {
                 {formatPhp(sessionTotal)}
               </span>
             </div>
+            {booking.status === "pending_payment" ? (
+              <div className="border-t border-border/60 pt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reconcilePaymentMut.mutate()}
+                  disabled={reconcilePaymentMut.isPending}
+                >
+                  {reconcilePaymentMut.isPending ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Check payment status
+                </Button>
+              </div>
+            ) : null}
 
             {combinedNote ? (
               <div className="border-t border-border/60 pt-4">
