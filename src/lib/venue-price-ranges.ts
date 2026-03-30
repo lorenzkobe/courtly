@@ -1,6 +1,17 @@
 import { formatHourToken, hourFromTime } from "@/lib/booking-range";
 import type { CourtRateWindow } from "@/lib/types/courtly";
 
+function rangeHours(w: Pick<CourtRateWindow, "start" | "end">): { startHour: number; endHour: number } {
+  const startHour = hourFromTime(w.start);
+  let endHour = hourFromTime(w.end);
+  // Allow ranges that end at midnight by interpreting 00:00 as 24:00 (end of same day)
+  // when the start is later than the end (e.g. 21:00 -> 00:00).
+  if (endHour === 0 && startHour > 0) {
+    endHour = 24;
+  }
+  return { startHour, endHour };
+}
+
 /** Parse API body `hourly_rate_windows` (or legacy-shaped items) into typed ranges. */
 export function parseRateWindowsFromUnknown(raw: unknown): CourtRateWindow[] {
   if (!Array.isArray(raw)) return [];
@@ -24,11 +35,10 @@ export function parseRateWindowsFromUnknown(raw: unknown): CourtRateWindow[] {
 
 /** Half-open [start, end) in whole hours; overlap if some hour start is in both. */
 export function rateWindowsOverlap(a: CourtRateWindow, b: CourtRateWindow): boolean {
-  const as = hourFromTime(a.start);
-  const ae = hourFromTime(a.end);
-  const bs = hourFromTime(b.start);
-  const be = hourFromTime(b.end);
-  if (as >= ae || bs >= be) return true;
+  const { startHour: as, endHour: ae } = rangeHours(a);
+  const { startHour: bs, endHour: be } = rangeHours(b);
+  // Invalid windows should be rejected by structural validation, not treated as overlapping.
+  if (as >= ae || bs >= be) return false;
   return as < be && bs < ae;
 }
 
@@ -38,23 +48,26 @@ export function validateVenuePriceRanges(
   if (!ranges.length) {
     return { ok: false, error: "Add at least one price range." };
   }
-  for (let i = 0; i < ranges.length; i++) {
-    const w = ranges[i]!;
+  // First validate each window structurally so overlap checks don't mask the real error.
+  for (const w of ranges) {
     if (!w.start?.trim() || !w.end?.trim()) {
       return { ok: false, error: "Each range needs a start and end time." };
     }
-    const sh = hourFromTime(w.start);
-    const eh = hourFromTime(w.end);
+    const { startHour: sh, endHour: eh } = rangeHours(w);
     if (!Number.isFinite(sh) || !Number.isFinite(eh) || sh >= eh) {
       return {
         ok: false,
         error:
-          "Each range must end after start on the same calendar day (hourly slots only; split overnight into separate ranges if needed).",
+          "Each range must end after start on the same calendar day (hourly slots only). Midnight (12:00 AM) is allowed as an end time.",
       };
     }
     if (w.hourly_rate <= 0 || !Number.isFinite(w.hourly_rate)) {
       return { ok: false, error: "Each range needs a positive price per hour." };
     }
+  }
+  // Then check overlaps (half-open intervals; touching endpoints is allowed).
+  for (let i = 0; i < ranges.length; i++) {
+    const w = ranges[i]!;
     for (let comparisonIndex = i + 1; comparisonIndex < ranges.length; comparisonIndex++) {
       if (rateWindowsOverlap(w, ranges[comparisonIndex]!)) {
         return {
@@ -71,11 +84,11 @@ export function validateVenuePriceRanges(
 export function bookableHourTokensFromRanges(ranges: CourtRateWindow[]): string[] {
   const set = new Set<string>();
   for (const w of ranges) {
-    const sh = hourFromTime(w.start);
-    const eh = hourFromTime(w.end);
+    const { startHour: sh, endHour: eh } = rangeHours(w);
     if (!Number.isFinite(sh) || !Number.isFinite(eh) || sh >= eh) continue;
     for (let h = sh; h < eh; h++) {
-      set.add(formatHourToken(h));
+      // formatHourToken expects 0-23; ignore 24 sentinel (midnight end).
+      if (h >= 0 && h <= 23) set.add(formatHourToken(h));
     }
   }
   return [...set].sort((a, b) => a.localeCompare(b));
@@ -88,9 +101,14 @@ export function pricingSpanFromRanges(
   if (!ranges.length) return null;
   let minS = ranges[0]!.start;
   let maxE = ranges[0]!.end;
+  let maxEndHour = rangeHours(ranges[0]!).endHour;
   for (const w of ranges) {
     if (w.start.localeCompare(minS) < 0) minS = w.start;
-    if (w.end.localeCompare(maxE) > 0) maxE = w.end;
+    const endHour = rangeHours(w).endHour;
+    if (endHour > maxEndHour) {
+      maxEndHour = endHour;
+      maxE = endHour === 24 ? "24:00" : w.end;
+    }
   }
   return { open: minS, close: maxE };
 }
