@@ -116,7 +116,7 @@ export async function POST(req: Request) {
   const supabase = createSupabaseAdminClient();
   const { data: insertedRows, error: insertError } = await supabase
     .from("bookings")
-    .insert(rows)
+    .insert(rows as never[])
     .select("id, booking_group_id");
   if (insertError || !insertedRows || insertedRows.length === 0) {
     return NextResponse.json({ error: "Failed to create booking hold." }, { status: 500 });
@@ -134,11 +134,13 @@ export async function POST(req: Request) {
   });
   const { error: updateError } = await supabase
     .from("bookings")
-    .update({
-      payment_link_id: link.id,
-      payment_link_url: link.checkout_url,
-      payment_link_created_at: new Date().toISOString(),
-    })
+    .update(
+      {
+        payment_link_id: link.id,
+        payment_link_url: link.checkout_url,
+        payment_link_created_at: new Date().toISOString(),
+      } as never,
+    )
     .eq("booking_group_id", bookingGroupId);
   if (updateError) {
     return NextResponse.json({ error: "Failed to save payment link." }, { status: 500 });

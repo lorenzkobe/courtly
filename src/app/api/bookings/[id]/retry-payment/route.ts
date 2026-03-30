@@ -64,13 +64,15 @@ export async function POST(_: Request, ctx: Ctx) {
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("bookings")
-    .update({
-      payment_link_id: link.id,
-      payment_link_url: link.checkout_url,
-      payment_link_created_at: new Date().toISOString(),
-      payment_attempt_count: nextAttemptCount,
-      payment_failed_at: null,
-    })
+    .update(
+      {
+        payment_link_id: link.id,
+        payment_link_url: link.checkout_url,
+        payment_link_created_at: new Date().toISOString(),
+        payment_attempt_count: nextAttemptCount,
+        payment_failed_at: null,
+      } as never,
+    )
     .eq("status", "pending_payment");
   query = groupId ? query.eq("booking_group_id", groupId) : query.eq("id", booking.id);
   const { error } = await query;

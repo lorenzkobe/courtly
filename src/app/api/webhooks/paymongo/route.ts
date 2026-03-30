@@ -134,7 +134,7 @@ export async function POST(req: Request) {
   if (isPaymentFailureType(event.type)) {
     let failureQuery = supabase
       .from("bookings")
-      .update({ payment_failed_at: nowIso })
+      .update({ payment_failed_at: nowIso } as never)
       .eq("status", "pending_payment");
     failureQuery = groupId
       ? failureQuery.eq("booking_group_id", groupId)
@@ -180,14 +180,16 @@ export async function POST(req: Request) {
       }
       let refundQuery = supabase
         .from("bookings")
-        .update({
-          status: "cancelled",
-          cancel_reason: "payment_timeout",
-          refund_required: !refundSucceeded,
-          refund_attempted_at: nowIso,
-          refunded_at: refundSucceeded ? nowIso : null,
-          payment_reference_id: paymentReferenceId,
-        })
+        .update(
+          {
+            status: "cancelled",
+            cancel_reason: "payment_timeout",
+            refund_required: !refundSucceeded,
+            refund_attempted_at: nowIso,
+            refunded_at: refundSucceeded ? nowIso : null,
+            payment_reference_id: paymentReferenceId,
+          } as never,
+        )
         .eq("status", "pending_payment");
       refundQuery = groupId
         ? refundQuery.eq("booking_group_id", groupId)
@@ -199,13 +201,15 @@ export async function POST(req: Request) {
 
   let confirmQuery = supabase
     .from("bookings")
-    .update({
-      status: "confirmed",
-      paid_at: nowIso,
-      payment_reference_id: paymentReferenceId,
-      refund_required: false,
-      cancel_reason: null,
-    })
+    .update(
+      {
+        status: "confirmed",
+        paid_at: nowIso,
+        payment_reference_id: paymentReferenceId,
+        refund_required: false,
+        cancel_reason: null,
+      } as never,
+    )
     .eq("status", "pending_payment");
   confirmQuery = groupId
     ? confirmQuery.eq("booking_group_id", groupId)
