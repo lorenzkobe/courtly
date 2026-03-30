@@ -119,19 +119,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ignored: true });
   }
   const pending = bookings.filter((row) => row.status === "pending_payment");
-  if (pending.length === 0) {
-    return NextResponse.json({ ok: true, already_processed: true });
-  }
+  const timedOutCancelled = bookings.filter(
+    (row) => row.status === "cancelled" && row.cancel_reason === "payment_timeout",
+  );
 
   const nowIso = new Date().toISOString();
   const paymentReferenceId =
     findFirstStringDeep(event.attributes, "payment_id") ||
     findFirstStringDeep(event.attributes, "id");
   const paymentAmount = findFirstNumberDeep(event.attributes, "amount");
-  const groupId = pending[0]?.booking_group_id ?? null;
   const supabase = createSupabaseAdminClient();
 
   if (isPaymentFailureType(event.type)) {
+    if (pending.length === 0) {
+      return NextResponse.json({ ok: true, already_processed: true });
+    }
+    const groupId = pending[0]?.booking_group_id ?? null;
     let failureQuery = supabase
       .from("bookings")
       .update({ payment_failed_at: nowIso } as never)
@@ -147,10 +150,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
-  const holdActive = isHoldActive(pending[0]?.hold_expires_at);
+  const candidates = [...pending, ...timedOutCancelled];
+  if (candidates.length === 0) {
+    return NextResponse.json({ ok: true, already_processed: true });
+  }
+
+  const groupId = candidates[0]?.booking_group_id ?? null;
+  const holdActive = isHoldActive(candidates[0]?.hold_expires_at);
   if (!holdActive) {
     let conflict = false;
-    for (const row of pending) {
+    for (const row of candidates) {
       const hasConflict = await hasBlockingBookingConflictForCourt(
         row.court_id,
         row.date,
@@ -190,10 +199,10 @@ export async function POST(req: Request) {
             payment_reference_id: paymentReferenceId,
           } as never,
         )
-        .eq("status", "pending_payment");
+        .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
       refundQuery = groupId
         ? refundQuery.eq("booking_group_id", groupId)
-        : refundQuery.eq("id", pending[0]!.id);
+        : refundQuery.eq("id", candidates[0]!.id);
       await refundQuery;
       return NextResponse.json({ ok: true, refunded: refundSucceeded });
     }
@@ -210,13 +219,13 @@ export async function POST(req: Request) {
         cancel_reason: null,
       } as never,
     )
-    .eq("status", "pending_payment");
+    .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
   confirmQuery = groupId
     ? confirmQuery.eq("booking_group_id", groupId)
-    : confirmQuery.eq("id", pending[0]!.id);
+    : confirmQuery.eq("id", candidates[0]!.id);
   const { data: confirmedRows } = await confirmQuery.select("id");
 
-  for (const row of pending) {
+  for (const row of candidates) {
     const wasUpdated = (confirmedRows ?? []).some((item) => (item as { id: string }).id === row.id);
     if (!wasUpdated) continue;
     if (!row.venue_id) continue;

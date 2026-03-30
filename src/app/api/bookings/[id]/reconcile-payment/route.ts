@@ -23,29 +23,57 @@ export async function POST(_: Request, ctx: Ctx) {
   if (booking.user_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (booking.status !== "pending_payment") {
+  const isTimedOutCancelled =
+    booking.status === "cancelled" && (booking.cancel_reason || "").toLowerCase() === "payment_timeout";
+  if (booking.status !== "pending_payment" && !isTimedOutCancelled) {
     return NextResponse.json({ ok: true, status: booking.status });
   }
   if (!booking.payment_link_id) {
-    return NextResponse.json({ ok: true, status: "pending_payment", reconciled: false });
+    return NextResponse.json({ ok: true, status: booking.status, reconciled: false });
   }
 
   const link = await retrievePaymongoLinkStatus({ linkId: booking.payment_link_id });
   const normalizedStatus = (link.status || "").toLowerCase();
   if (normalizedStatus !== "paid") {
-    return NextResponse.json({ ok: true, status: "pending_payment", paid: false });
+    const holdActive = isHoldActive(booking.hold_expires_at);
+    if (holdActive) {
+      return NextResponse.json({ ok: true, status: "pending_payment", paid: false, reconciled: false });
+    }
+
+    if (isTimedOutCancelled) {
+      return NextResponse.json({ ok: true, status: "cancelled", reconciled: true, paid: false });
+    }
+
+    const supabase = createSupabaseAdminClient();
+    let query = supabase
+      .from("bookings")
+      .update(
+        {
+          status: "cancelled",
+          cancel_reason: "payment_timeout",
+        } as never,
+      )
+      .eq("status", "pending_payment");
+    query = booking.booking_group_id
+      ? query.eq("booking_group_id", booking.booking_group_id)
+      : query.eq("id", booking.id);
+    await query;
+
+    return NextResponse.json({ ok: true, status: "cancelled", reconciled: true, paid: false });
   }
 
   const groupId = booking.booking_group_id;
   const related: Booking[] = groupId ? await listBookingsByGroupIdAdmin(groupId) : [booking];
-  const pending = related.filter((row) => row.status === "pending_payment");
-  if (pending.length === 0) {
-    return NextResponse.json({ ok: true, status: "confirmed", reconciled: false });
+  const candidates = related.filter(
+    (row) => row.status === "pending_payment" || (row.status === "cancelled" && row.cancel_reason === "payment_timeout"),
+  );
+  if (candidates.length === 0) {
+    return NextResponse.json({ ok: true, status: booking.status, reconciled: false });
   }
 
   const holdActive = isHoldActive(booking.hold_expires_at);
   if (!holdActive) {
-    for (const row of pending) {
+    for (const row of candidates) {
       const hasConflict = await hasBlockingBookingConflictForCourt(
         row.court_id,
         row.date,
@@ -64,7 +92,7 @@ export async function POST(_: Request, ctx: Ctx) {
               payment_reference_id: link.paymentId ?? null,
             } as never,
           )
-          .eq("status", "pending_payment");
+          .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
         query = groupId ? query.eq("booking_group_id", groupId) : query.eq("id", booking.id);
         await query;
         return NextResponse.json({ ok: true, status: "cancelled", refund_required: true });
@@ -80,9 +108,11 @@ export async function POST(_: Request, ctx: Ctx) {
         status: "confirmed",
         paid_at: new Date().toISOString(),
         payment_reference_id: link.paymentId ?? null,
+        refund_required: false,
+        cancel_reason: null,
       } as never,
     )
-    .eq("status", "pending_payment");
+    .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
   query = groupId ? query.eq("booking_group_id", groupId) : query.eq("id", booking.id);
   await query;
 
