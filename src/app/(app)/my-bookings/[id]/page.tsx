@@ -265,6 +265,14 @@ export default function BookingDetailPage() {
     enabled: !!booking?.court_id,
   });
 
+  const isMyBooking =
+    user &&
+    booking &&
+    booking.player_email?.toLowerCase() === user.email.toLowerCase();
+  const visitCompleted = booking?.status === "completed";
+  const shouldFetchReviews =
+    Boolean(isMyBooking) && Boolean(visitCompleted) && Boolean(court?.venue_id);
+
   const { data: reviewBundle, isLoading: loadingReviews } = useQuery({
     queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
@@ -279,7 +287,7 @@ export default function BookingDetailPage() {
       const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
       return { ...payload, reviews };
     },
-    enabled: !!court?.venue_id,
+    enabled: shouldFetchReviews,
   });
 
   const myReview = useMemo(() => {
@@ -329,18 +337,18 @@ export default function BookingDetailPage() {
 
   const multi = segments.length > 1;
 
-  const isMyBooking =
-    user &&
-    booking.player_email?.toLowerCase() === user.email.toLowerCase();
-  const visitCompleted = booking.status === "completed";
+  const canReviewBooking = Boolean(isMyBooking) && Boolean(visitCompleted);
   const canRate =
-    isMyBooking &&
-    visitCompleted &&
+    canReviewBooking &&
     !loadingReviews &&
     !myReview &&
     booking.court_id;
   const canEditReview = Boolean(
-    isMyBooking && !loadingReviews && myReview && user && myReview.user_id === user.id,
+    canReviewBooking &&
+    !loadingReviews &&
+    myReview &&
+    user &&
+    myReview.user_id === user.id,
   );
 
   return (
