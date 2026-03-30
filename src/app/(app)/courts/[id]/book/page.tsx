@@ -18,6 +18,7 @@ import {
   Heart,
   Loader2,
   MapPin,
+  RefreshCcw,
   Star,
   X,
 } from "lucide-react";
@@ -1641,6 +1642,23 @@ export default function BookCourtPage() {
               >
                 <ExternalLink className="mr-2 h-4 w-4" />
                 Open payment link
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  if (!paymentOverlay?.booking_id) return;
+                  void reconcilePayment.mutateAsync(paymentOverlay.booking_id);
+                }}
+                disabled={reconcilePayment.isPending}
+              >
+                {reconcilePayment.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                )}
+                Check payment status
               </Button>
               <Button type="button" variant="outline" className="w-full" onClick={copyPaymentLink}>
                 <Copy className="mr-2 h-4 w-4" />
