@@ -1,8 +1,8 @@
-# Hourly Booking Completion Job
+# Booking completion job (scheduled cleanup)
 
 ## What it does
 
-- Runs hourly and marks eligible `confirmed` bookings as `completed`.
+- Runs on a schedule and marks eligible `confirmed` bookings as `completed` (idempotent; each run processes anything whose end time has passed in Manila).
 - Uses `Asia/Manila` time.
 - Handles split/group bookings (`booking_group_id`) as one session:
   - completes only after the latest segment has ended.
@@ -10,8 +10,9 @@
 
 ## Scheduler
 
-- Vercel Cron schedule is defined in `vercel.json`:
-  - `0 * * * *` -> `/api/internal/jobs/bookings/complete-hourly`
+- Vercel Cron schedule is defined in `vercel.json` (Vercel uses **UTC**; Hobby projects allow **at most one run per day**):
+  - `0 18 * * *` → once daily at 18:00 UTC (same instant as 02:00 `Asia/Manila`) → `/api/internal/jobs/bookings/complete-hourly`
+- On **Pro**, you can switch back to an hourly expression (e.g. `0 * * * *`) if you want completions closer to slot end times.
 
 ## Required environment variable
 
