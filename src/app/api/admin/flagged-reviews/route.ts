@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isSuperadmin } from "@/lib/auth/management";
-import { listBookings, listCourtReviews, listCourts, listVenues } from "@/lib/data/courtly-db";
+import {
+  listBookingsByIds,
+  listCourtsByIds,
+  listFlaggedCourtReviews,
+  listVenuesByIds,
+} from "@/lib/data/courtly-db";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -9,14 +14,15 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [reviews, bookings, courts, venues] = await Promise.all([
-    listCourtReviews(),
-    listBookings(),
-    listCourts(),
-    listVenues(),
+  const reviews = await listFlaggedCourtReviews();
+  const bookingIds = [...new Set(reviews.map((review) => review.booking_id).filter(Boolean))];
+  const bookings = await listBookingsByIds(bookingIds);
+  const courtIds = [...new Set(bookings.map((booking) => booking.court_id).filter(Boolean))];
+  const [courts, venues] = await Promise.all([
+    listCourtsByIds(courtIds),
+    listVenuesByIds([...new Set(reviews.map((review) => review.venue_id))]),
   ]);
   const flagged = reviews
-    .filter((review) => review.flagged)
     .map((review) => {
       const booking = bookings.find((row) => row.id === review.booking_id);
       const court = booking

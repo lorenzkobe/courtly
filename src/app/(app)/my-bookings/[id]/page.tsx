@@ -226,13 +226,14 @@ export default function BookingDetailPage() {
   const { data: bookingPayload, isLoading: loadingBooking } = useQuery({
     queryKey: ["my-booking-detail", bookingId, "with-group"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.getWithGroup(bookingId);
+      const { data } = await courtlyApi.bookings.getDetailContext(bookingId);
       return data;
     },
     enabled: !!bookingId,
   });
   const booking = bookingPayload?.booking;
   const groupMembers = bookingPayload?.group_segments;
+  const court = bookingPayload?.court;
 
   const segments = useMemo((): Booking[] => {
     if (!booking) return [];
@@ -256,15 +257,6 @@ export default function BookingDetailPage() {
     [segments],
   );
 
-  const { data: court, isLoading: loadingCourt } = useQuery({
-    queryKey: queryKeys.courts.detail(booking?.court_id),
-    queryFn: async () => {
-      const { data } = await courtlyApi.courts.get(booking!.court_id);
-      return data;
-    },
-    enabled: !!booking?.court_id,
-  });
-
   const isMyBooking =
     user &&
     booking &&
@@ -273,33 +265,20 @@ export default function BookingDetailPage() {
   const shouldFetchReviews =
     Boolean(isMyBooking) && Boolean(visitCompleted) && Boolean(court?.venue_id);
 
-  const { data: reviewBundle, isLoading: loadingReviews } = useQuery({
-    queryKey: queryKeys.reviews.venue(court?.venue_id),
-    queryFn: async () => {
-      const { data: payload } = await courtlyApi.venueReviews.bundle(
-        court!.venue_id,
-      );
-      if (payload == null)
-        return { court: undefined, reviews: [] as CourtReview[] };
-      if (Array.isArray(payload)) {
-        return { court: undefined, reviews: payload };
-      }
-      const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
-      return { ...payload, reviews };
-    },
-    enabled: shouldFetchReviews,
-  });
+  const reviews = useMemo(
+    () => (shouldFetchReviews ? (bookingPayload?.reviews ?? []) : []),
+    [shouldFetchReviews, bookingPayload?.reviews],
+  );
+  const loadingReviews = loadingBooking && shouldFetchReviews;
 
   const myReview = useMemo(() => {
-    if (!reviewBundle?.reviews || !bookingId) return undefined;
-    return reviewBundle.reviews.find(
+    if (!reviews || !bookingId) return undefined;
+    return reviews.find(
       (review) => review.booking_id === bookingId,
     );
-  }, [reviewBundle, bookingId]);
+  }, [reviews, bookingId]);
 
-  const loading =
-    loadingBooking ||
-    (booking?.court_id && loadingCourt);
+  const loading = loadingBooking;
 
   const hasMapPin =
     court &&

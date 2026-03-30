@@ -82,7 +82,6 @@ import type {
   Booking,
   Court,
   CourtClosure,
-  CourtReview,
   VenueClosure,
 } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
@@ -268,22 +267,11 @@ export default function BookCourtPage() {
     setActiveCourtId(paramCourtId);
   }, [paramCourtId]);
 
-  const { data: courtContext, isLoading } = useQuery({
-    queryKey: queryKeys.courts.detail(activeCourtId),
-    queryFn: async () => {
-      const { data } = await courtlyApi.courts.getWithContext(activeCourtId);
-      return data;
-    },
-    enabled: !!activeCourtId,
-    staleTime: 60_000,
-  });
-  const court = courtContext?.court;
-  const establishmentCourts = courtContext?.sibling_courts ?? [];
-
   const dateIso = format(selectedDate, "yyyy-MM-dd");
+  const bookingSurfaceKey = queryKeys.bookingSurface.courtDay(activeCourtId, dateIso);
   const bookingRealtimeKeys = useMemo(
-    () => [queryKeys.availability.courtDay(activeCourtId, dateIso)],
-    [activeCourtId, dateIso],
+    () => [bookingSurfaceKey],
+    [bookingSurfaceKey],
   );
   useBookingsRealtime({
     filter: activeCourtId ? `court_id=eq.${activeCourtId}` : null,
@@ -291,26 +279,25 @@ export default function BookCourtPage() {
     queryKeysToInvalidate: bookingRealtimeKeys,
   });
 
-  const {
-    data: dayAvailability,
-    isLoading: isLoadingDayAvailability,
-    isFetching: isFetchingDayAvailability,
-  } = useQuery({
-    queryKey: queryKeys.availability.courtDay(activeCourtId, dateIso),
+  const { data: bookingSurface, isLoading: isLoadingBookingSurface } = useQuery({
+    queryKey: bookingSurfaceKey,
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.availability(activeCourtId, {
+      const { data } = await courtlyApi.courts.bookingSurface(activeCourtId, {
         date: dateIso,
       });
       return data;
     },
     enabled: !!activeCourtId,
-    staleTime: 20_000,
+    staleTime: 15_000,
   });
-  const existingBookings = dayAvailability?.bookings ?? EMPTY_BOOKINGS;
-  const dayClosures = dayAvailability?.court_closures ?? EMPTY_COURT_CLOSURES;
+  const court = bookingSurface?.court;
+  const establishmentCourts = bookingSurface?.sibling_courts ?? [];
+  const existingBookings = bookingSurface?.availability.bookings ?? EMPTY_BOOKINGS;
+  const dayClosures = bookingSurface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
   const venueDayClosures =
-    dayAvailability?.venue_closures ?? EMPTY_VENUE_CLOSURES;
-  const isHoursLoading = isLoadingDayAvailability || isFetchingDayAvailability;
+    bookingSurface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
+  const isHoursLoading = isLoadingBookingSurface;
+  const isLoading = isLoadingBookingSurface;
 
   const bookingOccupied = useMemo(
     () => occupiedHourStarts(existingBookings),
@@ -337,23 +324,8 @@ export default function BookCourtPage() {
     });
   }, [occupied]);
 
-  const { data: reviewBundle, isLoading: isLoadingReviews } = useQuery({
-    queryKey: queryKeys.reviews.venue(court?.venue_id),
-    queryFn: async () => {
-      const { data: payload } = await courtlyApi.venueReviews.bundle(court!.venue_id);
-      if (payload == null) {
-        return { court: undefined, reviews: [] as CourtReview[] };
-      }
-      if (Array.isArray(payload)) {
-        return { court: undefined, reviews: payload };
-      }
-      const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
-      return { ...payload, reviews };
-    },
-    enabled: !!court?.venue_id,
-    staleTime: 60_000,
-  });
-  const courtReviews = reviewBundle?.reviews ?? [];
+  const courtReviews = bookingSurface?.reviews ?? [];
+  const isLoadingReviews = isLoadingBookingSurface;
 
   const galleryUrls = useMemo(
     () => (court ? courtGalleryUrls(court) : []),
@@ -438,10 +410,7 @@ export default function BookCourtPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.reviews.venue(court?.venue_id),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.courts.detail(activeCourtId),
+        queryKey: bookingSurfaceKey,
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
       toast.success("Review removed");
@@ -457,7 +426,7 @@ export default function BookCourtPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.reviews.venue(court?.venue_id),
+        queryKey: bookingSurfaceKey,
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.reviews.flagged() });
       setFlagReviewId(null);
@@ -482,10 +451,7 @@ export default function BookCourtPage() {
         queryKey: queryKeys.bookings.my(user?.email, court?.sport),
       });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.availability.courtDay(activeCourtId, dateIso),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.courts.detail(activeCourtId),
+        queryKey: bookingSurfaceKey,
       });
       setBlockedWarningOpen(false);
       setSummaryOpen(false);

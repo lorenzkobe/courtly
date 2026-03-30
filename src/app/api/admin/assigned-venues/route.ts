@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import type { AdminAssignedVenueSummary } from "@/lib/api/courtly-client";
 import {
-  listCourts,
-  listVenueAdminAssignments,
-  listVenues,
+  listCourtsDirectory,
+  listVenueAdminAssignmentsByAdminUser,
+  listVenuesByIds,
 } from "@/lib/data/courtly-db";
 
 /**
@@ -17,28 +17,18 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [venues, assignments, courts] = await Promise.all([
-    listVenues(),
-    listVenueAdminAssignments(),
-    listCourts(),
+  const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+  const assignedVenueIds = [...new Set(assignments.map((row) => row.venue_id))];
+  const [venues, courts] = await Promise.all([
+    listVenuesByIds(assignedVenueIds),
+    listCourtsDirectory({ venueIds: assignedVenueIds }),
   ]);
-
-  const assignedVenueIds = new Set(
-    assignments
-      .filter((row) => row.admin_user_id === user.id)
-      .map((row) => row.venue_id),
-  );
-
   const countsByVenue = new Map<string, number>();
   for (const court of courts) {
-    countsByVenue.set(
-      court.venue_id,
-      (countsByVenue.get(court.venue_id) ?? 0) + 1,
-    );
+    countsByVenue.set(court.venue_id, (countsByVenue.get(court.venue_id) ?? 0) + 1);
   }
 
   const payload: AdminAssignedVenueSummary[] = venues
-    .filter((venue) => assignedVenueIds.has(venue.id))
     .map((venue) => ({
       id: venue.id,
       name: venue.name,

@@ -1,7 +1,10 @@
 import { http } from "@/lib/http-client";
 import type {
+  AdminVenueWorkspaceResponse,
   Booking,
+  BookingDetailContextResponse,
   BookingDetailGroupResponse,
+  CourtBookingSurfaceResponse,
   CourtDayAvailability,
   CourtDetailContextResponse,
   Court,
@@ -12,6 +15,7 @@ import type {
   OpenPlaySession,
   RevenueSummaryResponse,
   SessionUser,
+  SuperadminDirectoryResponse,
   Tournament,
   TournamentRegistration,
   Venue,
@@ -68,6 +72,10 @@ export const courtlyApi = {
     getWithContext: (id: string) =>
       http.get<CourtDetailContextResponse>(`/api/courts/${id}`, {
         params: { include_context: true },
+      }),
+    bookingSurface: (id: string, params: { date: string }) =>
+      http.get<CourtBookingSurfaceResponse>(`/api/courts/${id}/booking-surface`, {
+        params,
       }),
     create: (data: Partial<Court>) => http.post<Court>("/api/courts", data),
     update: (id: string, data: Partial<Court>) =>
@@ -168,6 +176,10 @@ export const courtlyApi = {
       http.get<BookingDetailGroupResponse>(`/api/bookings/${id}`, {
         params: { include_group: true },
       }),
+    getDetailContext: (id: string) =>
+      http.get<BookingDetailContextResponse>(`/api/bookings/${id}`, {
+        params: { include_group: true, include_context: true },
+      }),
     create: (data: Partial<Booking>) =>
       http.post<Booking>("/api/bookings", data),
     createMany: (items: Partial<Booking>[]) =>
@@ -226,6 +238,25 @@ export const courtlyApi = {
     remove: (id: string) => http.delete(`/api/venues/${id}`),
   },
 
+  adminVenues: {
+    workspace: (venueId: string) =>
+      http.get<AdminVenueWorkspaceResponse>(`/api/admin/venues/${venueId}/workspace`),
+    applyClosures: (
+      venueId: string,
+      body: {
+        date: string;
+        reason: string;
+        note?: string;
+        court_ids: string[];
+        ranges: Array<{ start_time: string; end_time: string }>;
+      },
+    ) => http.post<{ ok: boolean }>(`/api/admin/venues/${venueId}/closures/bulk`, body),
+  },
+
+  superadmin: {
+    directory: () => http.get<SuperadminDirectoryResponse>("/api/superadmin/directory"),
+  },
+
   assignedVenues: {
     list: () =>
       http.get<AdminAssignedVenueSummary[]>("/api/admin/assigned-venues"),
@@ -277,5 +308,13 @@ export const courtlyApi = {
   dashboard: {
     overview: (params?: { sport?: string; date?: string }) =>
       http.get<DashboardOverviewResponse>("/api/dashboard/overview", { params }),
+  },
+
+  me: {
+    bookingsOverview: (params?: { sport?: string }) =>
+      http.get<{
+        bookings: Booking[];
+        registrations: TournamentRegistration[];
+      }>("/api/me/bookings-overview", { params }),
   },
 };

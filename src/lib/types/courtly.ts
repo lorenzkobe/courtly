@@ -295,6 +295,13 @@ export type CourtDayAvailability = {
   venue_closures: VenueClosure[];
 };
 
+export type CourtBookingSurfaceResponse = {
+  court: Court;
+  sibling_courts: Court[];
+  availability: CourtDayAvailability;
+  reviews: CourtReview[];
+};
+
 export type CourtDetailContextResponse = {
   court: Court;
   sibling_courts: Court[];
@@ -303,6 +310,11 @@ export type CourtDetailContextResponse = {
 export type BookingDetailGroupResponse = {
   booking: Booking;
   group_segments: Booking[];
+};
+
+export type BookingDetailContextResponse = BookingDetailGroupResponse & {
+  court?: Court;
+  reviews?: CourtReview[];
 };
 
 export type VenueDetailResponse = {
@@ -315,4 +327,14 @@ export type DashboardOverviewResponse = {
   today_bookings: Booking[];
   tournaments_open: Tournament[];
   open_play_sessions: OpenPlaySession[];
+};
+
+export type AdminVenueWorkspaceResponse = {
+  venue: Venue;
+  courts: Court[];
+};
+
+export type SuperadminDirectoryResponse = {
+  venues: Venue[];
+  managed_users: ManagedUser[];
 };

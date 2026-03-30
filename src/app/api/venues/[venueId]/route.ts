@@ -4,12 +4,13 @@ import { canMutateVenue } from "@/lib/auth/management";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   deleteRow,
+  getVenueById,
+  hasConfirmedBookingsForVenue,
   insertRow,
-  listBookings,
-  listCourts,
-  listManagedUsers,
+  listCourtsByVenue,
+  listManagedUsersByIds,
   listVenueAdminAssignments,
-  listVenues,
+  listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { Venue } from "@/lib/types/courtly";
@@ -52,28 +53,21 @@ type Ctx = { params: Promise<{ venueId: string }> };
 export async function GET(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId } = await ctx.params;
-  const assignments = await listVenueAdminAssignments();
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   const canRead = !!user && canMutateVenue(user, venueId, assignments);
   if (!canRead) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const [venues, courts, managedUsers] = await Promise.all([
-    listVenues(),
-    listCourts(),
-    listManagedUsers(),
+  const [venue, courts, managedUsers] = await Promise.all([
+    getVenueById(venueId),
+    listCourtsByVenue(venueId),
+    listManagedUsersByIds(assignments.map((row) => row.admin_user_id)),
   ]);
-  const venue = venues.find((row) => row.id === venueId);
   const detail = venue
     ? {
         venue,
-        courts: courts.filter((court) => court.venue_id === venueId),
-        admins: managedUsers.filter((managedUser) =>
-          assignments.some(
-            (assignment) =>
-              assignment.venue_id === venueId &&
-              assignment.admin_user_id === managedUser.id,
-          ),
-        ),
+        courts,
+        admins: managedUsers,
       }
     : null;
   if (!detail) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -88,19 +82,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!canWrite) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const venues = await listVenues();
-  const cur = venues.find((venue) => venue.id === venueId);
+  const cur = await getVenueById(venueId);
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const patch = (await req.json()) as Record<string, unknown> & {
     initial_admin_user_id?: string;
   };
   if (patch.status === "closed") {
-    const [courts, bookings] = await Promise.all([listCourts(), listBookings()]);
-    const courtIds = new Set(courts.filter((court) => court.venue_id === venueId).map((court) => court.id));
-    const hasConfirmed = bookings.some(
-      (booking) => courtIds.has(booking.court_id) && booking.status === "confirmed",
-    );
+    const hasConfirmed = await hasConfirmedBookingsForVenue(venueId);
     if (hasConfirmed) {
       return NextResponse.json(
         {
@@ -161,7 +150,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const supabase = await createSupabaseServerClient();
     await supabase.from("venue_admin_assignments").delete().eq("venue_id", venueId);
     if (rawId) {
-      const managedUsers = await listManagedUsers();
+      const managedUsers = await listManagedUsersByIds([rawId]);
       const adminUser = managedUsers.find(
         (managedUser) => managedUser.id === rawId && managedUser.role === "admin",
       );
@@ -187,19 +176,14 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { venueId } = await ctx.params;
-  const [venues, courts, bookings] = await Promise.all([
-    listVenues(),
-    listCourts(),
-    listBookings(),
+  const [venue, courtsAtVenue, hasActiveBookings] = await Promise.all([
+    getVenueById(venueId),
+    listCourtsByVenue(venueId),
+    hasConfirmedBookingsForVenue(venueId),
   ]);
-  if (!venues.some((venue) => venue.id === venueId)) {
+  if (!venue) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const venueCourtIds = new Set(courts.filter((court) => court.venue_id === venueId).map((court) => court.id));
-  const hasActiveBookings = bookings.some(
-    (booking) =>
-      venueCourtIds.has(booking.court_id) && booking.status === "confirmed",
-  );
   if (hasActiveBookings) {
     return NextResponse.json(
       {
@@ -210,7 +194,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     );
   }
 
-  const linked = courts.some((court) => court.venue_id === venueId);
+  const linked = courtsAtVenue.length > 0;
   if (linked) {
     return NextResponse.json(
       {

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import type { ManagedUser } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import {
@@ -113,18 +114,22 @@ export default function SuperadminUsersPage() {
   const [sortBy, setSortBy] = useState<UserSort>("name_asc");
 
   const {
-    data: users = [],
+    data: directory,
     isLoading,
     isError,
     error,
     refetch,
   } = useQuery({
-    queryKey: ["managed-users"],
+    queryKey: queryKeys.superadmin.directory(),
     queryFn: async () => {
-      const { data } = await courtlyApi.managedUsers.list();
+      const { data } = await courtlyApi.superadmin.directory();
       return data;
     },
   });
+  const users = useMemo(
+    () => directory?.managed_users ?? [],
+    [directory?.managed_users],
+  );
 
   const listErrorMessage = isAxiosError(error)
     ? (error.response?.data as { error?: string; detail?: string })?.error ??
@@ -133,13 +138,7 @@ export default function SuperadminUsersPage() {
       ? error.message
       : "Could not load users.";
 
-  const { data: accounts = [] } = useQuery({
-    queryKey: ["venues"],
-    queryFn: async () => {
-      const { data } = await courtlyApi.venues.list();
-      return data;
-    },
-  });
+  const accounts = directory?.venues ?? [];
 
   const visibleUsers = useMemo(() => {
     let list = [...users];
@@ -195,7 +194,7 @@ export default function SuperadminUsersPage() {
       return { mode: "create" as const };
     },
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
       if (result.mode === "create") {
         toast.success(
           "Invitation sent. The user will get an email with a link to set their password.",
@@ -221,6 +220,7 @@ export default function SuperadminUsersPage() {
       return data;
     },
     onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
       if (data.emailed) {
         toast.success(data.message ?? "Invitation sent.");
         return;
@@ -247,7 +247,7 @@ export default function SuperadminUsersPage() {
       await courtlyApi.managedUsers.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
       toast.success("User removed");
       setDialogOpen(false);
       setEditing(null);

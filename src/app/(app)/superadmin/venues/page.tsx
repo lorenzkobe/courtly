@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
 import type { ManagedUser, Venue } from "@/lib/types/courtly";
@@ -82,21 +83,15 @@ export default function SuperadminVenuesPage() {
   const [form, setForm] = useState(emptyForm);
   const [confirmRemoveVenueId, setConfirmRemoveVenueId] = useState<string | null>(null);
 
-  const { data: venues = [], isLoading } = useQuery({
-    queryKey: ["venues"],
+  const { data: directory, isLoading } = useQuery({
+    queryKey: queryKeys.superadmin.directory(),
     queryFn: async () => {
-      const { data } = await courtlyApi.venues.list();
+      const { data } = await courtlyApi.superadmin.directory();
       return data;
     },
   });
-
-  const { data: managedUsers = [] } = useQuery({
-    queryKey: ["managed-users"],
-    queryFn: async () => {
-      const { data } = await courtlyApi.managedUsers.list();
-      return data;
-    },
-  });
+  const venues = directory?.venues ?? [];
+  const managedUsers = directory?.managed_users ?? [];
 
   const adminOptions = managedUsers.filter(
     (managedUser) => managedUser.role === "admin",
@@ -153,8 +148,7 @@ export default function SuperadminVenuesPage() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["venues"] });
-      void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
       toast.success(editing ? "Venue updated" : "Venue created");
       setDialogOpen(false);
       setEditing(null);
@@ -172,8 +166,7 @@ export default function SuperadminVenuesPage() {
       await courtlyApi.venues.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["venues"] });
-      void queryClient.invalidateQueries({ queryKey: ["managed-users"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.directory() });
       toast.success("Venue removed");
       setDialogOpen(false);
       setEditing(null);

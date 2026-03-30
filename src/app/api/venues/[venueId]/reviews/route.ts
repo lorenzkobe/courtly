@@ -1,27 +1,26 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
+  getVenueById,
   getBookingById,
   hasReviewForBooking,
   insertRow,
   listCourtReviewsByVenue,
   listCourtsByVenue,
-  listVenues,
 } from "@/lib/data/courtly-db";
 import { emitReviewCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
-import { withVenueHydration } from "@/lib/court-response";
+import { reviewSummaryForVenue } from "@/lib/review-summary";
 import type { CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { venueId } = await ctx.params;
-  const [venues, courtsAtVenue, reviews] = await Promise.all([
-    listVenues(),
+  const [venue, courtsAtVenue, reviews] = await Promise.all([
+    getVenueById(venueId),
     listCourtsByVenue(venueId),
     listCourtReviewsByVenue(venueId),
   ]);
-  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const displayCourt = courtsAtVenue[0];
@@ -37,7 +36,10 @@ export async function GET(_req: Request, ctx: Ctx) {
   );
 
   return NextResponse.json({
-    court: withVenueHydration(displayCourt, venues, reviews),
+    court: {
+      ...displayCourt,
+      review_summary: reviewSummaryForVenue(venueId, reviews),
+    },
     reviews: list,
   });
 }
@@ -49,10 +51,7 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   const { venueId } = await ctx.params;
-  const [venues] = await Promise.all([
-    listVenues(),
-  ]);
-  const venue = venues.find((row) => row.id === venueId);
+  const venue = await getVenueById(venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as {

@@ -4,6 +4,7 @@ import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type {
   Booking,
   Court,
+  CourtSport,
   CourtClosure,
   CourtReview,
   ManagedUser,
@@ -149,6 +150,41 @@ export async function listVenues(): Promise<Venue[]> {
   });
 }
 
+export async function listVenuesByIds(venueIds: string[]): Promise<Venue[]> {
+  if (venueIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venues")
+    .select("*")
+    .in("id", venueIds);
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const v = row as Venue;
+    return {
+      ...v,
+      hourly_rate_windows: v.hourly_rate_windows ?? [],
+      created_at: toIsoString((row as { created_at: string | null }).created_at),
+    };
+  });
+}
+
+export async function getVenueById(venueId: string): Promise<Venue | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venues")
+    .select("*")
+    .eq("id", venueId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const v = data as Venue;
+  return {
+    ...v,
+    hourly_rate_windows: v.hourly_rate_windows ?? [],
+    created_at: toIsoString((data as { created_at: string | null }).created_at),
+  };
+}
+
 export async function listManagedUsers(): Promise<ManagedUser[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -156,6 +192,33 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
     .select(
       "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
     );
+  if (error) throw error;
+  const users = (data ?? []) as Array<{
+    id: string;
+    full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    birthdate: string | null;
+    mobile_number: string | null;
+    role: ManagedUser["role"];
+    is_active: boolean;
+    created_at: string;
+  }>;
+  return users.map((user) => ({
+    ...user,
+    email: "",
+  }));
+}
+
+export async function listManagedUsersByIds(userIds: string[]): Promise<ManagedUser[]> {
+  if (userIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
+    )
+    .in("id", userIds);
   if (error) throw error;
   const users = (data ?? []) as Array<{
     id: string;
@@ -193,6 +256,18 @@ export async function listVenueAdminAssignmentsByAdminUser(
   return (data ?? []) as VenueAdminAssignment[];
 }
 
+export async function listVenueAdminAssignmentsByVenue(
+  venueId: string,
+): Promise<VenueAdminAssignment[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venue_admin_assignments")
+    .select("*")
+    .eq("venue_id", venueId);
+  if (error) throw error;
+  return (data ?? []) as VenueAdminAssignment[];
+}
+
 export async function listCourts(): Promise<Court[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -219,6 +294,56 @@ export async function listCourtsByVenue(venueId: string): Promise<Court[]> {
     .from("courts")
     .select("*, venues(*)")
     .eq("venue_id", venueId);
+  if (error) throw error;
+  return (data ?? []).map(mapCourtRow);
+}
+
+type ListCourtsDirectoryParams = {
+  status?: Court["status"];
+  sport?: CourtSport;
+  venueStatus?: Venue["status"];
+  venueIds?: string[];
+  courtIds?: string[];
+};
+
+/**
+ * Scoped directory query with venue join filters (sport, venue status, ids).
+ */
+export async function listCourtsDirectory(
+  params: ListCourtsDirectoryParams,
+): Promise<Court[]> {
+  if (params.courtIds && params.courtIds.length === 0) return [];
+  if (params.venueIds && params.venueIds.length === 0) return [];
+
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from("courts").select("*, venues!inner(*)");
+  if (params.status) {
+    query = query.eq("status", params.status);
+  }
+  if (params.sport) {
+    query = query.eq("venues.sport", params.sport);
+  }
+  if (params.venueStatus) {
+    query = query.eq("venues.status", params.venueStatus);
+  }
+  if (params.venueIds && params.venueIds.length > 0) {
+    query = query.in("venue_id", params.venueIds);
+  }
+  if (params.courtIds && params.courtIds.length > 0) {
+    query = query.in("id", params.courtIds);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapCourtRow);
+}
+
+export async function listCourtsByIds(courtIds: string[]): Promise<Court[]> {
+  if (courtIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("courts")
+    .select("*, venues(*)")
+    .in("id", courtIds);
   if (error) throw error;
   return (data ?? []).map(mapCourtRow);
 }
@@ -275,6 +400,38 @@ export async function listBookingsFiltered(
   return (data ?? []).map(mapBookingRow);
 }
 
+type ListRevenueBookingsParams = {
+  courtIds?: string[];
+  dateFrom?: string | null;
+  dateTo?: string | null;
+};
+
+/** Returns only billable statuses for revenue pages. */
+export async function listRevenueBookings(
+  params: ListRevenueBookingsParams,
+): Promise<Booking[]> {
+  if (params.courtIds && params.courtIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .in("status", ["confirmed", "completed"]);
+
+  if (params.courtIds && params.courtIds.length > 0) {
+    query = query.in("court_id", params.courtIds);
+  }
+  if (params.dateFrom) {
+    query = query.gte("date", params.dateFrom);
+  }
+  if (params.dateTo) {
+    query = query.lte("date", params.dateTo);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
 export async function listCourtIdsByVenueIds(venueIds: string[]): Promise<string[]> {
   if (venueIds.length === 0) return [];
   const supabase = await createSupabaseServerClient();
@@ -298,6 +455,36 @@ export async function listBookingsByCourtOnDate(
     .eq("date", date);
   if (error) throw error;
   return (data ?? []).map(mapBookingRow);
+}
+
+export async function listBookingsByIds(bookingIds: string[]): Promise<Booking[]> {
+  if (bookingIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .in("id", bookingIds);
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
+export async function listBookingsByPlayerOnDate(
+  playerEmail: string,
+  date: string,
+  sport?: CourtSport | null,
+): Promise<Booking[]> {
+  const supabase = await createSupabaseServerClient();
+  const query = supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .eq("player_email", playerEmail)
+    .eq("date", date)
+    .order("created_at", { ascending: false });
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = (data ?? []).map(mapBookingRow);
+  if (!sport) return rows;
+  return rows.filter((booking) => booking.sport === sport);
 }
 
 export async function getBookingById(id: string): Promise<Booking | null> {
@@ -364,6 +551,24 @@ export async function hasConfirmedBookingConflictForVenue(
     .eq("status", "confirmed")
     .lt("start_time", endTime)
     .gt("end_time", startTime);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+export async function hasConfirmedBookingsForVenue(venueId: string): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  const { data: courtRows, error: courtError } = await supabase
+    .from("courts")
+    .select("id")
+    .eq("venue_id", venueId);
+  if (courtError) throw courtError;
+  const courtIds = (courtRows ?? []).map((row) => (row as { id: string }).id);
+  if (courtIds.length === 0) return false;
+  const { count, error } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .in("court_id", courtIds)
+    .eq("status", "confirmed");
   if (error) throw error;
   return (count ?? 0) > 0;
 }
@@ -496,6 +701,51 @@ export async function listCourtReviewsByVenue(venueId: string): Promise<CourtRev
   }));
 }
 
+export async function listFlaggedCourtReviews(): Promise<CourtReview[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("court_reviews")
+    .select("*")
+    .eq("flagged", true)
+    .order("flagged_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...(row as CourtReview),
+    booking_id: (row as { booking_id: string }).booking_id,
+    created_at: toIsoString((row as { created_at: string | null }).created_at),
+    updated_at: toIsoString((row as { updated_at: string | null }).updated_at),
+    flagged_at: (row as { flagged_at?: string | null }).flagged_at ?? undefined,
+  }));
+}
+
+export async function listReviewSummaryByVenueIds(
+  venueIds: string[],
+): Promise<Map<string, { average_rating: number; review_count: number }>> {
+  const out = new Map<string, { average_rating: number; review_count: number }>();
+  if (venueIds.length === 0) return out;
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("court_reviews")
+    .select("venue_id, rating")
+    .in("venue_id", venueIds);
+  if (error) throw error;
+
+  const rollups = new Map<string, { sum: number; count: number }>();
+  for (const row of (data ?? []) as Array<{ venue_id: string; rating: number }>) {
+    const cur = rollups.get(row.venue_id) ?? { sum: 0, count: 0 };
+    cur.sum += Number(row.rating ?? 0);
+    cur.count += 1;
+    rollups.set(row.venue_id, cur);
+  }
+  for (const [venueId, agg] of rollups) {
+    out.set(venueId, {
+      average_rating: agg.count > 0 ? Number((agg.sum / agg.count).toFixed(1)) : 0,
+      review_count: agg.count,
+    });
+  }
+  return out;
+}
+
 export async function hasReviewForBooking(bookingId: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { count, error } = await supabase
@@ -509,6 +759,28 @@ export async function hasReviewForBooking(bookingId: string): Promise<boolean> {
 export async function listTournaments(): Promise<Tournament[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("tournaments").select("*");
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...(row as Tournament),
+    date: toDateString((row as { date: string | null }).date),
+  }));
+}
+
+export async function listOpenTournaments(
+  sport?: CourtSport | null,
+  limit = 2,
+): Promise<Tournament[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("tournaments")
+    .select("*")
+    .eq("status", "registration_open")
+    .order("date", { ascending: false })
+    .limit(limit);
+  if (sport) {
+    query = query.eq("sport", sport);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => ({
     ...(row as Tournament),
@@ -551,9 +823,50 @@ export async function listTournamentRegistrations(): Promise<TournamentRegistrat
   }));
 }
 
+export async function listTournamentRegistrationsByPlayer(
+  playerEmail: string,
+): Promise<TournamentRegistration[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tournament_registrations")
+    .select("*")
+    .eq("player_email", playerEmail);
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...(row as TournamentRegistration),
+    created_date: toIsoString((row as { created_at: string | null }).created_at),
+  }));
+}
+
 export async function listOpenPlay(): Promise<OpenPlaySession[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("open_play_sessions").select("*");
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...(row as OpenPlaySession),
+    date: toDateString((row as { date: string | null }).date),
+  }));
+}
+
+export async function listOpenPlayByStatus(
+  status: OpenPlaySession["status"],
+  sport?: CourtSport | null,
+  limit?: number,
+): Promise<OpenPlaySession[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("open_play_sessions")
+    .select("*")
+    .eq("status", status)
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true });
+  if (sport) {
+    query = query.eq("sport", sport);
+  }
+  if (typeof limit === "number" && limit > 0) {
+    query = query.limit(limit);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => ({
     ...(row as OpenPlaySession),

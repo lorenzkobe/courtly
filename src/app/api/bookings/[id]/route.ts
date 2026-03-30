@@ -8,6 +8,7 @@ import {
   getBookingById,
   getCourtById,
   listBookingsFiltered,
+  listCourtReviewsByVenue,
   listVenueAdminAssignmentsByAdminUser,
   updateRow,
 } from "@/lib/data/courtly-db";
@@ -67,6 +68,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const courtVenueByCourtId = new Map<string, string>();
   const { searchParams } = new URL(req.url);
   const includeGroup = searchParams.get("include_group") === "true";
+  const includeContext = searchParams.get("include_context") === "true";
   const { id } = await ctx.params;
   const booking = await getBookingById(id);
   if (!booking) {
@@ -81,8 +83,25 @@ export async function GET(req: Request, ctx: Ctx) {
       [hydrateBooking(booking)],
       user,
     );
+    if (!includeContext) {
+      return NextResponse.json(
+        applyPlayerMobileVisibility(enriched ?? hydrateBooking(booking), user),
+      );
+    }
+    const court = await getCourtById(booking.court_id);
+    const reviews = court?.venue_id
+      ? await listCourtReviewsByVenue(court.venue_id)
+      : [];
     return NextResponse.json(
-      applyPlayerMobileVisibility(enriched ?? hydrateBooking(booking), user),
+      {
+        booking: applyPlayerMobileVisibility(
+          enriched ?? hydrateBooking(booking),
+          user,
+        ),
+        group_segments: [applyPlayerMobileVisibility(hydrateBooking(booking), user)],
+        ...(court ? { court } : {}),
+        ...(reviews.length > 0 ? { reviews } : {}),
+      },
     );
   }
 
@@ -104,6 +123,21 @@ export async function GET(req: Request, ctx: Ctx) {
       user,
     );
     const enrichedSegments = await enrichBookingsWithProfileMobile(readable, user);
+    if (!includeContext) {
+      return NextResponse.json({
+        booking: applyPlayerMobileVisibility(
+          enrichedBooking ?? hydrateBooking(booking),
+          user,
+        ),
+        group_segments: enrichedSegments.map((seg) =>
+          applyPlayerMobileVisibility(hydrateBooking(seg), user),
+        ),
+      });
+    }
+    const court = await getCourtById(booking.court_id);
+    const reviews = court?.venue_id
+      ? await listCourtReviewsByVenue(court.venue_id)
+      : [];
     return NextResponse.json({
       booking: applyPlayerMobileVisibility(
         enrichedBooking ?? hydrateBooking(booking),
@@ -112,6 +146,8 @@ export async function GET(req: Request, ctx: Ctx) {
       group_segments: enrichedSegments.map((seg) =>
         applyPlayerMobileVisibility(hydrateBooking(seg), user),
       ),
+      ...(court ? { court } : {}),
+      ...(reviews.length > 0 ? { reviews } : {}),
     });
   }
 
@@ -120,6 +156,21 @@ export async function GET(req: Request, ctx: Ctx) {
     user,
   );
   const enrichedGroupSegments = await enrichBookingsWithProfileMobile(groupSegments, user);
+  if (!includeContext) {
+    return NextResponse.json({
+      booking: applyPlayerMobileVisibility(
+        enrichedBooking ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: enrichedGroupSegments.map((seg) =>
+        applyPlayerMobileVisibility(hydrateBooking(seg), user),
+      ),
+    });
+  }
+  const court = await getCourtById(booking.court_id);
+  const reviews = court?.venue_id
+    ? await listCourtReviewsByVenue(court.venue_id)
+    : [];
   return NextResponse.json({
     booking: applyPlayerMobileVisibility(
       enrichedBooking ?? hydrateBooking(booking),
@@ -128,6 +179,8 @@ export async function GET(req: Request, ctx: Ctx) {
     group_segments: enrichedGroupSegments.map((seg) =>
       applyPlayerMobileVisibility(hydrateBooking(seg), user),
     ),
+    ...(court ? { court } : {}),
+    ...(reviews.length > 0 ? { reviews } : {}),
   });
 }
 

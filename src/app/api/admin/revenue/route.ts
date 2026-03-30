@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { manageableCourtIds } from "@/lib/auth/management";
-import { listBookings, listCourts, listVenueAdminAssignments, listVenues } from "@/lib/data/courtly-db";
+import {
+  listCourtsDirectory,
+  listRevenueBookings,
+  listVenueAdminAssignmentsByAdminUser,
+  listVenues,
+} from "@/lib/data/courtly-db";
 import { formatHourToken, hourFromTime } from "@/lib/booking-range";
 import { hourlyRateForHourStart } from "@/lib/court-pricing";
 import {
-  filterBookingsByDateRange,
   normalizeDateRange,
   parseIsoDateParam,
 } from "@/lib/revenue-filters";
@@ -126,12 +129,7 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const [allVenues, allCourts, allBookings, assignments] = await Promise.all([
-    listVenues(),
-    listCourts(),
-    listBookings(),
-    listVenueAdminAssignments(),
-  ]);
+  const allVenues = await listVenues();
   let dateFrom = parseIsoDateParam(searchParams.get("from"));
   let dateTo = parseIsoDateParam(searchParams.get("to"));
   ({ from: dateFrom, to: dateTo } = normalizeDateRange(dateFrom, dateTo));
@@ -156,12 +154,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
 
-  let courts = [...allCourts];
+  let courts: Court[] = [];
   if (user.role === "admin") {
-    const ids = new Set(
-      manageableCourtIds(user, allCourts, assignments),
-    );
-    courts = courts.filter((court) => ids.has(court.id));
+    const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+    const venueIds = [...new Set(assignments.map((row) => row.venue_id))];
+    courts = await listCourtsDirectory({ venueIds });
+  } else {
+    courts = await listCourtsDirectory({});
   }
 
   if (venueFilter === "unassigned") {
@@ -171,10 +170,12 @@ export async function GET(req: Request) {
   }
 
   const courtIds = new Set(courts.map((court) => court.id));
-  let bookings = allBookings.filter((booking) =>
-    courtIds.has(booking.court_id),
-  );
-  bookings = filterBookingsByDateRange(bookings, dateFrom, dateTo);
+  let bookings = await listRevenueBookings({
+    courtIds: [...courtIds],
+    dateFrom,
+    dateTo,
+  });
+  bookings = bookings.filter((booking) => courtIds.has(booking.court_id));
 
   const byCourtBase = attachVenueNames(aggregateRevenueByCourt(bookings, courts), allVenues);
   const rateBreakdownMap = buildCourtRateBreakdownMap(bookings, courts);

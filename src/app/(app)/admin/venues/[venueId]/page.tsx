@@ -51,6 +51,7 @@ import {
 } from "@/lib/venue-price-ranges";
 import { validateSocialUrl } from "@/lib/social-url";
 import { cn, formatStatusLabel } from "@/lib/utils";
+import { queryKeys } from "@/lib/query/query-keys";
 
 const defaultForm = {
   name: "",
@@ -117,28 +118,17 @@ export default function AdminVenueCourtsPage() {
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
 
-  const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["admin-venues"],
+  const { data: workspace, isLoading } = useQuery({
+    queryKey: queryKeys.admin.venueWorkspace(venueId),
     queryFn: async () => {
-      const { data } = await courtlyApi.courts.list({ manageable: true });
-      return data;
-    },
-  });
-
-  const venueCourts = useMemo(
-    () => courts.filter((court) => court.venue_id === venueId),
-    [courts, venueId],
-  );
-
-  const { data: venueDetail } = useQuery({
-    queryKey: ["venue-detail", venueId],
-    queryFn: async () => {
-      const { data } = await courtlyApi.venues.get(venueId);
+      const { data } = await courtlyApi.adminVenues.workspace(venueId);
       return data;
     },
     enabled: !!venueId,
   });
-  const venue = venueDetail?.venue;
+
+  const venueCourts = workspace?.courts ?? [];
+  const venue = workspace?.venue;
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
 
   const venuePriceRangesValidation = useMemo(
@@ -167,7 +157,7 @@ export default function AdminVenueCourtsPage() {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueWorkspace(venueId) });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success(editing ? "Court updated" : "Court created");
       setOpen(false);
@@ -216,8 +206,7 @@ export default function AdminVenueCourtsPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["venue-detail", venueId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueWorkspace(venueId) });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Venue updated");
       setVenueOpen(false);
@@ -234,7 +223,7 @@ export default function AdminVenueCourtsPage() {
       await courtlyApi.courts.remove(id);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueWorkspace(venueId) });
       void queryClient.invalidateQueries({ queryKey: ["courts"] });
       toast.success("Court deleted");
     },
@@ -277,17 +266,13 @@ export default function AdminVenueCourtsPage() {
         previous = current ?? previous;
       }
 
-      for (const courtId of selectedClosureCourtIds) {
-        for (const range of contiguousRanges) {
-          await courtlyApi.courtClosures.create(courtId, {
-            date,
-            start_time: range.start_time,
-            end_time: range.end_time,
-            reason,
-            note: note || undefined,
-          });
-        }
-      }
+      await courtlyApi.adminVenues.applyClosures(venueId, {
+        date,
+        reason,
+        note: note || undefined,
+        court_ids: selectedClosureCourtIds,
+        ranges: contiguousRanges,
+      });
     },
     onSuccess: () => {
       toast.success("Unavailability applied to selected courts");

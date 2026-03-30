@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { insertRow, listManagedUsers, listVenues } from "@/lib/data/courtly-db";
+import {
+  insertRow,
+  listManagedUsersByIds,
+  listVenues,
+} from "@/lib/data/courtly-db";
 import type { Venue } from "@/lib/types/courtly";
 import { parseVenueMapCoordsForCreate } from "@/lib/venue-map-coords";
 import {
@@ -90,7 +94,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const users = await listManagedUsers();
+  const users = await listManagedUsersByIds([existingAdminId]);
   const assignedAdmin = users.find(
     (managedUser) =>
       managedUser.id === existingAdminId && managedUser.role === "admin",

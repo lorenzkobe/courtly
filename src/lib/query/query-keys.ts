@@ -125,6 +125,17 @@ export const queryKeys = {
   notifications: {
     all: () => ["notifications"] as const,
   },
+  me: {
+    bookingsOverview: (email: NullableString, sport?: NullableString) =>
+      ["me", "bookings-overview", { email: normalized(email), sport: normalized(sport) }] as const,
+  },
+  admin: {
+    venueWorkspace: (venueId: NullableString) =>
+      ["admin", "venue-workspace", normalized(venueId)] as const,
+  },
+  superadmin: {
+    directory: () => ["superadmin", "directory"] as const,
+  },
   closures: {
     court: (courtId: NullableString, date?: NullableString) =>
       [
@@ -143,6 +154,14 @@ export const queryKeys = {
     courtDay: (courtId: NullableString, date: NullableString) =>
       [
         "availability",
+        "court-day",
+        { courtId: normalized(courtId), date: normalized(date) },
+      ] as const,
+  },
+  bookingSurface: {
+    courtDay: (courtId: NullableString, date: NullableString) =>
+      [
+        "booking-surface",
         "court-day",
         { courtId: normalized(courtId), date: normalized(date) },
       ] as const,

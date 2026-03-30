@@ -94,17 +94,21 @@ export default function MyBookingsPage() {
   const { user } = useAuth();
   const selectedSport = useSelectedSport((s) => s.sport);
 
-  const { data: bookings = [], isLoading: loadingBookings } = useQuery({
-    queryKey: queryKeys.bookings.my(user?.email, selectedSport),
+  const { data: overview, isLoading } = useQuery({
+    queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport),
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        player_email: user?.email,
+      const { data } = await courtlyApi.me.bookingsOverview({
         sport: selectedSport,
       });
       return data;
     },
     enabled: !!user?.email,
   });
+  const bookings = useMemo(() => overview?.bookings ?? [], [overview?.bookings]);
+  const registrations = useMemo(
+    () => overview?.registrations ?? [],
+    [overview?.registrations],
+  );
   const bookingsRealtimeKeys = useMemo(() => [queryKeys.bookings.all()], []);
   useBookingsRealtime({
     playerEmail: user?.email,
@@ -138,18 +142,7 @@ export default function MyBookingsPage() {
     return groups;
   }, [bookings, query, sortBy, statusFilter]);
 
-  const { data: registrations = [], isLoading: loadingRegs } = useQuery({
-    queryKey: queryKeys.registrations.my(user?.email),
-    queryFn: async () => {
-      const { data } = await courtlyApi.registrations.list({
-        player_email: user?.email,
-      });
-      return data;
-    },
-    enabled: !!user?.email && tab === "tournaments",
-  });
-
-  const isLoading = tab === "bookings" ? loadingBookings : loadingRegs;
+  const tabLoading = isLoading;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -169,7 +162,7 @@ export default function MyBookingsPage() {
         </TabsList>
       </Tabs>
 
-      {isLoading ? (
+      {tabLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-32 rounded-xl" />

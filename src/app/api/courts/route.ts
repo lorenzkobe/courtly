@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { manageableCourtIds } from "@/lib/auth/management";
 import {
+  getVenueById,
   insertRow,
-  listCourtReviews,
-  listCourts,
-  listVenueAdminAssignments,
-  listVenues,
+  listCourtsDirectory,
+  listReviewSummaryByVenueIds,
+  listVenueAdminAssignmentsByAdminUser,
+  listVenueAdminAssignmentsByVenue,
 } from "@/lib/data/courtly-db";
 import { emitCourtCreatedToSuperadmins } from "@/lib/notifications/emit-from-server";
-import { withVenueHydration } from "@/lib/court-response";
 import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type { Court, CourtSport } from "@/lib/types/courtly";
 
@@ -17,46 +16,39 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
   const manageable = searchParams.get("manageable") === "true";
-  const sport = searchParams.get("sport") as CourtSport | null;
+  const sportRaw = searchParams.get("sport");
+  const sport = sportRaw ? (sportRaw as CourtSport) : undefined;
 
-  const [allCourts, venues, assignments, reviews] = await Promise.all([
-    listCourts(),
-    listVenues(),
-    listVenueAdminAssignments(),
-    listCourtReviews(),
-  ]);
-  let list = [...allCourts];
-
+  let venueIdsForScope: string[] | undefined;
   if (manageable) {
     const user = await readSessionUser();
     if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const ids = new Set(
-      manageableCourtIds(user, list, assignments),
-    );
-    list = list.filter((court) => ids.has(court.id));
-  } else {
-    // Public listings: only active courts under active venues are bookable.
-    list = list.filter(
-      (court) =>
-        court.status === "active" &&
-        venues.find((venue) => venue.id === court.venue_id)?.status === "active",
-    );
+    if (user.role === "admin") {
+      const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+      venueIdsForScope = assignments.map((row) => row.venue_id);
+    }
   }
 
-  if (status) {
-    list = list.filter((court) => court.status === status);
-  }
-
-  if (sport) {
-    list = list.filter(
-      (court) => venues.find((venue) => venue.id === court.venue_id)?.sport === sport,
-    );
-  }
-
+  const list = await listCourtsDirectory({
+    status: (status as Court["status"] | null) ?? (manageable ? undefined : "active"),
+    sport,
+    venueStatus: manageable ? undefined : "active",
+    venueIds: venueIdsForScope,
+  });
+  const summaries = await listReviewSummaryByVenueIds(
+    [...new Set(list.map((court) => court.venue_id))],
+  );
   return NextResponse.json(
-    list.map((court) => withVenueHydration(court, venues, reviews)),
+    list.map((court) => ({
+      ...court,
+      review_summary:
+        summaries.get(court.venue_id) ?? {
+          average_rating: 0,
+          review_count: 0,
+        },
+    })),
   );
 }
 
@@ -75,12 +67,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const [venues, assignments, reviews] = await Promise.all([
-    listVenues(),
-    listVenueAdminAssignments(),
-    listCourtReviews(),
+  const [venue, assignments] = await Promise.all([
+    getVenueById(venue_id),
+    listVenueAdminAssignmentsByVenue(venue_id),
   ]);
-  const venue = venues.find((row) => row.id === venue_id);
   if (!venue) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
@@ -126,5 +116,14 @@ export async function POST(req: Request) {
     courtName: court.name,
     venueName: venue.name,
   });
-  return NextResponse.json(withVenueHydration(persisted, venues, reviews));
+  return NextResponse.json({
+    ...persisted,
+    establishment_name: venue.name,
+    contact_phone: venue.contact_phone,
+    facebook_url: venue.facebook_url,
+    instagram_url: venue.instagram_url,
+    map_latitude: venue.map_latitude,
+    map_longitude: venue.map_longitude,
+    review_summary: { average_rating: 0, review_count: 0 },
+  });
 }
