@@ -173,6 +173,7 @@ export default function AdminBookingsPage() {
       const { data } = await courtlyApi.bookings.list({ manageable: true });
       return data;
     },
+    staleTime: 20_000,
   });
 
   const openFilterDialog = useCallback(() => {
@@ -216,6 +217,7 @@ export default function AdminBookingsPage() {
       return data;
     },
     enabled: !!detailId,
+    staleTime: 15_000,
   });
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;

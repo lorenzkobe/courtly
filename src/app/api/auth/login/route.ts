@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readSessionUser } from "@/lib/auth/cookie-session";
+import { readSessionUserFromAuthUser } from "@/lib/auth/cookie-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     return NextResponse.json(
       { error: "Invalid email or password." },
@@ -25,6 +25,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const user = await readSessionUser();
+  const user = await readSessionUserFromAuthUser(data.user);
   return NextResponse.json({ user });
 }

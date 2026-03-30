@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { canMutateCourt } from "@/lib/auth/management";
 import {
-  listBookings,
-  listCourts,
-  listVenueAdminAssignments,
+  getBookingById,
+  getCourtById,
+  listBookingsFiltered,
+  listVenueAdminAssignmentsByAdminUser,
   updateRow,
 } from "@/lib/data/courtly-db";
 import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
@@ -16,12 +16,12 @@ function hydrateBooking(booking: Booking): Booking {
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function canReadBooking(
+async function canReadBooking(
   user: Awaited<ReturnType<typeof readSessionUser>>,
   booking: Booking,
-  assignments: Awaited<ReturnType<typeof listVenueAdminAssignments>>,
-  courts: Awaited<ReturnType<typeof listCourts>>,
-): boolean {
+  adminVenueIds?: Set<string>,
+  courtVenueByCourtId?: Map<string, string>,
+): Promise<boolean> {
   if (!user) return false;
   if (user.email) {
     const userEmailNormalized = user.email.trim().toLowerCase();
@@ -34,26 +34,41 @@ function canReadBooking(
       return true;
     }
   }
-  const court = courts.find((row) => row.id === booking.court_id);
-  if (court && canMutateCourt(user, court, assignments)) return true;
+  if (user.role === "superadmin") return true;
+  if (user.role === "admin") {
+    const venueIdFromCache = courtVenueByCourtId?.get(booking.court_id);
+    if (venueIdFromCache) {
+      return (adminVenueIds ?? new Set()).has(venueIdFromCache);
+    }
+    const court = await getCourtById(booking.court_id);
+    if (!court) return false;
+    courtVenueByCourtId?.set(booking.court_id, court.venue_id);
+    if (adminVenueIds) return adminVenueIds.has(court.venue_id);
+    const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+    return assignments.some((assignment) => assignment.venue_id === court.venue_id);
+  }
   return false;
 }
 
 export async function GET(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
+  const adminVenueIds =
+    user?.role === "admin"
+      ? new Set(
+        (await listVenueAdminAssignmentsByAdminUser(user.id)).map(
+          (assignment) => assignment.venue_id,
+        ),
+      )
+      : undefined;
+  const courtVenueByCourtId = new Map<string, string>();
   const { searchParams } = new URL(req.url);
   const includeGroup = searchParams.get("include_group") === "true";
   const { id } = await ctx.params;
-  const [bookings, assignments, courts] = await Promise.all([
-    listBookings(),
-    listVenueAdminAssignments(),
-    listCourts(),
-  ]);
-  const booking = bookings.find((row) => row.id === id);
+  const booking = await getBookingById(id);
   if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!canReadBooking(user, booking, assignments, courts)) {
+  if (!(await canReadBooking(user, booking, adminVenueIds, courtVenueByCourtId))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -62,12 +77,23 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const groupSegments = booking.booking_group_id
-    ? bookings
-      .filter((row) => row.booking_group_id === booking.booking_group_id)
-      .filter((row) => canReadBooking(user, row, assignments, courts))
+    ? (await listBookingsFiltered({ bookingGroupId: booking.booking_group_id }))
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
       .map(hydrateBooking)
     : [hydrateBooking(booking)];
+
+  if (booking.booking_group_id) {
+    const readable: Booking[] = [];
+    for (const segment of groupSegments) {
+      if (await canReadBooking(user, segment, adminVenueIds, courtVenueByCourtId)) {
+        readable.push(segment);
+      }
+    }
+    return NextResponse.json({
+      booking: hydrateBooking(booking),
+      group_segments: readable,
+    });
+  }
 
   return NextResponse.json({
     booking: hydrateBooking(booking),
@@ -77,18 +103,21 @@ export async function GET(req: Request, ctx: Ctx) {
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
+  const adminVenueIds =
+    user?.role === "admin"
+      ? new Set(
+        (await listVenueAdminAssignmentsByAdminUser(user.id)).map(
+          (assignment) => assignment.venue_id,
+        ),
+      )
+      : undefined;
   const { id } = await ctx.params;
-  const [bookings, courts, assignments] = await Promise.all([
-    listBookings(),
-    listCourts(),
-    listVenueAdminAssignments(),
-  ]);
-  const booking = bookings.find((row) => row.id === id);
+  const booking = await getBookingById(id);
   if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const court = courts.find((row) => row.id === booking.court_id);
+  const court = await getCourtById(booking.court_id);
   const body = (await req.json()) as Partial<Booking> & {
     admin_note?: string;
     clear_admin_note?: boolean;
@@ -117,7 +146,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
 
-  if (!court || !canMutateCourt(user, court, assignments)) {
+  if (!court) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const canMutate =
+    !!user &&
+    (user.role === "superadmin" ||
+      (user.role === "admin" && !!adminVenueIds?.has(court.venue_id)));
+  if (!canMutate) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

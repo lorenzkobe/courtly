@@ -3,19 +3,17 @@ import type { SessionUser } from "@/lib/types/courtly";
 
 export const SESSION_COOKIE = "courtly-session";
 
-export async function readSessionUser(): Promise<SessionUser | null> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return null;
-  }
+type AuthUserLike = {
+  id: string;
+  email?: string | null;
+};
 
+async function readSessionProfileById(authUser: AuthUserLike): Promise<SessionUser | null> {
+  const supabase = await createSupabaseServerClient();
   const { data: profile } = await supabase
     .from("profiles")
     .select("id, full_name, first_name, last_name, role, is_active")
-    .eq("id", user.id)
+    .eq("id", authUser.id)
     .maybeSingle();
 
   if (!profile || profile.is_active === false) return null;
@@ -37,9 +35,25 @@ export async function readSessionUser(): Promise<SessionUser | null> {
 
   return {
     id: row.id,
-    email: user.email ?? "",
+    email: authUser.email ?? "",
     full_name: displayName,
     role: row.role,
     is_active: row.is_active,
   };
+}
+
+export async function readSessionUserFromAuthUser(
+  authUser: AuthUserLike | null | undefined,
+): Promise<SessionUser | null> {
+  if (!authUser?.id) return null;
+  return readSessionProfileById(authUser);
+}
+
+export async function readSessionUser(): Promise<SessionUser | null> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  return readSessionUserFromAuthUser(user);
 }

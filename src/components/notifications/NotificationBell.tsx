@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Bell, CheckCheck } from "lucide-react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { NOTIFICATIONS_QUERY_KEY } from "@/lib/notifications/query-key";
@@ -84,6 +85,8 @@ export default function NotificationBell() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
+  const [open, setOpen] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
@@ -91,7 +94,7 @@ export default function NotificationBell() {
       const { data: listResponse } = await courtlyApi.notifications.list();
       return listResponse;
     },
-    enabled: Boolean(user),
+    enabled: Boolean(user) && hasOpened,
     staleTime: 15_000,
     // Poll only when realtime is not configured.
     refetchInterval: realtimeOk ? false : 30_000,
@@ -129,7 +132,13 @@ export default function NotificationBell() {
   const live = data?.status === "live";
 
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen && !hasOpened) setHasOpened(true);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"

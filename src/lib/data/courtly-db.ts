@@ -162,6 +162,18 @@ export async function listVenueAdminAssignments(): Promise<VenueAdminAssignment[
   return (data ?? []) as VenueAdminAssignment[];
 }
 
+export async function listVenueAdminAssignmentsByAdminUser(
+  adminUserId: string,
+): Promise<VenueAdminAssignment[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venue_admin_assignments")
+    .select("*")
+    .eq("admin_user_id", adminUserId);
+  if (error) throw error;
+  return (data ?? []) as VenueAdminAssignment[];
+}
+
 export async function listCourts(): Promise<Court[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -199,6 +211,58 @@ export async function listBookings(): Promise<Booking[]> {
     .select("*, courts(id,name,venue_id,venues(id,name,sport))");
   if (error) throw error;
   return (data ?? []).map(mapBookingRow);
+}
+
+type ListBookingsFilteredParams = {
+  courtIds?: string[];
+  courtId?: string;
+  date?: string;
+  playerEmail?: string;
+  bookingGroupId?: string;
+};
+
+export async function listBookingsFiltered(
+  params: ListBookingsFilteredParams,
+): Promise<Booking[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .order("created_at", { ascending: false });
+
+  if (params.courtId) {
+    query = query.eq("court_id", params.courtId);
+  }
+  if (params.date) {
+    query = query.eq("date", params.date);
+  }
+  if (params.playerEmail) {
+    query = query.eq("player_email", params.playerEmail);
+  }
+  if (params.bookingGroupId) {
+    query = query.eq("booking_group_id", params.bookingGroupId);
+  }
+  if (params.courtIds && params.courtIds.length > 0) {
+    query = query.in("court_id", params.courtIds);
+  }
+  if (params.courtIds && params.courtIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
+export async function listCourtIdsByVenueIds(venueIds: string[]): Promise<string[]> {
+  if (venueIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("courts")
+    .select("id")
+    .in("venue_id", venueIds);
+  if (error) throw error;
+  return (data ?? []).map((row) => (row as { id: string }).id);
 }
 
 export async function listBookingsByCourtOnDate(
@@ -484,6 +548,17 @@ export async function insertRow<T extends Record<string, unknown>>(
   const { data, error } = await supabase.from(table).insert(payload).select().single();
   if (error) throw error;
   return data;
+}
+
+export async function insertRows<T extends Record<string, unknown>>(
+  table: string,
+  payloads: T[],
+) {
+  if (payloads.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.from(table).insert(payloads).select();
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function updateRow<T extends Record<string, unknown>>(

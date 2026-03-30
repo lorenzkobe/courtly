@@ -170,6 +170,8 @@ export const courtlyApi = {
       }),
     create: (data: Partial<Booking>) =>
       http.post<Booking>("/api/bookings", data),
+    createMany: (items: Partial<Booking>[]) =>
+      http.post<Booking[]>("/api/bookings", { items }),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (

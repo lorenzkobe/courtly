@@ -276,6 +276,7 @@ export default function BookCourtPage() {
       return data;
     },
     enabled: !!activeCourtId,
+    staleTime: 60_000,
   });
   const court = courtContext?.court;
   const establishmentCourts = courtContext?.sibling_courts ?? [];
@@ -304,6 +305,7 @@ export default function BookCourtPage() {
       return data;
     },
     enabled: !!activeCourtId,
+    staleTime: 20_000,
   });
   const existingBookings = dayAvailability?.bookings ?? EMPTY_BOOKINGS;
   const dayClosures = dayAvailability?.court_closures ?? EMPTY_COURT_CLOSURES;
@@ -343,6 +345,7 @@ export default function BookCourtPage() {
       return { ...payload, reviews };
     },
     enabled: !!court?.venue_id,
+    staleTime: 60_000,
   });
   const courtReviews = reviewBundle?.reviews ?? [];
 
@@ -436,18 +439,25 @@ export default function BookCourtPage() {
 
   const createBookings = useMutation({
     mutationFn: async (payloads: Partial<Booking>[]) => {
-      for (const p of payloads) {
-        await courtlyApi.bookings.create(p);
-      }
-      return payloads.length;
+      const { data } = await courtlyApi.bookings.createMany(payloads);
+      return data.length;
     },
     onSuccess: (count) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.my(user?.email, court?.sport) });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.bookings.list({
+          player_email: user?.email,
+          sport: court?.sport,
+        }),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.bookings.my(user?.email, court?.sport),
+      });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.availability.courtDay(activeCourtId, dateIso),
       });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.courts.detail(activeCourtId),
+      });
       setBlockedWarningOpen(false);
       setSummaryOpen(false);
       toast.success(
