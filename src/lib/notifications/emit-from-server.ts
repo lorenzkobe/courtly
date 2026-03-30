@@ -44,12 +44,22 @@ function coerceBookingStatus(
   value: unknown,
   fallback: Booking["status"],
 ): Booking["status"] {
-  if (value === "confirmed" || value === "cancelled" || value === "completed") {
+  if (
+    value === "pending_payment" ||
+    value === "confirmed" ||
+    value === "cancelled" ||
+    value === "completed"
+  ) {
     return value;
   }
   if (typeof value === "string") {
     const t = value.trim().toLowerCase();
-    if (t === "confirmed" || t === "cancelled" || t === "completed") {
+    if (
+      t === "pending_payment" ||
+      t === "confirmed" ||
+      t === "cancelled" ||
+      t === "completed"
+    ) {
       return t;
     }
   }

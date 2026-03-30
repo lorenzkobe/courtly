@@ -13,8 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   ExternalLink,
   Heart,
+  Loader2,
   MapPin,
   Star,
   X,
@@ -147,6 +149,13 @@ const EMPTY_BOOKINGS: Booking[] = [];
 const EMPTY_COURT_CLOSURES: CourtClosure[] = [];
 const EMPTY_VENUE_CLOSURES: VenueClosure[] = [];
 
+type PaymentOverlayState = {
+  booking_id: string;
+  booking_group_id: string;
+  payment_link_url: string;
+  hold_expires_at: string;
+};
+
 function StarRow({ rating, className }: { rating: number; className?: string }) {
   const filled = Math.round(rating);
   return (
@@ -261,6 +270,8 @@ export default function BookCourtPage() {
   const [notes, setNotes] = useState("");
   const [blockedWarningOpen, setBlockedWarningOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
 
   const selectedSet = useMemo(() => new Set(selectedSlots), [selectedSlots]);
 
@@ -290,6 +301,25 @@ export default function BookCourtPage() {
     },
     enabled: !!activeCourtId,
     staleTime: 15_000,
+  });
+
+  const { data: myDayBookings = [] } = useQuery({
+    queryKey: queryKeys.bookings.list({
+      court_id: activeCourtId,
+      date: dateIso,
+      player_email: user?.email,
+    }),
+    queryFn: async () => {
+      if (!user?.email) return [] as Booking[];
+      const { data } = await courtlyApi.bookings.list({
+        court_id: activeCourtId,
+        date: dateIso,
+        player_email: user.email,
+      });
+      return data;
+    },
+    enabled: !!user?.email && !!activeCourtId,
+    refetchInterval: 5000,
   });
   const court = bookingSurface?.court;
   const establishmentCourts = bookingSurface?.sibling_courts ?? [];
@@ -438,10 +468,10 @@ export default function BookCourtPage() {
 
   const createBookings = useMutation({
     mutationFn: async (payloads: Partial<Booking>[]) => {
-      const { data } = await courtlyApi.bookings.createMany(payloads);
-      return data.length;
+      const { data } = await courtlyApi.bookings.checkout(payloads);
+      return data;
     },
-    onSuccess: (count) => {
+    onSuccess: (checkout) => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.bookings.list({
           player_email: user?.email,
@@ -456,12 +486,9 @@ export default function BookCourtPage() {
       });
       setBlockedWarningOpen(false);
       setSummaryOpen(false);
-      toast.success(
-        count > 1
-          ? `${count} bookings confirmed for the available time in your range.`
-          : "Court booked successfully!",
-      );
-      router.push("/my-bookings");
+      setSelectedSlots([]);
+      setPaymentOverlay(checkout);
+      toast.success("Payment link ready. Complete payment within 5 minutes.");
     },
     onError: (err: unknown) => {
       toast.error(
@@ -469,6 +496,94 @@ export default function BookCourtPage() {
       );
     },
   });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activePendingBooking = useMemo(() => {
+    const now = countdownNow;
+    const candidates = myDayBookings
+      .filter(
+        (booking) =>
+          booking.status === "pending_payment" &&
+          booking.hold_expires_at &&
+          new Date(booking.hold_expires_at).getTime() > now &&
+          !booking.payment_failed_at,
+      )
+      .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""));
+    return candidates[0] ?? null;
+  }, [myDayBookings, countdownNow]);
+
+  useEffect(() => {
+    if (!activePendingBooking || !activePendingBooking.hold_expires_at || !activePendingBooking.payment_link_url) {
+      return;
+    }
+    const holdExpiresAt = activePendingBooking.hold_expires_at;
+    const paymentLinkUrl = activePendingBooking.payment_link_url;
+    setPaymentOverlay((current) => {
+      if (current?.booking_id === activePendingBooking.id) return current;
+      return {
+        booking_id: activePendingBooking.id,
+        booking_group_id: activePendingBooking.booking_group_id ?? activePendingBooking.id,
+        payment_link_url: paymentLinkUrl,
+        hold_expires_at: holdExpiresAt,
+      };
+    });
+  }, [activePendingBooking]);
+
+  useEffect(() => {
+    if (!paymentOverlay) return;
+    const related = myDayBookings.filter(
+      (booking) =>
+        booking.booking_group_id === paymentOverlay.booking_group_id ||
+        booking.id === paymentOverlay.booking_id,
+    );
+    if (related.length === 0) return;
+    const hasConfirmed = related.some((booking) => booking.status === "confirmed");
+    const hasFailed =
+      related.some((booking) => booking.status === "pending_payment" && !!booking.payment_failed_at) ||
+      related.some((booking) => booking.status === "cancelled");
+    const holdExpired = related.every(
+      (booking) =>
+        booking.status !== "pending_payment" ||
+        !booking.hold_expires_at ||
+        new Date(booking.hold_expires_at).getTime() <= Date.now(),
+    );
+    if (hasConfirmed || hasFailed || holdExpired) {
+      setPaymentOverlay(null);
+    }
+  }, [myDayBookings, paymentOverlay]);
+
+  const overlayRemainingSeconds = paymentOverlay
+    ? Math.max(
+        0,
+        Math.ceil((new Date(paymentOverlay.hold_expires_at).getTime() - countdownNow) / 1000),
+      )
+    : 0;
+
+  useEffect(() => {
+    if (!paymentOverlay) return;
+    if (overlayRemainingSeconds <= 0) {
+      setPaymentOverlay(null);
+    }
+  }, [overlayRemainingSeconds, paymentOverlay]);
+
+  const openPaymentLink = () => {
+    if (!paymentOverlay?.payment_link_url) return;
+    window.open(paymentOverlay.payment_link_url, "_blank", "noopener,noreferrer");
+  };
+
+  const copyPaymentLink = async () => {
+    if (!paymentOverlay?.payment_link_url) return;
+    try {
+      await navigator.clipboard.writeText(paymentOverlay.payment_link_url);
+      toast.success("Payment link copied");
+    } catch {
+      toast.error("Could not copy payment link");
+    }
+  };
 
   const toggleSlotSelection = (time: string) => {
     if (isBookableHourStartInPast(time, selectedDate)) return;
@@ -1445,13 +1560,61 @@ export default function BookCourtPage() {
               !user ||
               selectedSlots.length === 0 ||
               segments.length === 0 ||
-              createBookings.isPending
+              createBookings.isPending ||
+              !!paymentOverlay
             }
           >
             Review booking
           </Button>
         </div>
       </div>
+      {paymentOverlay ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
+          <Card className="w-full max-w-md border-primary/30 shadow-2xl">
+            <CardContent className="space-y-4 p-6">
+              <div className="space-y-1 text-center">
+                <h2 className="font-heading text-xl font-semibold">Payment in progress</h2>
+                <p className="text-sm text-muted-foreground">
+                  Complete payment before time runs out.
+                </p>
+              </div>
+              <div className="rounded-xl border border-primary/25 bg-primary/8 p-4 text-center">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Time left</p>
+                <p className="font-heading text-3xl font-bold text-primary tabular-nums">
+                  {Math.floor(overlayRemainingSeconds / 60)
+                    .toString()
+                    .padStart(2, "0")}
+                  :
+                  {(overlayRemainingSeconds % 60).toString().padStart(2, "0")}
+                </p>
+              </div>
+              <Button
+                type="button"
+                className="w-full font-heading font-semibold"
+                onClick={openPaymentLink}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open payment link
+              </Button>
+              <Button type="button" variant="outline" className="w-full" onClick={copyPaymentLink}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy payment link
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                This overlay closes once payment succeeds, fails, or expires.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+      {createBookings.isPending ? (
+        <div className="fixed bottom-4 right-4 z-50 rounded-full border border-border bg-background/95 px-4 py-2 text-sm shadow-lg">
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Creating payment link...
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

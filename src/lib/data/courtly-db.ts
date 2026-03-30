@@ -84,6 +84,18 @@ function mapBookingRow(row: unknown): Booking {
     booking_fee?: number;
     total_cost?: number;
     status: Booking["status"];
+    hold_expires_at?: string | null;
+    payment_provider?: string | null;
+    payment_link_id?: string | null;
+    payment_link_url?: string | null;
+    payment_link_created_at?: string | null;
+    payment_attempt_count?: number | null;
+    paid_at?: string | null;
+    payment_failed_at?: string | null;
+    payment_reference_id?: string | null;
+    cancel_reason?: string | null;
+    refund_required?: boolean | null;
+    refunded_at?: string | null;
     notes?: string;
     admin_note?: string;
     admin_note_updated_by_user_id?: string;
@@ -128,6 +140,19 @@ function mapBookingRow(row: unknown): Booking {
     booking_fee: Number(record.booking_fee ?? 0),
     total_cost: Number(record.total_cost ?? 0),
     status: record.status,
+    hold_expires_at: record.hold_expires_at ?? null,
+    payment_provider:
+      record.payment_provider === "paymongo" ? "paymongo" : null,
+    payment_link_id: record.payment_link_id ?? null,
+    payment_link_url: record.payment_link_url ?? null,
+    payment_link_created_at: record.payment_link_created_at ?? null,
+    payment_attempt_count: record.payment_attempt_count ?? 0,
+    paid_at: record.paid_at ?? null,
+    payment_failed_at: record.payment_failed_at ?? null,
+    payment_reference_id: record.payment_reference_id ?? null,
+    cancel_reason: record.cancel_reason ?? null,
+    refund_required: record.refund_required ?? false,
+    refunded_at: record.refunded_at ?? null,
     notes: record.notes,
     admin_note: record.admin_note,
     admin_note_updated_by_user_id: record.admin_note_updated_by_user_id,
@@ -568,6 +593,63 @@ export async function getBookingById(id: string): Promise<Booking | null> {
   return data ? mapBookingRow(data) : null;
 }
 
+export async function getBookingByIdAdmin(id: string): Promise<Booking | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapBookingRow(data) : null;
+}
+
+export async function getBookingByPaymentLinkIdAdmin(
+  paymentLinkId: string,
+): Promise<Booking | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
+    .eq("payment_link_id", paymentLinkId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapBookingRow(data) : null;
+}
+
+export async function listBookingsByGroupIdAdmin(
+  bookingGroupId: string,
+): Promise<Booking[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
+    .eq("booking_group_id", bookingGroupId)
+    .order("start_time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(mapBookingRow);
+}
+
+export async function markPaymentWebhookEventProcessed(params: {
+  provider: string;
+  providerEventId: string;
+  eventType: string;
+  payload?: Record<string, unknown>;
+}): Promise<boolean> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from("payment_webhook_events").insert({
+    provider: params.provider,
+    provider_event_id: params.providerEventId,
+    event_type: params.eventType,
+    payload: params.payload ?? null,
+  } as never);
+  if (!error) return true;
+  if (error.code === "23505") return false;
+  throw error;
+}
+
 export async function listConfirmedBookingsForAutoCompletion(
   params: {
     upToDate: string;
@@ -653,6 +735,55 @@ export async function hasConfirmedBookingConflictForCourt(
     .gt("end_time", startTime);
   if (error) throw error;
   return (count ?? 0) > 0;
+}
+
+function isActivePendingPaymentHold(
+  booking: Pick<Booking, "status" | "hold_expires_at">,
+  now = new Date(),
+): boolean {
+  if (booking.status !== "pending_payment") return false;
+  if (!booking.hold_expires_at) return false;
+  const holdUntil = new Date(booking.hold_expires_at);
+  return holdUntil.getTime() > now.getTime();
+}
+
+export function isBlockingBookingNow(
+  booking: Pick<Booking, "status" | "hold_expires_at">,
+  now = new Date(),
+): boolean {
+  if (booking.status === "confirmed") return true;
+  return isActivePendingPaymentHold(booking, now);
+}
+
+export async function hasBlockingBookingConflictForCourt(
+  courtId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("status, hold_expires_at, start_time, end_time")
+    .eq("court_id", courtId)
+    .eq("date", date)
+    .in("status", ["confirmed", "pending_payment"])
+    .lt("start_time", endTime)
+    .gt("end_time", startTime);
+  if (error) throw error;
+  const rows =
+    (data ?? []) as Array<Pick<Booking, "status" | "hold_expires_at"> & { start_time: string; end_time: string }>;
+  const now = new Date();
+  return rows.some((row) => isBlockingBookingNow(row, now));
+}
+
+export async function listBlockingBookingsByCourtOnDate(
+  courtId: string,
+  date: string,
+): Promise<Booking[]> {
+  const rows = await listBookingsByCourtOnDate(courtId, date);
+  const now = new Date();
+  return rows.filter((booking) => isBlockingBookingNow(booking, now));
 }
 
 export async function hasConfirmedBookingConflictForVenue(

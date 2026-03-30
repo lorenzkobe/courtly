@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getCourtById,
-  listBookingsByCourtOnDate,
+  listBlockingBookingsByCourtOnDate,
   listCourtClosuresByCourt,
   listVenueClosuresByVenue,
 } from "@/lib/data/courtly-db";
@@ -22,13 +22,13 @@ export async function GET(req: Request, ctx: Ctx) {
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [bookings, courtClosures, venueClosures] = await Promise.all([
-    listBookingsByCourtOnDate(courtId, date),
+    listBlockingBookingsByCourtOnDate(courtId, date),
     listCourtClosuresByCourt(courtId, date),
     court.venue_id ? listVenueClosuresByVenue(court.venue_id, date) : Promise.resolve([]),
   ]);
 
   const body: CourtDayAvailability = {
-    bookings: bookings.filter((booking) => booking.status === "confirmed"),
+    bookings,
     court_closures: courtClosures,
     venue_closures: venueClosures,
   };

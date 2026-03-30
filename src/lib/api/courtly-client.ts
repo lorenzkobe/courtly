@@ -2,6 +2,7 @@ import { http } from "@/lib/http-client";
 import type {
   AdminVenueWorkspaceResponse,
   Booking,
+  BookingCheckoutResponse,
   BookingDetailContextResponse,
   BookingDetailGroupResponse,
   CourtBookingSurfaceResponse,
@@ -199,6 +200,10 @@ export const courtlyApi = {
       http.post<Booking>("/api/bookings", data),
     createMany: (items: Partial<Booking>[]) =>
       http.post<Booking[]>("/api/bookings", { items }),
+    checkout: (items: Partial<Booking>[]) =>
+      http.post<BookingCheckoutResponse>("/api/bookings/checkout", { items }),
+    retryPayment: (id: string) =>
+      http.post<BookingCheckoutResponse>(`/api/bookings/${id}/retry-payment`),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (

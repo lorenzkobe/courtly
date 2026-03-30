@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getCourtWithReviewSummary,
-  listBookingsByCourtOnDate,
+  listBlockingBookingsByCourtOnDate,
   listCourtClosuresByCourt,
   listCourtReviewsByVenue,
   listCourtsByVenue,
@@ -26,7 +26,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const [siblingCourts, bookings, courtClosures, venueClosures, reviews] =
     await Promise.all([
       listCourtsByVenue(court.venue_id),
-      listBookingsByCourtOnDate(courtId, date),
+      listBlockingBookingsByCourtOnDate(courtId, date),
       listCourtClosuresByCourt(courtId, date),
       listVenueClosuresByVenue(court.venue_id, date),
       listCourtReviewsByVenue(court.venue_id),
@@ -36,7 +36,7 @@ export async function GET(req: Request, ctx: Ctx) {
     court,
     sibling_courts: siblingCourts.sort((a, b) => a.name.localeCompare(b.name)),
     availability: {
-      bookings: bookings.filter((booking) => booking.status === "confirmed"),
+      bookings,
       court_closures: courtClosures,
       venue_closures: venueClosures,
     },

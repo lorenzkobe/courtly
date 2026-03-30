@@ -41,6 +41,7 @@ import type { Booking } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -48,6 +49,7 @@ const statusStyles: Record<string, string> = {
 
 type AdminBookingFilters = {
   status: "all" | Booking["status"];
+  paymentReview: "all" | "refund_required";
   venueId: string;
   dateFrom: string;
   dateTo: string;
@@ -58,6 +60,7 @@ type AdminBookingFilters = {
 function defaultAdminBookingFilters(): AdminBookingFilters {
   return {
     status: "confirmed",
+    paymentReview: "all",
     venueId: "",
     dateFrom: "",
     dateTo: "",
@@ -263,7 +266,7 @@ export default function AdminBookingsPage() {
       status: string;
     }) => {
       await courtlyApi.bookings.update(id, {
-        status: status as "confirmed" | "cancelled" | "completed",
+        status: status as Booking["status"],
       });
     },
     onSuccess: () => {
@@ -319,6 +322,7 @@ export default function AdminBookingsPage() {
     const searchLower = search.toLowerCase();
     const {
       status: statusFilter,
+      paymentReview,
       venueId,
       dateFrom,
       dateTo,
@@ -329,6 +333,9 @@ export default function AdminBookingsPage() {
     const list = bookings.filter((booking) => {
       const statusMatch =
         statusFilter === "all" || booking.status === statusFilter;
+      const paymentReviewMatch =
+        paymentReview === "all" ||
+        (paymentReview === "refund_required" && booking.refund_required === true);
       const venueMatch = !venueId || booking.venue_id === venueId;
       const fromOk = !dateFrom || booking.date >= dateFrom;
       const toOk = !dateTo || booking.date <= dateTo;
@@ -353,7 +360,15 @@ export default function AdminBookingsPage() {
         booking.player_email?.toLowerCase().includes(searchLower) ||
         booking.court_name?.toLowerCase().includes(searchLower) ||
         booking.establishment_name?.toLowerCase().includes(searchLower);
-      return statusMatch && venueMatch && fromOk && toOk && timeOk && searchMatch;
+      return (
+        statusMatch &&
+        paymentReviewMatch &&
+        venueMatch &&
+        fromOk &&
+        toOk &&
+        timeOk &&
+        searchMatch
+      );
     });
     list.sort((a, b) => {
       if (sortBy === "oldest_date") {
@@ -384,6 +399,14 @@ export default function AdminBookingsPage() {
         label: `Status: ${formatStatusLabel(f.status)}`,
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, status: "all" })),
+      });
+    }
+    if (f.paymentReview === "refund_required") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Refund required",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
     }
     if (f.venueId) {
@@ -433,6 +456,8 @@ export default function AdminBookingsPage() {
     confirmed: bookings.filter((booking) => booking.status === "confirmed")
       .length,
     cancelled: bookings.filter((booking) => booking.status === "cancelled")
+      .length,
+    refundRequired: bookings.filter((booking) => booking.refund_required === true)
       .length,
     revenue: bookings
       .filter((booking) => booking.status !== "cancelled")
@@ -531,10 +556,26 @@ export default function AdminBookingsPage() {
                   </dd>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd>
-                    <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
-                      {formatStatusLabel(detailBooking.status)}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
+                        {formatStatusLabel(detailBooking.status)}
+                      </Badge>
+                      {detailBooking.refund_required ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        >
+                          Refund required
+                        </Badge>
+                      ) : null}
+                    </div>
                   </dd>
+                  {detailBooking.payment_reference_id ? (
+                    <>
+                      <dt className="text-muted-foreground">Payment reference</dt>
+                      <dd className="break-all text-xs">{detailBooking.payment_reference_id}</dd>
+                    </>
+                  ) : null}
                   {adminBookingNotes ? (
                     <>
                       <dt className="text-muted-foreground">Booking notes</dt>
@@ -607,7 +648,7 @@ export default function AdminBookingsPage() {
         }
       />
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[
           { label: "Total Bookings", value: stats.total, color: "text-foreground" },
           { label: "Confirmed", value: stats.confirmed, color: "text-primary" },
@@ -615,6 +656,11 @@ export default function AdminBookingsPage() {
             label: "Cancelled",
             value: stats.cancelled,
             color: "text-destructive",
+          },
+          {
+            label: "Refund Required",
+            value: stats.refundRequired,
+            color: "text-amber-700",
           },
           {
             label: "Revenue",
@@ -747,9 +793,30 @@ export default function AdminBookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending_payment">Pending payment</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="admin-booking-filter-payment-review">Payment review</Label>
+              <Select
+                value={draftFilters.paymentReview}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    paymentReview: v as AdminBookingFilters["paymentReview"],
+                  }))
+                }
+              >
+                <SelectTrigger id="admin-booking-filter-payment-review" className="mt-1.5">
+                  <SelectValue placeholder="All payment states" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All payment states</SelectItem>
+                  <SelectItem value="refund_required">Refund required only</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -889,6 +956,14 @@ export default function AdminBookingsPage() {
                       >
                         {formatStatusLabel(booking.status)}
                       </Badge>
+                      {booking.refund_required ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        >
+                          Refund required
+                        </Badge>
+                      ) : null}
                     </div>
                     {booking.establishment_name?.trim() ? (
                       <p className="mb-1 text-xs text-muted-foreground">

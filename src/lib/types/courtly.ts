@@ -150,7 +150,19 @@ export type Booking = {
   booking_fee?: number;
   /** What the customer paid (court subtotal + booking fee) when both are set. */
   total_cost?: number;
-  status: "confirmed" | "cancelled" | "completed";
+  status: "pending_payment" | "confirmed" | "cancelled" | "completed";
+  hold_expires_at?: string | null;
+  payment_provider?: "paymongo" | null;
+  payment_link_id?: string | null;
+  payment_link_url?: string | null;
+  payment_link_created_at?: string | null;
+  payment_attempt_count?: number;
+  paid_at?: string | null;
+  payment_failed_at?: string | null;
+  payment_reference_id?: string | null;
+  cancel_reason?: string | null;
+  refund_required?: boolean;
+  refunded_at?: string | null;
   /** Player-provided booking note. Set during booking creation; immutable afterwards. */
   notes?: string;
   /** Internal shared note for court admins/superadmin managing this booking's court. */
@@ -348,6 +360,13 @@ export type CursorPage<T> = {
 export type MyBookingsOverviewResponse = {
   bookings: CursorPage<Booking>;
   registrations: CursorPage<TournamentRegistration>;
+};
+
+export type BookingCheckoutResponse = {
+  booking_id: string;
+  booking_group_id: string;
+  payment_link_url: string;
+  hold_expires_at: string;
 };
 
 export type SuperadminDirectoryPagedResponse = {

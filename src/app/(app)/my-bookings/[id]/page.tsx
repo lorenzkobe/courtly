@@ -38,6 +38,7 @@ import { cn, formatStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 
 const statusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",

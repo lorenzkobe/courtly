@@ -1,14 +1,18 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Calendar,
   Clock,
+  ExternalLink,
+  Loader2,
+  RefreshCcw,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -38,12 +42,25 @@ import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
   registered: "bg-primary/10 text-primary border-primary/20",
   waitlisted: "bg-chart-3/15 text-chart-3 border-chart-3/30",
 };
+
+function remainingTimeLabel(holdExpiresAt: string | null | undefined, nowMs: number): string {
+  if (!holdExpiresAt) return "Expired";
+  const remaining = Math.max(0, new Date(holdExpiresAt).getTime() - nowMs);
+  if (remaining <= 0) return "Expired";
+  const sec = Math.ceil(remaining / 1000);
+  const mm = Math.floor(sec / 60)
+    .toString()
+    .padStart(2, "0");
+  const ss = (sec % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
 
 type CourtDateGroup = {
   key: string;
@@ -92,8 +109,15 @@ export default function MyBookingsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("confirmed");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const { user } = useAuth();
   const selectedSport = useSelectedSport((s) => s.sport);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const { data, isLoading, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
     queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT),
@@ -137,6 +161,21 @@ export default function MyBookingsPage() {
     playerEmail: user?.email,
     enabled: !!user?.email,
     queryKeysToInvalidate: bookingsRealtimeKeys,
+  });
+
+  const retryPayment = useMutation({
+    mutationFn: async (bookingId: string) => {
+      const { data } = await courtlyApi.bookings.retryPayment(bookingId);
+      return data;
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT) });
+      window.open(data.payment_link_url, "_blank", "noopener,noreferrer");
+    },
+    onError: () => {
+      toast.error("Could not retry payment right now.");
+    },
   });
 
   const bookingGroups = useMemo(() => {
@@ -219,6 +258,7 @@ export default function MyBookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending_payment">Pending payment</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -319,10 +359,54 @@ export default function MyBookingsPage() {
                                 >
                                   {formatStatusLabel(booking.status)}
                                 </Badge>
+                                {booking.status === "pending_payment" ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    Time left: {remainingTimeLabel(booking.hold_expires_at, countdownNow)}
+                                  </span>
+                                ) : null}
                                 <span className="text-sm font-semibold text-foreground tabular-nums">
                                   {formatPhp(booking.total_cost ?? 0)}
                                 </span>
                               </div>
+                              {booking.status === "pending_payment" &&
+                              booking.hold_expires_at &&
+                              new Date(booking.hold_expires_at).getTime() > countdownNow ? (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  {booking.payment_link_url ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        window.open(booking.payment_link_url ?? "", "_blank", "noopener,noreferrer");
+                                      }}
+                                    >
+                                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                                      Pay now
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      retryPayment.mutate(booking.id);
+                                    }}
+                                    disabled={retryPayment.isPending}
+                                  >
+                                    {retryPayment.isPending ? (
+                                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                                    )}
+                                    Retry payment
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                           </li>
                         );
