@@ -12,7 +12,12 @@ export function hourlyRateForHourStart(court: Court, hourToken: string): number 
   const windows = court.hourly_rate_windows ?? [];
   for (const w of windows) {
     const ws = hourFromTime(w.start);
-    const we = hourFromTime(w.end);
+    let we = hourFromTime(w.end);
+    // Allow windows that end at midnight by interpreting 00:00 as 24:00
+    // when the start is later in the day (e.g. 22:00 -> 00:00).
+    if (we === 0 && ws > 0) {
+      we = 24;
+    }
     if (h >= ws && h < we) return w.hourly_rate;
   }
   return 0;

@@ -1,6 +1,8 @@
 import { formatHourToken, hourFromTime } from "@/lib/booking-range";
 import type { CourtRateWindow } from "@/lib/types/courtly";
 
+const MIN_HOURLY_RATE_PHP = 10;
+
 function rangeHours(w: Pick<CourtRateWindow, "start" | "end">): { startHour: number; endHour: number } {
   const startHour = hourFromTime(w.start);
   let endHour = hourFromTime(w.end);
@@ -61,8 +63,11 @@ export function validateVenuePriceRanges(
           "Each range must end after start on the same calendar day (hourly slots only). Midnight (12:00 AM) is allowed as an end time.",
       };
     }
-    if (w.hourly_rate <= 0 || !Number.isFinite(w.hourly_rate)) {
-      return { ok: false, error: "Each range needs a positive price per hour." };
+    if (w.hourly_rate < MIN_HOURLY_RATE_PHP || !Number.isFinite(w.hourly_rate)) {
+      return {
+        ok: false,
+        error: `Each range needs a rate of at least ₱${MIN_HOURLY_RATE_PHP}/hr.`,
+      };
     }
   }
   // Then check overlaps (half-open intervals; touching endpoints is allowed).
@@ -125,7 +130,7 @@ export function priceRangeFormRowsComplete(rows: PriceRangeFormRow[]): boolean {
     const rateText = row.rate.trim();
     if (!startTime || !endTime || !rateText) return false;
     const parsedRate = Number.parseFloat(rateText);
-    if (!Number.isFinite(parsedRate) || parsedRate <= 0) return false;
+    if (!Number.isFinite(parsedRate) || parsedRate < MIN_HOURLY_RATE_PHP) return false;
   }
   return true;
 }
@@ -153,7 +158,7 @@ export function validatePriceRangeFormRows(
     return {
       ok: false,
       error:
-        "Each row needs a start time, end time, and a positive rate. Remove any row you are not using yet.",
+        `Each row needs a start time, end time, and a rate of at least ₱${MIN_HOURLY_RATE_PHP}/hr. Remove any row you are not using yet.`,
     };
   }
   const windows = courtRateWindowsFromCompleteFormRows(rows);
