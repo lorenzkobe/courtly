@@ -12,10 +12,12 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Clock,
   ExternalLink,
   Heart,
   MapPin,
   Star,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -59,15 +61,16 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import {
   availableSegmentsInRange,
-  bookedHoursInSelection,
+  exclusiveEndAfterLastIncludedHour,
+  formatBookableHourSlotRange,
   formatHourToken,
   formatSegmentLine,
   formatTimeShort,
+  groupIntoContiguousHourRuns,
   hourFromTime,
   isBookableHourStartInPast,
   occupiedHourStarts,
   occupiedHourStartsFromClosures,
-  selectionCoversBookedSlots,
   totalBillableHours,
   type BookingSegment,
 } from "@/lib/booking-range";
@@ -254,16 +257,12 @@ export default function BookCourtPage() {
   const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [startTime, setStartTime] = useState<string | null>(null);
-  const [endTime, setEndTime] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [blockedWarningOpen, setBlockedWarningOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const effectiveEndTime = useMemo(() => {
-    if (!startTime) return null;
-    if (endTime) return endTime;
-    return formatHourToken(hourFromTime(startTime) + 1);
-  }, [startTime, endTime]);
+
+  const selectedSet = useMemo(() => new Set(selectedSlots), [selectedSlots]);
 
   useEffect(() => {
     setActiveCourtId(paramCourtId);
@@ -331,6 +330,13 @@ export default function BookCourtPage() {
     return merged;
   }, [bookingOccupied, closureOccupied]);
 
+  useEffect(() => {
+    setSelectedSlots((prev) => {
+      const next = prev.filter((t) => !occupied.has(t));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [occupied]);
+
   const { data: reviewBundle, isLoading: isLoadingReviews } = useQuery({
     queryKey: queryKeys.reviews.venue(court?.venue_id),
     queryFn: async () => {
@@ -355,19 +361,42 @@ export default function BookCourtPage() {
   );
 
   const segments = useMemo(() => {
-    if (!startTime || !effectiveEndTime) return [];
-    return availableSegmentsInRange(startTime, effectiveEndTime, occupied);
-  }, [startTime, effectiveEndTime, occupied]);
+    if (selectedSlots.length === 0) return [];
+    const runs = groupIntoContiguousHourRuns(selectedSlots);
+    const out: BookingSegment[] = [];
+    for (const run of runs) {
+      const a = run[0]!;
+      const b = run[run.length - 1]!;
+      const exclEnd = exclusiveEndAfterLastIncludedHour(b);
+      out.push(...availableSegmentsInRange(a, exclEnd, occupied));
+    }
+    return out;
+  }, [selectedSlots, occupied]);
 
   const billableHours = totalBillableHours(segments);
-  const requestedHours =
-    startTime && effectiveEndTime
-      ? hourFromTime(effectiveEndTime) - hourFromTime(startTime)
-      : 0;
+  const requestedHours = selectedSlots.length;
   const blockedInRange = useMemo(() => {
-    if (!startTime || !effectiveEndTime) return [];
-    return bookedHoursInSelection(startTime, effectiveEndTime, occupied);
-  }, [startTime, effectiveEndTime, occupied]);
+    return selectedSlots
+      .filter((t) => occupied.has(t))
+      .sort((a, b) => hourFromTime(a) - hourFromTime(b));
+  }, [selectedSlots, occupied]);
+
+  const bookableRangesLabel = useMemo(() => {
+    if (selectedSlots.length === 0) return null;
+    const runs = groupIntoContiguousHourRuns(selectedSlots);
+    return runs
+      .map((run) => {
+        const a = run[0]!;
+        const b = run[run.length - 1]!;
+        const excl = exclusiveEndAfterLastIncludedHour(b);
+        return formatSegmentLine({
+          start_time: a,
+          end_time: excl,
+          hours: run.length,
+        });
+      })
+      .join(" and ");
+  }, [selectedSlots]);
   const selectedRateLines = useMemo(() => {
     if (!court || segments.length === 0) return [];
 
@@ -472,19 +501,18 @@ export default function BookCourtPage() {
     },
   });
 
-  const handleTimeSelect = (time: string) => {
+  const toggleSlotSelection = (time: string) => {
     if (isBookableHourStartInPast(time, selectedDate)) return;
-    if (!startTime || (startTime && endTime)) {
-      if (occupied.has(time)) return;
-      setStartTime(time);
-      setEndTime(null);
-    } else if (time > startTime) {
-      setEndTime(time);
-    } else {
-      if (occupied.has(time)) return;
-      setStartTime(time);
-      setEndTime(null);
-    }
+    if (occupied.has(time)) return;
+    setSelectedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(time)) {
+        next.delete(time);
+      } else {
+        next.add(time);
+      }
+      return Array.from(next).sort((a, b) => hourFromTime(a) - hourFromTime(b));
+    });
   };
 
   const courtSubtotal =
@@ -519,7 +547,7 @@ export default function BookCourtPage() {
       toast.error("You need to be signed in to book.");
       return;
     }
-    if (!startTime || !effectiveEndTime || !court) {
+    if (selectedSlots.length === 0 || !court) {
       toast.error("Choose a date and at least one hour.");
       return;
     }
@@ -527,7 +555,7 @@ export default function BookCourtPage() {
       toast.error("No available hours in that range — try a different time.");
       return;
     }
-    if (selectionCoversBookedSlots(startTime, effectiveEndTime, occupied)) {
+    if (blockedInRange.length > 0) {
       setBlockedWarningOpen(true);
       return;
     }
@@ -567,12 +595,6 @@ export default function BookCourtPage() {
       </div>
     );
   }
-
-  const pickingEnd = Boolean(startTime && !endTime);
-  const bookableRangesLabel =
-    segments.length > 0
-      ? segments.map(formatSegmentLine).join(" and ")
-      : null;
 
   const hasMapPin =
     court.map_latitude != null &&
@@ -618,7 +640,7 @@ export default function BookCourtPage() {
             <p className="text-muted-foreground">
               Not available:{" "}
               <span className="font-medium text-foreground">
-                {blockedInRange.map(formatTimeShort).join(", ")}
+                {blockedInRange.map(formatBookableHourSlotRange).join(", ")}
               </span>
             </p>
           </div>
@@ -718,7 +740,7 @@ export default function BookCourtPage() {
                 {format(selectedDate, "MMM d, yyyy")}
               </dd>
             </div>
-            {startTime && effectiveEndTime ? (
+            {selectedSlots.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
                   <dt className="pt-0.5 text-muted-foreground">
@@ -726,8 +748,7 @@ export default function BookCourtPage() {
                   </dt>
                   <dd className="space-y-1 leading-snug sm:text-right">
                     <span className="block font-medium leading-relaxed">
-                      {bookableRangesLabel ??
-                        `${formatTimeShort(startTime)} – ${formatTimeShort(effectiveEndTime)}`}
+                      {bookableRangesLabel}
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {requestedHours} h in your selection
@@ -743,7 +764,7 @@ export default function BookCourtPage() {
                       </span>
                     </dt>
                     <dd className="text-sm font-medium leading-snug sm:text-right">
-                      {blockedInRange.map(formatTimeShort).join(", ")}
+                      {blockedInRange.map(formatBookableHourSlotRange).join(", ")}
                     </dd>
                   </div>
                 ) : null}
@@ -1138,8 +1159,7 @@ export default function BookCourtPage() {
                   onValueChange={(nextCourtId) => {
                     if (nextCourtId !== activeCourtId) {
                       setActiveCourtId(nextCourtId);
-                      setStartTime(null);
-                      setEndTime(null);
+                      setSelectedSlots([]);
                     }
                   }}
                 >
@@ -1182,8 +1202,7 @@ export default function BookCourtPage() {
                   onSelect={(d) => {
                     if (!d) return;
                     setSelectedDate(d);
-                    setStartTime(null);
-                    setEndTime(null);
+                    setSelectedSlots([]);
                   }}
                   disabled={(date) =>
                     isBefore(startOfDay(date), startOfDay(new Date()))
@@ -1222,115 +1241,200 @@ export default function BookCourtPage() {
                 </span>
               </div>
             </div>
-            <div className="rounded-xl border border-border/40 bg-muted/20 px-3 py-3.5 sm:px-4 sm:py-4">
-              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-                <Label className="text-sm font-medium text-foreground">
-                  Time on {format(selectedDate, "EEE, MMM d")}
-                </Label>
-                <span className="text-xs text-muted-foreground">
-                  Tap once for 1 hour, or pick a range
-                </span>
+            <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
+              <div className="border-b border-border/60 bg-muted/30 px-4 py-3 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background shadow-sm ring-1 ring-border/80">
+                    <Clock className="size-4 text-primary" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <h3
+                      id="time-slots-heading"
+                      className="text-sm font-semibold text-foreground"
+                    >
+                      Time slots
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {format(selectedDate, "EEEE, MMM d")}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <p className="mb-4 text-xs leading-snug text-muted-foreground">
-                Times shown are bookable priced hours for this venue. Your range
-                can include unavailable slots — you only pay for open hours
-                (we&apos;ll confirm if anything is blocked).
-                {isSameDay(startOfDay(selectedDate), startOfDay(new Date())) ? (
-                  <>
-                    {" "}
-                    Hours that have already started today are not selectable.
-                  </>
+
+              <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
+                {selectedSlots.length > 0 ? (
+                  <div
+                    className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/6 px-3.5 py-3 dark:bg-primary/10"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                        Selection
+                      </p>
+                      <p className="font-heading text-base font-bold leading-snug tracking-tight text-foreground">
+                        {bookableRangesLabel}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {requestedHours}{" "}
+                        {requestedHours === 1 ? "hour" : "hours"} selected
+                        {billableHours !== requestedHours
+                          ? ` · ${billableHours} billable`
+                          : null}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => setSelectedSlots([])}
+                      aria-label="Clear time selection"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </div>
                 ) : null}
-              </p>
-              {isHoursLoading ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Loading available hours...</p>
-                  <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <Skeleton key={i} className="h-14 rounded-md" />
-                    ))}
+
+                <details className="group rounded-xl border border-border/60 bg-muted/20 [&_summary::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium text-foreground hover:bg-muted/40 sm:px-3.5">
+                    <span>Pricing, blocked hours &amp; past times</span>
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-90"
+                      aria-hidden
+                    />
+                  </summary>
+                  <div className="space-y-2 border-t border-border/50 px-3 py-3 text-xs leading-relaxed text-muted-foreground sm:px-3.5">
+                    <p>
+                      Tap a tile to select that hour; tap again to deselect.
+                      Booked, blocked, or past hours can&apos;t be toggled.
+                      Separate stretches of hours become separate bookings when
+                      needed. You only pay for open hours—we&apos;ll confirm before
+                      you pay.
+                    </p>
+                    {isSameDay(startOfDay(selectedDate), startOfDay(new Date())) ? (
+                      <p>Hours that have already started today cannot be selected.</p>
+                    ) : null}
                   </div>
-                </div>
-              ) : timeSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No bookable hours are configured for this venue yet.
-                </p>
-              ) : null}
-              {!isHoursLoading ? (
-                <div className="max-h-[min(52vh,22rem)] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
-                  <div className="grid grid-cols-2 gap-2.5 px-0.5 pb-1 pt-1 sm:grid-cols-3 md:grid-cols-4">
-                    {timeSlots.map((time) => {
-                    const isUnavailable = occupied.has(time);
-                    const isPastHour = isBookableHourStartInPast(
-                      time,
-                      selectedDate,
-                    );
-                    const hourlyRate = hourlyRateForHourStart(court, time);
-                    const fromClosureOnly =
-                      closureOccupied.has(time) && !bookingOccupied.has(time);
-                    const isStart = startTime === time;
-                    const isEnd = endTime === time;
-                    const isInRange =
-                      Boolean(startTime) &&
-                      Boolean(effectiveEndTime) &&
-                      time > startTime! &&
-                      time < effectiveEndTime!;
-                      return (
-                        <Button
-                          key={time}
-                          type="button"
-                          size="sm"
-                          variant={
-                            isStart || isEnd
-                              ? "default"
-                              : isInRange
-                                ? isUnavailable
-                                  ? "outline"
-                                  : "secondary"
-                                : "outline"
-                          }
-                          disabled={
-                            (isUnavailable && !pickingEnd) || isPastHour
-                          }
-                          onClick={() => handleTimeSelect(time)}
-                          className={cn(
-                            "relative flex h-14 min-w-0 shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium tabular-nums sm:text-sm",
-                            isPastHour &&
-                              "cursor-not-allowed border-muted-foreground/25 bg-muted/50 text-muted-foreground opacity-65",
-                            isUnavailable &&
-                              fromClosureOnly &&
-                              "border-amber-600/45 bg-amber-500/15 text-amber-950 line-through dark:text-amber-100",
-                            isUnavailable &&
-                              !fromClosureOnly &&
-                              "border-destructive/50 bg-destructive/10 text-destructive line-through",
-                            isUnavailable && isInRange && "opacity-90",
-                            isStart &&
-                              "ring-2 ring-primary ring-offset-1 ring-offset-background",
-                            isEnd &&
-                              !isStart &&
-                              "ring-2 ring-chart-3 ring-offset-1 ring-offset-background",
-                          )}
-                        >
-                          {isStart ? (
-                            <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-primary-foreground/95">
-                              Start
-                            </span>
-                          ) : null}
-                          {isEnd && !isStart ? (
-                            <span className="text-[7px] font-bold uppercase leading-none tracking-wide text-amber-100">
-                              End
-                            </span>
-                          ) : null}
-                          <span>{formatTimeShort(time)}</span>
-                          <span className="text-[10px] font-medium text-muted-foreground">
-                            {hourlyRate > 0 ? `${formatPhpCompact(hourlyRate)}/hr` : "—"}
-                          </span>
-                        </Button>
-                      );
-                    })}
+                </details>
+
+                {isHoursLoading ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Loading hours…
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {Array.from({ length: 8 }, (_, i) => (
+                        <Skeleton key={i} className="h-18 rounded-xl" />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : timeSlots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No bookable hours are configured for this venue yet.
+                  </p>
+                ) : null}
+
+                {!isHoursLoading && timeSlots.length > 0 ? (
+                  <div>
+                    <div
+                      className="max-h-[min(50vh,24rem)] overflow-y-auto overflow-x-hidden rounded-xl px-2 pb-2 pt-1 [scrollbar-gutter:stable] sm:px-3 sm:pb-3"
+                      aria-labelledby="time-slots-heading"
+                      role="group"
+                    >
+                      <div className="grid grid-cols-2 gap-3 py-1">
+                        {timeSlots.map((time) => {
+                          const isUnavailable = occupied.has(time);
+                          const isPastHour = isBookableHourStartInPast(
+                            time,
+                            selectedDate,
+                          );
+                          const hourlyRate = hourlyRateForHourStart(court, time);
+                          const fromClosureOnly =
+                            closureOccupied.has(time) &&
+                            !bookingOccupied.has(time);
+                          const isSelected = selectedSet.has(time);
+                          const disabled = isPastHour || isUnavailable;
+                          return (
+                            <Button
+                              key={time}
+                              type="button"
+                              variant="outline"
+                              disabled={disabled}
+                              aria-pressed={isSelected && !isUnavailable}
+                              onClick={() => toggleSlotSelection(time)}
+                              className={cn(
+                                "h-auto min-h-18 w-full flex-col items-stretch justify-center gap-1.5 rounded-xl border-2 px-3 py-2.5 text-left shadow-none transition-colors",
+                                "focus-visible:ring-2 focus-visible:ring-emerald-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                                isPastHour &&
+                                  "cursor-not-allowed border-dashed border-muted-foreground/30 bg-muted/40 text-muted-foreground opacity-60",
+                                isUnavailable &&
+                                  fromClosureOnly &&
+                                  "border-amber-600/50 bg-amber-500/12 text-amber-950 line-through decoration-amber-800/60 dark:text-amber-100 dark:decoration-amber-200/50",
+                                isUnavailable &&
+                                  !fromClosureOnly &&
+                                  "border-destructive/45 bg-destructive/8 text-destructive line-through",
+                                isSelected &&
+                                  !isUnavailable &&
+                                  "border-emerald-600 bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/90 ring-offset-2 ring-offset-background hover:border-emerald-700 hover:bg-emerald-700 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:border-emerald-600 dark:hover:bg-emerald-700",
+                                !disabled &&
+                                  !isSelected &&
+                                  "hover:border-emerald-500/55 hover:bg-emerald-50/95 dark:hover:border-emerald-600/50 dark:hover:bg-emerald-950/45",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "min-w-0 text-sm font-semibold leading-tight tracking-tight",
+                                  isSelected &&
+                                    !isUnavailable &&
+                                    "text-white",
+                                )}
+                              >
+                                {formatBookableHourSlotRange(time)}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-xs font-medium tabular-nums",
+                                  isSelected && !isUnavailable
+                                    ? "text-emerald-50"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {hourlyRate > 0
+                                  ? `${formatPhpCompact(hourlyRate)}/hr`
+                                  : "—"}
+                              </span>
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="size-2.5 shrink-0 rounded-md bg-muted ring-1 border border-dashed border-destructive/40"
+                          aria-hidden
+                        />
+                        Booked
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="size-2.5 shrink-0 rounded-md bg-amber-500/25 ring-1 border border-dashed border-amber-600/50"
+                          aria-hidden
+                        />
+                        Blocked
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="size-2.5 shrink-0 rounded-md bg-emerald-600 ring-1 ring-emerald-500/50"
+                          aria-hidden
+                        />
+                        Selected
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1371,7 +1475,7 @@ export default function BookCourtPage() {
             onClick={openBookingReview}
             disabled={
               !user ||
-              !startTime ||
+              selectedSlots.length === 0 ||
               segments.length === 0 ||
               createBookings.isPending
             }

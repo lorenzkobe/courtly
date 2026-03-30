@@ -38,7 +38,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { formatTimeShort } from "@/lib/booking-range";
+import {
+  formatBookableHourSlotRange,
+  formatTimeShort,
+} from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
 import type { Court, Venue } from "@/lib/types/courtly";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -996,7 +999,7 @@ export default function AdminVenueCourtsPage() {
                           )
                         }
                       >
-                        {formatTimeShort(time)}
+                        {formatBookableHourSlotRange(time)}
                       </Button>
                     );
                   })}

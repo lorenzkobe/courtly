@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { formatTimeShort } from "@/lib/booking-range";
+import { formatBookableHourSlotRange } from "@/lib/booking-range";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -251,10 +251,10 @@ export default function CourtsPage() {
 
   const formatTimeRangeLabel = (from: string, to: string) => {
     if (from && to) {
-      return `${formatTimeShort(from)} – ${formatTimeShort(to)}`;
+      return `${formatBookableHourSlotRange(from)} – ${formatBookableHourSlotRange(to)}`;
     }
-    if (from) return `from ${formatTimeShort(from)}`;
-    if (to) return `through ${formatTimeShort(to)}`;
+    if (from) return `from ${formatBookableHourSlotRange(from)}`;
+    if (to) return `through ${formatBookableHourSlotRange(to)}`;
     return "";
   };
 
@@ -532,7 +532,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -558,7 +558,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -596,7 +596,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -622,7 +622,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
