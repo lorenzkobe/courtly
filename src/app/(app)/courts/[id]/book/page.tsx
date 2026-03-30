@@ -876,7 +876,7 @@ export default function BookCourtPage() {
 
           <PageHeader
             title={`Book ${court.establishment_name ?? court.name}`}
-            subtitle={`${courtNumberLabel(court)} · ${court.location}`}
+            subtitle={court.location}
             alignActions="start"
           >
             <Button
@@ -1036,7 +1036,6 @@ export default function BookCourtPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <MapPin className="mr-1.5 h-3.5 w-3.5" />
                       Open in Map
                       <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
                     </a>

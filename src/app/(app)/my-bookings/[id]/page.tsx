@@ -465,15 +465,15 @@ export default function BookingDetailPage() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Location
                   </p>
-                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                    <p className="flex min-w-0 flex-1 items-start gap-2 text-foreground">
+                  <div className="space-y-3">
+                    <p className="flex items-start gap-2 text-foreground">
                       <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0">{court.location}</span>
                     </p>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
+                      className="w-fit"
                       asChild
                     >
                       <a
@@ -481,7 +481,6 @@ export default function BookingDetailPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        <MapPin className="mr-1.5 h-3.5 w-3.5" />
                         Open in Map
                         <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
                       </a>
