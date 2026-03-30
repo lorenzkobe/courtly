@@ -86,7 +86,6 @@ export default function NotificationBell() {
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
   const [open, setOpen] = useState(false);
-  const [hasOpened, setHasOpened] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
@@ -94,7 +93,9 @@ export default function NotificationBell() {
       const { data: listResponse } = await courtlyApi.notifications.list();
       return listResponse;
     },
-    enabled: Boolean(user) && hasOpened,
+    // Keep this active while authenticated so realtime invalidations can update
+    // the badge count immediately, even before the popover is opened.
+    enabled: Boolean(user),
     staleTime: 15_000,
     // Poll only when realtime is not configured.
     refetchInterval: realtimeOk ? false : 30_000,
@@ -136,7 +137,6 @@ export default function NotificationBell() {
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (nextOpen && !hasOpened) setHasOpened(true);
       }}
     >
       <PopoverTrigger asChild>
