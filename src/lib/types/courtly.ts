@@ -126,6 +126,7 @@ export type Court = {
 
 export type Booking = {
   id: string;
+  booking_number?: string;
   court_id: string;
   court_name?: string;
   /** Hydrated from the court’s venue on read APIs. */
@@ -171,6 +172,45 @@ export type Booking = {
   admin_note_updated_by_name?: string;
   admin_note_updated_at?: string;
   created_date?: string;
+};
+
+export type PaymentTransaction = {
+  id: string;
+  provider: string;
+  booking_id: string;
+  booking_group_id?: string | null;
+  payment_link_id?: string | null;
+  provider_event_id?: string | null;
+  event_type?: string | null;
+  provider_payment_id?: string | null;
+  provider_payment_intent_id?: string | null;
+  provider_balance_transaction_id?: string | null;
+  provider_external_reference_number?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  fee?: number | null;
+  net_amount?: number | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_brand?: string | null;
+  source_last4?: string | null;
+  source_country?: string | null;
+  source_provider_id?: string | null;
+  refund_id?: string | null;
+  refund_status?: string | null;
+  refund_amount?: number | null;
+  refund_reason?: string | null;
+  refund_notes?: string | null;
+  trace_status: string;
+  reconciled_by: "webhook" | "manual_reconcile";
+  trace_note?: string | null;
+  provider_created_at?: string | null;
+  provider_updated_at?: string | null;
+  paid_at?: string | null;
+  refund_attempted_at?: string | null;
+  refund_created_at?: string | null;
+  raw_payload?: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export type Tournament = {
@@ -322,6 +362,7 @@ export type CourtDetailContextResponse = {
 export type BookingDetailGroupResponse = {
   booking: Booking;
   group_segments: Booking[];
+  payment_transactions?: PaymentTransaction[];
 };
 
 export type BookingDetailContextResponse = BookingDetailGroupResponse & {

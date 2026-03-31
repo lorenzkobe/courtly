@@ -392,6 +392,8 @@ export default function BookingDetailPage() {
             <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr] sm:gap-x-6">
               <dt className="text-muted-foreground">Court</dt>
               <dd className="font-medium">{booking.court_name ?? "—"}</dd>
+              <dt className="text-muted-foreground">Booking #</dt>
+              <dd className="font-mono text-xs">{booking.booking_number ?? "—"}</dd>
               <dt className="text-muted-foreground">Date</dt>
               <dd className="flex items-center gap-2 font-medium">
                 <Calendar className="h-3.5 w-3.5 text-muted-foreground" />

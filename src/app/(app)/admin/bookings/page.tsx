@@ -49,7 +49,7 @@ const statusStyles: Record<string, string> = {
 
 type AdminBookingFilters = {
   status: "all" | Booking["status"];
-  paymentReview: "all" | "refund_required";
+  paymentReview: "all" | "refund_required" | "failed" | "pending" | "paid";
   venueId: string;
   dateFrom: string;
   dateTo: string;
@@ -71,6 +71,16 @@ function defaultAdminBookingFilters(): AdminBookingFilters {
 
 function cloneAdminBookingFilters(s: AdminBookingFilters): AdminBookingFilters {
   return { ...s };
+}
+
+function bookingPaymentTraceStatus(
+  booking: Pick<Booking, "status" | "refund_required" | "payment_failed_at" | "paid_at">,
+): "refund_required" | "failed" | "pending" | "paid" | "none" {
+  if (booking.refund_required) return "refund_required";
+  if (booking.status === "pending_payment" && booking.payment_failed_at) return "failed";
+  if (booking.status === "pending_payment") return "pending";
+  if (booking.paid_at || booking.status === "confirmed" || booking.status === "completed") return "paid";
+  return "none";
 }
 
 type AppliedFilterChip = {
@@ -234,6 +244,7 @@ export default function AdminBookingsPage() {
   });
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;
+  const paymentTransactions = detailPayload?.payment_transactions ?? [];
 
   const detailSegments = useMemo(() => {
     if (!detailBooking) return [];
@@ -319,7 +330,9 @@ export default function AdminBookingsPage() {
   });
 
   const filtered = useMemo(() => {
-    const searchLower = search.toLowerCase();
+    const searchTerm = search.trim();
+    const searchLower = searchTerm.toLowerCase();
+    const searchUpper = searchTerm.toUpperCase();
     const {
       status: statusFilter,
       paymentReview,
@@ -335,7 +348,7 @@ export default function AdminBookingsPage() {
         statusFilter === "all" || booking.status === statusFilter;
       const paymentReviewMatch =
         paymentReview === "all" ||
-        (paymentReview === "refund_required" && booking.refund_required === true);
+        bookingPaymentTraceStatus(booking) === paymentReview;
       const venueMatch = !venueId || booking.venue_id === venueId;
       const fromOk = !dateFrom || booking.date >= dateFrom;
       const toOk = !dateTo || booking.date <= dateTo;
@@ -355,11 +368,13 @@ export default function AdminBookingsPage() {
       }
 
       const searchMatch =
-        !search ||
+        !searchTerm ||
         booking.player_name?.toLowerCase().includes(searchLower) ||
         booking.player_email?.toLowerCase().includes(searchLower) ||
         booking.court_name?.toLowerCase().includes(searchLower) ||
-        booking.establishment_name?.toLowerCase().includes(searchLower);
+        booking.establishment_name?.toLowerCase().includes(searchLower) ||
+        booking.booking_number?.toUpperCase().includes(searchUpper) ||
+        booking.booking_number?.split("-").at(-1)?.toUpperCase().includes(searchUpper);
       return (
         statusMatch &&
         paymentReviewMatch &&
@@ -405,6 +420,27 @@ export default function AdminBookingsPage() {
       chips.push({
         id: "payment-review",
         label: "Payment: Refund required",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "failed") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Failed",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "pending") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Pending",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "paid") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Paid",
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
@@ -508,6 +544,10 @@ export default function AdminBookingsPage() {
                   <dt className="text-muted-foreground">Venue</dt>
                   <dd className="font-medium">
                     {detailBooking.establishment_name ?? "—"}
+                  </dd>
+                  <dt className="text-muted-foreground">Booking #</dt>
+                  <dd className="font-mono text-xs">
+                    {detailBooking.booking_number ?? "—"}
                   </dd>
                   <dt className="text-muted-foreground">Court</dt>
                   <dd className="font-medium">{detailBooking.court_name ?? "—"}</dd>
@@ -632,6 +672,38 @@ export default function AdminBookingsPage() {
                 savePending={saveAdminNote.isPending}
                 clearPending={clearAdminNote.isPending}
               />
+              <section className="border-t border-border/60 pt-4">
+                <h3 className="mb-2 font-heading font-semibold text-foreground">
+                  Payment audit
+                </h3>
+                {paymentTransactions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No payment audit events yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {paymentTransactions.map((tx) => (
+                      <li
+                        key={tx.id}
+                        className="rounded-md border border-border/50 bg-muted/20 p-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] uppercase">
+                            {tx.trace_status}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {tx.created_at ? format(new Date(tx.created_at), "PPpp") : "—"}
+                          </span>
+                          {tx.provider_payment_id ? (
+                            <span className="font-mono text-[10px]">{tx.provider_payment_id}</span>
+                          ) : null}
+                        </div>
+                        {tx.trace_note ? (
+                          <p className="mt-1 text-muted-foreground">{tx.trace_note}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -686,7 +758,7 @@ export default function AdminBookingsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, court, venue..."
+              placeholder="Search name, email, court, venue, booking # or suffix..."
               className="pl-9"
             />
           </div>
@@ -817,6 +889,9 @@ export default function AdminBookingsPage() {
                 <SelectContent>
                   <SelectItem value="all">All payment states</SelectItem>
                   <SelectItem value="refund_required">Refund required only</SelectItem>
+                  <SelectItem value="failed">Failed (pending_payment with failed callback)</SelectItem>
+                  <SelectItem value="pending">Pending payment</SelectItem>
+                  <SelectItem value="paid">Paid / confirmed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -950,6 +1025,11 @@ export default function AdminBookingsPage() {
                       <span className="font-heading font-bold text-foreground">
                         {booking.court_name || "Court"}
                       </span>
+                      {booking.booking_number ? (
+                        <Badge variant="outline" className="font-mono text-[11px]">
+                          {booking.booking_number}
+                        </Badge>
+                      ) : null}
                       <Badge
                         variant="outline"
                         className={statusStyles[booking.status] ?? ""}

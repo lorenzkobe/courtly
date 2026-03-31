@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isHoldActive } from "@/lib/bookings/payment-hold";
 import {
+  createPaymentTransactionAudit,
   getBookingById,
   hasBlockingBookingConflictForCourt,
   listBookingsByGroupIdAdmin,
@@ -37,10 +38,28 @@ export async function POST(_: Request, ctx: Ctx) {
   if (normalizedStatus !== "paid") {
     const holdActive = isHoldActive(booking.hold_expires_at);
     if (holdActive) {
+      await createPaymentTransactionAudit({
+        provider: "paymongo",
+        booking_id: booking.id,
+        booking_group_id: booking.booking_group_id ?? null,
+        payment_link_id: booking.payment_link_id ?? null,
+        trace_status: "pending",
+        reconciled_by: "manual_reconcile",
+        trace_note: "Manual reconcile checked: payment still pending",
+      });
       return NextResponse.json({ ok: true, status: "pending_payment", paid: false, reconciled: false });
     }
 
     if (isTimedOutCancelled) {
+      await createPaymentTransactionAudit({
+        provider: "paymongo",
+        booking_id: booking.id,
+        booking_group_id: booking.booking_group_id ?? null,
+        payment_link_id: booking.payment_link_id ?? null,
+        trace_status: "failed",
+        reconciled_by: "manual_reconcile",
+        trace_note: "Manual reconcile checked: payment not paid after timeout",
+      });
       return NextResponse.json({ ok: true, status: "cancelled", reconciled: true, paid: false });
     }
 
@@ -58,6 +77,15 @@ export async function POST(_: Request, ctx: Ctx) {
       ? query.eq("booking_group_id", booking.booking_group_id)
       : query.eq("id", booking.id);
     await query;
+    await createPaymentTransactionAudit({
+      provider: "paymongo",
+      booking_id: booking.id,
+      booking_group_id: booking.booking_group_id ?? null,
+      payment_link_id: booking.payment_link_id ?? null,
+      trace_status: "failed",
+      reconciled_by: "manual_reconcile",
+      trace_note: "Manual reconcile set booking to payment_timeout",
+    });
 
     return NextResponse.json({ ok: true, status: "cancelled", reconciled: true, paid: false });
   }
@@ -95,6 +123,17 @@ export async function POST(_: Request, ctx: Ctx) {
           .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
         query = groupId ? query.eq("booking_group_id", groupId) : query.eq("id", booking.id);
         await query;
+        await createPaymentTransactionAudit({
+          provider: "paymongo",
+          booking_id: booking.id,
+          booking_group_id: groupId ?? null,
+          payment_link_id: booking.payment_link_id ?? null,
+          provider_payment_id: link.paymentId ?? null,
+          trace_status: "refund_required",
+          reconciled_by: "manual_reconcile",
+          trace_note: "Paid after timeout with conflict; refund required",
+          paid_at: new Date().toISOString(),
+        });
         return NextResponse.json({ ok: true, status: "cancelled", refund_required: true });
       }
     }
@@ -115,6 +154,17 @@ export async function POST(_: Request, ctx: Ctx) {
     .or("status.eq.pending_payment,and(status.eq.cancelled,cancel_reason.eq.payment_timeout)");
   query = groupId ? query.eq("booking_group_id", groupId) : query.eq("id", booking.id);
   await query;
+  await createPaymentTransactionAudit({
+    provider: "paymongo",
+    booking_id: booking.id,
+    booking_group_id: groupId ?? null,
+    payment_link_id: booking.payment_link_id ?? null,
+    provider_payment_id: link.paymentId ?? null,
+    trace_status: "paid",
+    reconciled_by: "manual_reconcile",
+    trace_note: "Manual reconcile confirmed booking as paid",
+    paid_at: new Date().toISOString(),
+  });
 
   return NextResponse.json({ ok: true, status: "confirmed", reconciled: true });
 }

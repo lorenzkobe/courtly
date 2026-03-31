@@ -179,14 +179,17 @@ export function parsePaymongoWebhookEvent(rawBody: string): PaymongoWebhookEvent
     };
   };
   const id = payload.data?.id;
-  const type = payload.data?.type;
+  const attributes = payload.data?.attributes ?? {};
+  const typeFromAttributes =
+    typeof attributes.type === "string" ? attributes.type : null;
+  const type = typeFromAttributes ?? payload.data?.type;
   if (!id || !type) {
     throw new Error("Invalid PayMongo webhook payload");
   }
   return {
     id,
     type,
-    attributes: payload.data?.attributes ?? {},
+    attributes,
     raw: payload as JsonRecord,
   };
 }

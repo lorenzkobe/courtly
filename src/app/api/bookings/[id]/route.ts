@@ -7,6 +7,8 @@ import {
 import {
   getBookingById,
   getCourtById,
+  listPaymentTransactionsByBookingIdAdmin,
+  listPaymentTransactionsByGroupIdAdmin,
   listBookingsFiltered,
   listCourtReviewsByVenue,
   listVenueAdminAssignmentsByAdminUser,
@@ -92,17 +94,20 @@ export async function GET(req: Request, ctx: Ctx) {
     const reviews = court?.venue_id
       ? await listCourtReviewsByVenue(court.venue_id)
       : [];
-    return NextResponse.json(
-      {
-        booking: applyPlayerMobileVisibility(
-          enriched ?? hydrateBooking(booking),
-          user,
-        ),
-        group_segments: [applyPlayerMobileVisibility(hydrateBooking(booking), user)],
-        ...(court ? { court } : {}),
-        ...(reviews.length > 0 ? { reviews } : {}),
-      },
-    );
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
+    return NextResponse.json({
+      booking: applyPlayerMobileVisibility(
+        enriched ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: [applyPlayerMobileVisibility(hydrateBooking(booking), user)],
+      ...(court ? { court } : {}),
+      ...(reviews.length > 0 ? { reviews } : {}),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+    });
   }
 
   const groupSegments = booking.booking_group_id
@@ -124,6 +129,12 @@ export async function GET(req: Request, ctx: Ctx) {
     );
     const enrichedSegments = await enrichBookingsWithProfileMobile(readable, user);
     if (!includeContext) {
+      const paymentTransactions =
+        user?.role === "admin" || user?.role === "superadmin"
+          ? booking.booking_group_id
+            ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+            : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+          : [];
       return NextResponse.json({
         booking: applyPlayerMobileVisibility(
           enrichedBooking ?? hydrateBooking(booking),
@@ -132,12 +143,19 @@ export async function GET(req: Request, ctx: Ctx) {
         group_segments: enrichedSegments.map((seg) =>
           applyPlayerMobileVisibility(hydrateBooking(seg), user),
         ),
+        ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
       });
     }
     const court = await getCourtById(booking.court_id);
     const reviews = court?.venue_id
       ? await listCourtReviewsByVenue(court.venue_id)
       : [];
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? booking.booking_group_id
+          ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+          : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
     return NextResponse.json({
       booking: applyPlayerMobileVisibility(
         enrichedBooking ?? hydrateBooking(booking),
@@ -148,6 +166,7 @@ export async function GET(req: Request, ctx: Ctx) {
       ),
       ...(court ? { court } : {}),
       ...(reviews.length > 0 ? { reviews } : {}),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
     });
   }
 
@@ -157,6 +176,12 @@ export async function GET(req: Request, ctx: Ctx) {
   );
   const enrichedGroupSegments = await enrichBookingsWithProfileMobile(groupSegments, user);
   if (!includeContext) {
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? booking.booking_group_id
+          ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+          : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
     return NextResponse.json({
       booking: applyPlayerMobileVisibility(
         enrichedBooking ?? hydrateBooking(booking),
@@ -165,12 +190,19 @@ export async function GET(req: Request, ctx: Ctx) {
       group_segments: enrichedGroupSegments.map((seg) =>
         applyPlayerMobileVisibility(hydrateBooking(seg), user),
       ),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
     });
   }
   const court = await getCourtById(booking.court_id);
   const reviews = court?.venue_id
     ? await listCourtReviewsByVenue(court.venue_id)
     : [];
+  const paymentTransactions =
+    user?.role === "admin" || user?.role === "superadmin"
+      ? booking.booking_group_id
+        ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+        : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+      : [];
   return NextResponse.json({
     booking: applyPlayerMobileVisibility(
       enrichedBooking ?? hydrateBooking(booking),
@@ -181,6 +213,7 @@ export async function GET(req: Request, ctx: Ctx) {
     ),
     ...(court ? { court } : {}),
     ...(reviews.length > 0 ? { reviews } : {}),
+    ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
   });
 }
 

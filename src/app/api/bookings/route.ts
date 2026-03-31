@@ -4,6 +4,7 @@ import {
   enrichBookingsWithProfileMobile,
 } from "@/lib/booking-player-mobile";
 import { readSessionUser } from "@/lib/auth/cookie-session";
+import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import {
   listBookingsFiltered,
@@ -216,6 +217,7 @@ export async function POST(req: Request) {
   }
 
   const rows = bookings.map((booking) => ({
+    booking_number: null as string | null,
     user_id: sessionUser.id,
     court_id: booking.court_id,
     booking_group_id: booking.booking_group_id ?? null,
@@ -232,14 +234,44 @@ export async function POST(req: Request) {
     notes: booking.notes ?? null,
   }));
 
-  const insertedRows = (rows.length === 1
-    ? [await insertRow("bookings", rows[0])]
-    : await insertRows("bookings", rows)) as Array<{ id: string; created_at: string }>;
+  function assignBookingNumbers(): void {
+    const groupBookingNumber = new Map<string, string>();
+    rows.forEach((row, index) => {
+      const groupKey =
+        (row.booking_group_id as string | null | undefined) ??
+        `single:${row.court_id}:${row.date}:${row.start_time}:${row.end_time}:${index}`;
+      if (!groupBookingNumber.has(groupKey)) {
+        groupBookingNumber.set(groupKey, generateBookingNumber(String(row.date)));
+      }
+      row.booking_number = groupBookingNumber.get(groupKey) ?? generateBookingNumber(String(row.date));
+    });
+  }
+
+  let insertedRows: Array<{ id: string; created_at: string }> = [];
+  let insertedOk = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assignBookingNumbers();
+    try {
+      insertedRows = (rows.length === 1
+        ? [await insertRow("bookings", rows[0])]
+        : await insertRows("bookings", rows)) as Array<{ id: string; created_at: string }>;
+      insertedOk = insertedRows.length > 0;
+      if (insertedOk) break;
+    } catch (error) {
+      const code = (error as { code?: string } | undefined)?.code;
+      if (code !== "23505") throw error;
+      continue;
+    }
+  }
+  if (!insertedOk) {
+    return NextResponse.json({ error: "Failed to create booking." }, { status: 500 });
+  }
 
   const result = bookings.map((booking, index) =>
     hydrateBooking({
       ...booking,
       id: insertedRows[index]?.id ?? "",
+      booking_number: rows[index]?.booking_number ?? undefined,
       created_date: insertedRows[index]?.created_at ?? "",
     }),
   );

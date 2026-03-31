@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
+import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import { createPaymongoPaymentLink } from "@/lib/paymongo/client";
 import { getPublicAppUrl } from "@/lib/supabase/app-url";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  createPaymentTransactionAudit,
   hasBlockingBookingConflictForCourt,
   listCourts,
   listVenues,
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
   const appUrl = getPublicAppUrl();
   const holdExpiresAt = holdExpiresAtFrom();
   const bookingGroupId = crypto.randomUUID();
+  let bookingNumber = generateBookingNumber(payloads[0]?.date ?? null);
   const rows: Array<Record<string, unknown>> = [];
   let firstCourtId: string | null = null;
   let totalCost = 0;
@@ -98,6 +101,7 @@ export async function POST(req: Request) {
     totalCost += Number(itemTotal ?? 0);
     rows.push({
       user_id: sessionUser.id,
+      booking_number: bookingNumber,
       court_id: court.id,
       booking_group_id: bookingGroupId,
       date: body.date,
@@ -118,11 +122,28 @@ export async function POST(req: Request) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: insertedRows, error: insertError } = await supabase
-    .from("bookings")
-    .insert(rows as never[])
-    .select("id, booking_group_id");
-  if (insertError || !insertedRows || insertedRows.length === 0) {
+  let insertedRows: Array<{ id: string; booking_group_id: string }> | null = null;
+  let inserted = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const tryRows =
+      attempt === 0
+        ? rows
+        : rows.map((row) => ({ ...row, booking_number: generateBookingNumber(payloads[0]?.date ?? null) }));
+    const { data, error } = await supabase
+      .from("bookings")
+      .insert(tryRows as never[])
+      .select("id, booking_group_id");
+    if (!error && data && data.length > 0) {
+      insertedRows = data as Array<{ id: string; booking_group_id: string }>;
+      bookingNumber = String((tryRows[0] as { booking_number?: string }).booking_number ?? bookingNumber);
+      inserted = true;
+      break;
+    }
+    if (error?.code !== "23505") {
+      break;
+    }
+  }
+  if (!inserted || !insertedRows || insertedRows.length === 0) {
     return NextResponse.json({ error: "Failed to create booking hold." }, { status: 500 });
   }
   const bookingId = (insertedRows[0] as { id: string }).id;
@@ -162,5 +183,19 @@ export async function POST(req: Request) {
     payment_link_url: link.checkout_url,
     hold_expires_at: holdExpiresAt.toISOString(),
   };
+
+  await createPaymentTransactionAudit({
+    provider: "paymongo",
+    booking_id: bookingId,
+    booking_group_id: bookingGroupId,
+    payment_link_id: link.id,
+    amount: toCentavos(totalCost),
+    currency: "PHP",
+    trace_status: "link_created",
+    reconciled_by: "manual_reconcile",
+    trace_note: "Checkout payment link created",
+    provider_created_at: new Date().toISOString(),
+  });
+
   return NextResponse.json(body);
 }

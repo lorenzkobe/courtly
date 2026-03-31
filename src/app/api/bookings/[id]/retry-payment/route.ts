@@ -4,7 +4,11 @@ import { isHoldActive, retryCooldownActive } from "@/lib/bookings/payment-hold";
 import { createPaymongoPaymentLink } from "@/lib/paymongo/client";
 import { getPublicAppUrl } from "@/lib/supabase/app-url";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getBookingById, listBookingsByGroupIdAdmin } from "@/lib/data/courtly-db";
+import {
+  createPaymentTransactionAudit,
+  getBookingById,
+  listBookingsByGroupIdAdmin,
+} from "@/lib/data/courtly-db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -87,6 +91,18 @@ export async function POST(_: Request, ctx: Ctx) {
   if (error) {
     return NextResponse.json({ error: "Failed to refresh payment link." }, { status: 500 });
   }
+  await createPaymentTransactionAudit({
+    provider: "paymongo",
+    booking_id: booking.id,
+    booking_group_id: groupId ?? null,
+    payment_link_id: link.id,
+    amount: toCentavos(totalCost),
+    currency: "PHP",
+    trace_status: "pending",
+    reconciled_by: "manual_reconcile",
+    trace_note: "Payment link retried",
+    provider_created_at: new Date().toISOString(),
+  });
   return NextResponse.json({
     booking_id: booking.id,
     booking_group_id: groupId ?? booking.id,

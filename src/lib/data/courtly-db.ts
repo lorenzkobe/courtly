@@ -15,6 +15,7 @@ import type {
   Venue,
   VenueAdminAssignment,
   VenueClosure,
+  PaymentTransaction,
 } from "@/lib/types/courtly";
 
 function toDateString(value: string | null): string {
@@ -71,6 +72,7 @@ const BOOKING_SELECT_WITH_COURTS_AND_PROFILE =
 function mapBookingRow(row: unknown): Booking {
   const record = row as {
     id: string;
+    booking_number?: string | null;
     court_id: string;
     booking_group_id?: string;
     date: string | null;
@@ -122,6 +124,7 @@ function mapBookingRow(row: unknown): Booking {
 
   return {
     id: record.id,
+    booking_number: record.booking_number ?? undefined,
     court_id: record.court_id,
     court_name: court?.name,
     venue_id: court?.venue_id,
@@ -159,6 +162,52 @@ function mapBookingRow(row: unknown): Booking {
     admin_note_updated_by_name: record.admin_note_updated_by_name,
     admin_note_updated_at: record.admin_note_updated_at,
     created_date: toIsoString(record.created_at),
+  };
+}
+
+function mapPaymentTransactionRow(row: unknown): PaymentTransaction {
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record.id ?? ""),
+    provider: String(record.provider ?? ""),
+    booking_id: String(record.booking_id ?? ""),
+    booking_group_id: (record.booking_group_id as string | null | undefined) ?? null,
+    payment_link_id: (record.payment_link_id as string | null | undefined) ?? null,
+    provider_event_id: (record.provider_event_id as string | null | undefined) ?? null,
+    event_type: (record.event_type as string | null | undefined) ?? null,
+    provider_payment_id: (record.provider_payment_id as string | null | undefined) ?? null,
+    provider_payment_intent_id:
+      (record.provider_payment_intent_id as string | null | undefined) ?? null,
+    provider_balance_transaction_id:
+      (record.provider_balance_transaction_id as string | null | undefined) ?? null,
+    provider_external_reference_number:
+      (record.provider_external_reference_number as string | null | undefined) ?? null,
+    amount: (record.amount as number | null | undefined) ?? null,
+    currency: (record.currency as string | null | undefined) ?? null,
+    fee: (record.fee as number | null | undefined) ?? null,
+    net_amount: (record.net_amount as number | null | undefined) ?? null,
+    source_id: (record.source_id as string | null | undefined) ?? null,
+    source_type: (record.source_type as string | null | undefined) ?? null,
+    source_brand: (record.source_brand as string | null | undefined) ?? null,
+    source_last4: (record.source_last4 as string | null | undefined) ?? null,
+    source_country: (record.source_country as string | null | undefined) ?? null,
+    source_provider_id: (record.source_provider_id as string | null | undefined) ?? null,
+    refund_id: (record.refund_id as string | null | undefined) ?? null,
+    refund_status: (record.refund_status as string | null | undefined) ?? null,
+    refund_amount: (record.refund_amount as number | null | undefined) ?? null,
+    refund_reason: (record.refund_reason as string | null | undefined) ?? null,
+    refund_notes: (record.refund_notes as string | null | undefined) ?? null,
+    trace_status: String(record.trace_status ?? ""),
+    reconciled_by:
+      ((record.reconciled_by as "webhook" | "manual_reconcile" | undefined) ?? "webhook"),
+    trace_note: (record.trace_note as string | null | undefined) ?? null,
+    provider_created_at: (record.provider_created_at as string | null | undefined) ?? null,
+    provider_updated_at: (record.provider_updated_at as string | null | undefined) ?? null,
+    paid_at: (record.paid_at as string | null | undefined) ?? null,
+    refund_attempted_at: (record.refund_attempted_at as string | null | undefined) ?? null,
+    refund_created_at: (record.refund_created_at as string | null | undefined) ?? null,
+    raw_payload: (record.raw_payload as Record<string, unknown> | null | undefined) ?? null,
+    created_at: toIsoString((record.created_at as string | null | undefined) ?? null),
   };
 }
 
@@ -648,6 +697,85 @@ export async function markPaymentWebhookEventProcessed(params: {
   if (!error) return true;
   if (error.code === "23505") return false;
   throw error;
+}
+
+export type PaymentTransactionWrite = {
+  provider: string;
+  booking_id: string;
+  booking_group_id?: string | null;
+  payment_link_id?: string | null;
+  provider_event_id?: string | null;
+  event_type?: string | null;
+  provider_payment_id?: string | null;
+  provider_payment_intent_id?: string | null;
+  provider_balance_transaction_id?: string | null;
+  provider_external_reference_number?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  fee?: number | null;
+  net_amount?: number | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_brand?: string | null;
+  source_last4?: string | null;
+  source_country?: string | null;
+  source_provider_id?: string | null;
+  refund_id?: string | null;
+  refund_status?: string | null;
+  refund_amount?: number | null;
+  refund_reason?: string | null;
+  refund_notes?: string | null;
+  trace_status: string;
+  reconciled_by: "webhook" | "manual_reconcile";
+  trace_note?: string | null;
+  provider_created_at?: string | null;
+  provider_updated_at?: string | null;
+  paid_at?: string | null;
+  refund_attempted_at?: string | null;
+  refund_created_at?: string | null;
+  raw_payload?: Record<string, unknown> | null;
+};
+
+export async function createPaymentTransactionAudit(
+  input: PaymentTransactionWrite,
+): Promise<PaymentTransaction | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("payment_transactions")
+    .insert(input as never)
+    .select("*")
+    .maybeSingle();
+  if (!error) return data ? mapPaymentTransactionRow(data) : null;
+  if (error.code === "23505" && input.provider_event_id) {
+    return null;
+  }
+  throw error;
+}
+
+export async function listPaymentTransactionsByBookingIdAdmin(
+  bookingId: string,
+): Promise<PaymentTransaction[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("payment_transactions")
+    .select("*")
+    .eq("booking_id", bookingId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapPaymentTransactionRow);
+}
+
+export async function listPaymentTransactionsByGroupIdAdmin(
+  bookingGroupId: string,
+): Promise<PaymentTransaction[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("payment_transactions")
+    .select("*")
+    .eq("booking_group_id", bookingGroupId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapPaymentTransactionRow);
 }
 
 export async function listConfirmedBookingsForAutoCompletion(

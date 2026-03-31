@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isHoldActive } from "@/lib/bookings/payment-hold";
 import {
+  createPaymentTransactionAudit,
   getBookingByIdAdmin,
   getBookingByPaymentLinkIdAdmin,
   hasBlockingBookingConflictForCourt,
@@ -70,6 +71,11 @@ function findFirstNumberDeep(input: unknown, keyName: string): number | null {
   return null;
 }
 
+function isoFromUnixSeconds(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return new Date(value * 1000).toISOString();
+}
+
 async function findRelatedBookings(
   eventAttributes: Record<string, unknown> | undefined,
 ): Promise<Booking[]> {
@@ -124,10 +130,38 @@ export async function POST(req: Request) {
   );
 
   const nowIso = new Date().toISOString();
+  const eventAttributes = event.attributes;
+  const eventData = (eventAttributes?.data as Record<string, unknown> | undefined)?.attributes as
+    | Record<string, unknown>
+    | undefined;
   const paymentReferenceId =
-    findFirstStringDeep(event.attributes, "payment_id") ||
-    findFirstStringDeep(event.attributes, "id");
-  const paymentAmount = findFirstNumberDeep(event.attributes, "amount");
+    findFirstStringDeep(eventAttributes, "payment_id") ||
+    findFirstStringDeep(eventAttributes, "id");
+  const paymentAmount = findFirstNumberDeep(eventAttributes, "amount");
+  const paymentCurrency = findFirstStringDeep(eventAttributes, "currency");
+  const paymentFee = findFirstNumberDeep(eventAttributes, "fee");
+  const paymentNetAmount = findFirstNumberDeep(eventAttributes, "net_amount");
+  const paymentIntentId = findFirstStringDeep(eventAttributes, "payment_intent_id");
+  const balanceTransactionId = findFirstStringDeep(eventAttributes, "balance_transaction_id");
+  const externalReferenceNumber = findFirstStringDeep(eventAttributes, "external_reference_number");
+  const paymentStatus = findFirstStringDeep(eventAttributes, "status");
+  const providerCreatedAt = isoFromUnixSeconds(findFirstNumberDeep(eventAttributes, "created_at"));
+  const providerUpdatedAt = isoFromUnixSeconds(findFirstNumberDeep(eventAttributes, "updated_at"));
+  const paidAt = isoFromUnixSeconds(findFirstNumberDeep(eventAttributes, "paid_at"));
+  const source =
+    (eventData?.source as Record<string, unknown> | undefined) ??
+    ((eventAttributes?.source as Record<string, unknown> | undefined) ?? undefined);
+  const sourceId = extractString(source?.id);
+  const sourceType = extractString(source?.type);
+  const sourceBrand = extractString(source?.brand);
+  const sourceLast4 = extractString(source?.last4);
+  const sourceCountry = extractString(source?.country);
+  const sourceProviderId =
+    extractString(source?.provider_id) ||
+    extractString((source?.provider as Record<string, unknown> | undefined)?.id);
+  const paymentLinkId =
+    findFirstStringDeep(eventAttributes, "payment_link_id") ||
+    findFirstStringDeep(eventAttributes, "link_id");
   const supabase = createSupabaseAdminClient();
 
   if (isPaymentFailureType(event.type)) {
@@ -143,6 +177,35 @@ export async function POST(req: Request) {
       ? failureQuery.eq("booking_group_id", groupId)
       : failureQuery.eq("id", pending[0]!.id);
     await failureQuery;
+    await createPaymentTransactionAudit({
+      provider: "paymongo",
+      booking_id: pending[0]!.id,
+      booking_group_id: groupId,
+      payment_link_id: paymentLinkId ?? pending[0]!.payment_link_id ?? null,
+      provider_event_id: event.id,
+      event_type: event.type,
+      provider_payment_id: paymentReferenceId,
+      provider_payment_intent_id: paymentIntentId,
+      provider_balance_transaction_id: balanceTransactionId,
+      provider_external_reference_number: externalReferenceNumber,
+      amount: paymentAmount,
+      currency: paymentCurrency,
+      fee: paymentFee,
+      net_amount: paymentNetAmount,
+      source_id: sourceId,
+      source_type: sourceType,
+      source_brand: sourceBrand,
+      source_last4: sourceLast4,
+      source_country: sourceCountry,
+      source_provider_id: sourceProviderId,
+      trace_status: "failed",
+      reconciled_by: "webhook",
+      trace_note: paymentStatus ? `Webhook marked payment as ${paymentStatus}` : "Webhook payment failed",
+      provider_created_at: providerCreatedAt,
+      provider_updated_at: providerUpdatedAt,
+      paid_at: paidAt,
+      raw_payload: event.raw,
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -204,6 +267,39 @@ export async function POST(req: Request) {
         ? refundQuery.eq("booking_group_id", groupId)
         : refundQuery.eq("id", candidates[0]!.id);
       await refundQuery;
+      await createPaymentTransactionAudit({
+        provider: "paymongo",
+        booking_id: candidates[0]!.id,
+        booking_group_id: groupId,
+        payment_link_id: paymentLinkId ?? candidates[0]!.payment_link_id ?? null,
+        provider_event_id: event.id,
+        event_type: event.type,
+        provider_payment_id: paymentReferenceId,
+        provider_payment_intent_id: paymentIntentId,
+        provider_balance_transaction_id: balanceTransactionId,
+        provider_external_reference_number: externalReferenceNumber,
+        amount: paymentAmount,
+        currency: paymentCurrency,
+        fee: paymentFee,
+        net_amount: paymentNetAmount,
+        source_id: sourceId,
+        source_type: sourceType,
+        source_brand: sourceBrand,
+        source_last4: sourceLast4,
+        source_country: sourceCountry,
+        source_provider_id: sourceProviderId,
+        trace_status: refundSucceeded ? "refunded" : "refund_required",
+        reconciled_by: "webhook",
+        trace_note: refundSucceeded
+          ? "Webhook late success conflict; refund succeeded"
+          : "Webhook late success conflict; refund required",
+        provider_created_at: providerCreatedAt,
+        provider_updated_at: providerUpdatedAt,
+        paid_at: paidAt,
+        refund_attempted_at: nowIso,
+        refund_created_at: refundSucceeded ? nowIso : null,
+        raw_payload: event.raw,
+      });
       return NextResponse.json({ ok: true, refunded: refundSucceeded });
     }
   }
@@ -224,6 +320,36 @@ export async function POST(req: Request) {
     ? confirmQuery.eq("booking_group_id", groupId)
     : confirmQuery.eq("id", candidates[0]!.id);
   const { data: confirmedRows } = await confirmQuery.select("id");
+
+  await createPaymentTransactionAudit({
+    provider: "paymongo",
+    booking_id: candidates[0]!.id,
+    booking_group_id: groupId,
+    payment_link_id: paymentLinkId ?? candidates[0]!.payment_link_id ?? null,
+    provider_event_id: event.id,
+    event_type: event.type,
+    provider_payment_id: paymentReferenceId,
+    provider_payment_intent_id: paymentIntentId,
+    provider_balance_transaction_id: balanceTransactionId,
+    provider_external_reference_number: externalReferenceNumber,
+    amount: paymentAmount,
+    currency: paymentCurrency,
+    fee: paymentFee,
+    net_amount: paymentNetAmount,
+    source_id: sourceId,
+    source_type: sourceType,
+    source_brand: sourceBrand,
+    source_last4: sourceLast4,
+    source_country: sourceCountry,
+    source_provider_id: sourceProviderId,
+    trace_status: "paid",
+    reconciled_by: "webhook",
+    trace_note: paymentStatus ? `Webhook marked payment as ${paymentStatus}` : "Webhook payment succeeded",
+    provider_created_at: providerCreatedAt,
+    provider_updated_at: providerUpdatedAt,
+    paid_at: paidAt ?? nowIso,
+    raw_payload: event.raw,
+  });
 
   for (const row of candidates) {
     const wasUpdated = (confirmedRows ?? []).some((item) => (item as { id: string }).id === row.id);
