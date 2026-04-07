@@ -68,30 +68,24 @@ export default function DashboardPage() {
   const selectedSport = useSelectedSport((state) => state.sport);
   const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
-  const { data: todaysBookingsRaw = [], isLoading: loadingTodayBookings } =
-    useQuery({
-      queryKey: [
-        "dashboard-bookings-today",
-        user?.email,
-        todayIso,
-        selectedSport,
-      ],
-      queryFn: async () => {
-        const { data } = await courtlyApi.bookings.list({
-          player_email: user?.email,
-          date: todayIso,
-          sport: selectedSport,
-        });
-        return data;
-      },
-      enabled: !!user?.email,
-    });
+  const { data: overview, isLoading: loadingTodayBookings } = useQuery({
+    queryKey: ["dashboard-overview", selectedSport, todayIso],
+    queryFn: async () => {
+      const { data } = await courtlyApi.dashboard.overview({
+        sport: selectedSport,
+        date: todayIso,
+      });
+      return data;
+    },
+    enabled: !!user?.email,
+  });
 
   const todaysBookings = useMemo(() => {
+    const todaysBookingsRaw = overview?.today_bookings ?? [];
     return todaysBookingsRaw
       .filter((booking) => booking.status !== "cancelled")
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  }, [todaysBookingsRaw]);
+  }, [overview?.today_bookings]);
 
   const todayBookingCards = useMemo(() => {
     const map = new Map<string, Booking[]>();
@@ -108,30 +102,8 @@ export default function DashboardPage() {
     );
   }, [todaysBookings]);
 
-  const { data: tournaments = [] } = useQuery({
-    queryKey: ["tournaments-dashboard", selectedSport],
-    queryFn: async () => {
-      const { data } = await courtlyApi.tournaments.list({
-        status: "registration_open",
-        limit: 2,
-        sort: "-date",
-        sport: selectedSport,
-      });
-      return data;
-    },
-  });
-
-  const { data: sessions = [] } = useQuery({
-    queryKey: ["sessions-dashboard", selectedSport],
-    queryFn: async () => {
-      const { data } = await courtlyApi.openPlay.list({
-        status: "open",
-        limit: 3,
-        sport: selectedSport,
-      });
-      return data;
-    },
-  });
+  const tournaments = overview?.tournaments_open ?? [];
+  const sessions = overview?.open_play_sessions ?? [];
 
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
@@ -243,7 +215,7 @@ export default function DashboardPage() {
                 const first = items[0]!;
                 const detailId = first.id;
                 const sessionTotal = items.reduce(
-                  (s, x) => s + (x.total_cost ?? 0),
+                  (totalCost, booking) => totalCost + (booking.total_cost ?? 0),
                   0,
                 );
                 const multi = items.length > 1;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { mockDb } from "@/lib/mock/db";
+import { listOpenPlay } from "@/lib/data/courtly-db";
 import type { CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const limit = Number(searchParams.get("limit")) || undefined;
   const sport = searchParams.get("sport") as CourtSport | null;
 
-  let list = [...mockDb.openPlay];
+  let list = await listOpenPlay();
   if (sport) {
     list = list.filter((session) => session.sport === sport);
   }

@@ -26,12 +26,13 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { formatTimeShort } from "@/lib/booking-range";
+import { formatBookableHourSlotRange } from "@/lib/booking-range";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
+import { queryKeys } from "@/lib/query/query-keys";
 import { cn } from "@/lib/utils";
 
 const ANY_VALUE = "__any__";
@@ -126,7 +127,10 @@ export default function CourtsPage() {
   const selectedSport = useSelectedSport((s) => s.sport);
 
   const { data: courts = [], isLoading } = useQuery({
-    queryKey: ["courts", selectedSport],
+    queryKey: queryKeys.courts.list({
+      status: "active",
+      sport: selectedSport,
+    }),
     queryFn: async () => {
       const { data } = await courtlyApi.courts.list({
         status: "active",
@@ -247,10 +251,10 @@ export default function CourtsPage() {
 
   const formatTimeRangeLabel = (from: string, to: string) => {
     if (from && to) {
-      return `${formatTimeShort(from)} – ${formatTimeShort(to)}`;
+      return `${formatBookableHourSlotRange(from)} – ${formatBookableHourSlotRange(to)}`;
     }
-    if (from) return `from ${formatTimeShort(from)}`;
-    if (to) return `through ${formatTimeShort(to)}`;
+    if (from) return `from ${formatBookableHourSlotRange(from)}`;
+    if (to) return `through ${formatBookableHourSlotRange(to)}`;
     return "";
   };
 
@@ -397,6 +401,7 @@ export default function CourtsPage() {
                 "max-h-[min(92dvh,44rem)] sm:max-w-lg lg:left-[calc(50vw+8rem)]",
               )}
               contentClassName="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0"
+              linkDescription
             >
               <DialogHeader className="shrink-0 space-y-1 border-b border-border px-4 py-4 text-left sm:px-6">
                 <DialogTitle>Filters</DialogTitle>
@@ -527,7 +532,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -553,7 +558,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -591,7 +596,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -617,7 +622,7 @@ export default function CourtsPage() {
                           <SelectItem value={ANY_VALUE}>Any</SelectItem>
                           {timeOptions.map((time) => (
                             <SelectItem key={time} value={time}>
-                              {formatTimeShort(time)}
+                              {formatBookableHourSlotRange(time)}
                             </SelectItem>
                           ))}
                         </SelectContent>

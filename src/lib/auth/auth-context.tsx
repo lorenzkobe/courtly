@@ -14,7 +14,16 @@ import type { SessionUser } from "@/lib/types/courtly";
 type AuthContextValue = {
   user: SessionUser | null;
   isLoading: boolean;
-  login: (role?: "user" | "admin" | "superadmin") => Promise<void>;
+  login: (input: { email: string; password: string }) => Promise<void>;
+  signup: (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    birthdate: string;
+    mobileNumber: string;
+    password: string;
+    confirmPassword: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
 };
@@ -44,13 +53,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshSession]);
 
-  const login = useCallback(
-    async (role?: "user" | "admin" | "superadmin") => {
-      await courtlyApi.auth.login({ role });
-      await refreshSession();
-    },
-    [refreshSession],
-  );
+  const login = useCallback(async (input: { email: string; password: string }) => {
+    const { data } = await courtlyApi.auth.login(input);
+    if (data.user) {
+      setUser(data.user);
+      return;
+    }
+
+    // Fallback for unexpected API responses where a session was created
+    // but the user payload is missing.
+    await refreshSession();
+  }, [refreshSession]);
+
+  const signup = useCallback(async (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    birthdate: string;
+    mobileNumber: string;
+    password: string;
+    confirmPassword: string;
+  }) => {
+    await courtlyApi.auth.signup(input);
+    await refreshSession();
+  }, [refreshSession]);
 
   const logout = useCallback(async () => {
     await courtlyApi.auth.logout();
@@ -62,10 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isLoading,
       login,
+      signup,
       logout,
       refreshSession,
     }),
-    [user, isLoading, login, logout, refreshSession],
+    [user, isLoading, login, signup, logout, refreshSession],
   );
 
   return (

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isSuperadmin } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import { deleteRow, listCourtReviews, listVenues, updateRow } from "@/lib/data/courtly-db";
+import { emitReviewFlagCleared } from "@/lib/notifications/emit-from-server";
 import type { CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
@@ -11,14 +12,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { venueId, reviewId } = await ctx.params;
-  const venue = mockDb.venues.find((row) => row.id === venueId);
+  const [venues, reviews] = await Promise.all([listVenues(), listCourtReviews()]);
+  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const idx = mockDb.courtReviews.findIndex(
-    (review) => review.id === reviewId && review.venue_id === venueId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const review = mockDb.courtReviews[idx]!;
+  const review = reviews.find((row) => row.id === reviewId && row.venue_id === venueId);
+  if (!review) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const body = (await req.json()) as {
     rating?: number;
     comment?: string;
@@ -26,15 +24,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
   };
 
   if (isSuperadmin(user) && body.clear_flag === true) {
-    mockDb.courtReviews[idx] = {
+    const before = { ...review };
+    const updated = await updateRow("court_reviews", reviewId, {
       ...review,
       flagged: false,
-      flagged_at: undefined,
-      flagged_by_user_id: undefined,
-      flag_reason: undefined,
+      flagged_at: null,
+      flagged_by_user_id: null,
+      flag_reason: null,
       updated_at: new Date().toISOString(),
-    };
-    return NextResponse.json(mockDb.courtReviews[idx]);
+    });
+    void emitReviewFlagCleared({ review: before, venueName: venue.name });
+    return NextResponse.json(updated);
   }
 
   if (isSuperadmin(user)) {
@@ -66,13 +66,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
         : review.comment
       : review.comment;
 
-  mockDb.courtReviews[idx] = {
+  const updated = await updateRow("court_reviews", reviewId, {
     ...review,
     rating: rating as CourtReview["rating"],
     comment,
     updated_at: new Date().toISOString(),
-  };
-  return NextResponse.json(mockDb.courtReviews[idx]);
+  });
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
@@ -80,14 +80,11 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { venueId, reviewId } = await ctx.params;
-  const venue = mockDb.venues.find((row) => row.id === venueId);
+  const [venues, reviews] = await Promise.all([listVenues(), listCourtReviews()]);
+  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const idx = mockDb.courtReviews.findIndex(
-    (review) => review.id === reviewId && review.venue_id === venueId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const review = mockDb.courtReviews[idx]!;
+  const review = reviews.find((row) => row.id === reviewId && row.venue_id === venueId);
+  if (!review) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const isAuthor = review.user_id === user.id;
   const isPlatform = isSuperadmin(user);
 
@@ -95,6 +92,6 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  mockDb.courtReviews.splice(idx, 1);
+  await deleteRow("court_reviews", reviewId);
   return NextResponse.json({ ok: true });
 }

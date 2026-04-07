@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { mockDb } from "@/lib/mock/db";
+import { listTournaments } from "@/lib/data/courtly-db";
 import type { CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   const sort = searchParams.get("sort") ?? "date";
   const sport = searchParams.get("sport") as CourtSport | null;
 
-  let list = [...mockDb.tournaments];
+  let list = await listTournaments();
   if (sport) {
     list = list.filter((tournament) => tournament.sport === sport);
   }

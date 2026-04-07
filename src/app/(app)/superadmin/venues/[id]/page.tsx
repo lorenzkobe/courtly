@@ -27,8 +27,8 @@ export default function SuperadminVenueDetailPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["venue-detail", id],
     queryFn: async () => {
-      const { data: d } = await courtlyApi.venues.get(id);
-      return d;
+      const { data: venueDetails } = await courtlyApi.venues.get(id);
+      return venueDetails;
     },
     enabled: !!id,
   });
@@ -113,6 +113,36 @@ export default function SuperadminVenueDetailPage() {
                   timeStyle: "short",
                 })}
               </span>
+            </div>
+            <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
+              <span className="text-muted-foreground">Facebook</span>
+              {venue.facebook_url ? (
+                <a
+                  href={venue.facebook_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  {venue.facebook_url}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">Not set</span>
+              )}
+            </div>
+            <div className="grid gap-1 sm:grid-cols-[8rem_1fr]">
+              <span className="text-muted-foreground">Instagram</span>
+              {venue.instagram_url ? (
+                <a
+                  href={venue.instagram_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  {venue.instagram_url}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">Not set</span>
+              )}
             </div>
           </CardContent>
         </Card>

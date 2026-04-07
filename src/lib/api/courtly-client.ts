@@ -1,19 +1,45 @@
 import { http } from "@/lib/http-client";
 import type {
+  AdminVenueWorkspaceResponse,
   Booking,
+  BookingCheckoutResponse,
+  BookingDetailContextResponse,
+  BookingDetailGroupResponse,
+  CourtBookingSurfaceResponse,
+  CursorPage,
+  CourtDayAvailability,
+  CourtDetailContextResponse,
   Court,
   CourtClosure,
   CourtReview,
+  DashboardOverviewResponse,
   ManagedUser,
   OpenPlaySession,
+  MyBookingsOverviewResponse,
   RevenueSummaryResponse,
+  SessionUser,
+  SuperadminDirectoryPagedResponse,
   Tournament,
   TournamentRegistration,
   Venue,
   VenueClosure,
   VenueDetailResponse,
 } from "@/lib/types/courtly";
+
+/** API accepts explicit null to clear nullable map columns on PATCH. */
+export type VenueWritePayload = Omit<Partial<Venue>, "map_latitude" | "map_longitude"> & {
+  map_latitude?: number | null;
+  map_longitude?: number | null;
+};
 import type { NotificationsListResponse } from "@/lib/notifications/types";
+
+export type AdminAssignedVenueSummary = {
+  id: string;
+  name: string;
+  location: string;
+  image_url: string;
+  court_count: number;
+};
 
 export const courtlyApi = {
   auth: {
@@ -21,8 +47,21 @@ export const courtlyApi = {
       http.get<{ user: import("@/lib/types/courtly").SessionUser | null }>(
         "/api/auth/session",
       ),
-    login: (body: { role?: "user" | "admin" | "superadmin" }) =>
-      http.post("/api/auth/login", body),
+    login: (body: { email: string; password: string }) =>
+      http.post<{ user: SessionUser | null }>("/api/auth/login", body),
+    signup: (body: {
+      email: string;
+      firstName: string;
+      lastName: string;
+      birthdate: string;
+      mobileNumber: string;
+      password: string;
+      confirmPassword: string;
+    }) => http.post("/api/auth/signup", body),
+    setPassword: (body: { password: string; confirmPassword: string }) =>
+      http.post<{ ok: boolean }>("/api/auth/set-password", body),
+    forgotPassword: (body: { email: string }) =>
+      http.post<{ ok: boolean; message?: string }>("/api/auth/forgot-password", body),
     logout: () => http.post("/api/auth/logout"),
   },
 
@@ -33,10 +72,22 @@ export const courtlyApi = {
       sport?: string;
     }) => http.get<Court[]>("/api/courts", { params }),
     get: (id: string) => http.get<Court>(`/api/courts/${id}`),
+    getWithContext: (id: string) =>
+      http.get<CourtDetailContextResponse>(`/api/courts/${id}`, {
+        params: { include_context: true },
+      }),
+    bookingSurface: (id: string, params: { date: string }) =>
+      http.get<CourtBookingSurfaceResponse>(`/api/courts/${id}/booking-surface`, {
+        params,
+      }),
     create: (data: Partial<Court>) => http.post<Court>("/api/courts", data),
     update: (id: string, data: Partial<Court>) =>
       http.patch<Court>(`/api/courts/${id}`, data),
     remove: (id: string) => http.delete(`/api/courts/${id}`),
+    availability: (id: string, params: { date: string }) =>
+      http.get<CourtDayAvailability>(`/api/courts/${id}/availability`, {
+        params,
+      }),
   },
 
   courtClosures: {
@@ -123,9 +174,40 @@ export const courtlyApi = {
       sport?: string;
       booking_group_id?: string;
     }) => http.get<Booking[]>("/api/bookings", { params }),
+    listPaged: (params?: {
+      court_id?: string;
+      date?: string;
+      player_email?: string;
+      manageable?: boolean;
+      sport?: string;
+      booking_group_id?: string;
+      cursor?: string | null;
+      limit?: number;
+    }) =>
+      http.get<CursorPage<Booking>>("/api/bookings", {
+        params,
+      }),
     get: (id: string) => http.get<Booking>(`/api/bookings/${id}`),
+    getWithGroup: (id: string) =>
+      http.get<BookingDetailGroupResponse>(`/api/bookings/${id}`, {
+        params: { include_group: true },
+      }),
+    getDetailContext: (id: string) =>
+      http.get<BookingDetailContextResponse>(`/api/bookings/${id}`, {
+        params: { include_group: true, include_context: true },
+      }),
     create: (data: Partial<Booking>) =>
       http.post<Booking>("/api/bookings", data),
+    createMany: (items: Partial<Booking>[]) =>
+      http.post<Booking[]>("/api/bookings", { items }),
+    checkout: (items: Partial<Booking>[]) =>
+      http.post<BookingCheckoutResponse>("/api/bookings/checkout", { items }),
+    retryPayment: (id: string) =>
+      http.post<BookingCheckoutResponse>(`/api/bookings/${id}/retry-payment`),
+    reconcilePayment: (id: string) =>
+      http.post<{ ok: boolean; status: string; reconciled?: boolean; refund_required?: boolean }>(
+        `/api/bookings/${id}/reconcile-payment`,
+      ),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (
@@ -172,12 +254,40 @@ export const courtlyApi = {
 
   venues: {
     list: () => http.get<Venue[]>("/api/venues"),
-    create: (data: Partial<Venue>) => http.post<Venue>("/api/venues", data),
+    create: (data: VenueWritePayload) => http.post<Venue>("/api/venues", data),
     get: (id: string) =>
       http.get<VenueDetailResponse>(`/api/venues/${id}`),
-    update: (id: string, data: Partial<Venue>) =>
+    update: (id: string, data: VenueWritePayload) =>
       http.patch<Venue>(`/api/venues/${id}`, data),
     remove: (id: string) => http.delete(`/api/venues/${id}`),
+  },
+
+  adminVenues: {
+    workspace: (venueId: string) =>
+      http.get<AdminVenueWorkspaceResponse>(`/api/admin/venues/${venueId}/workspace`),
+    applyClosures: (
+      venueId: string,
+      body: {
+        date: string;
+        reason: string;
+        note?: string;
+        court_ids: string[];
+        ranges: Array<{ start_time: string; end_time: string }>;
+      },
+    ) => http.post<{ ok: boolean }>(`/api/admin/venues/${venueId}/closures/bulk`, body),
+  },
+
+  superadmin: {
+    directory: (params?: {
+      users_cursor?: string | null;
+      venues_cursor?: string | null;
+      limit?: number;
+    }) => http.get<SuperadminDirectoryPagedResponse>("/api/superadmin/directory", { params }),
+  },
+
+  assignedVenues: {
+    list: () =>
+      http.get<AdminAssignedVenueSummary[]>("/api/admin/assigned-venues"),
   },
 
   managedUsers: {
@@ -187,6 +297,12 @@ export const courtlyApi = {
     update: (id: string, data: Partial<ManagedUser>) =>
       http.patch<ManagedUser>(`/api/admin/managed-users/${id}`, data),
     remove: (id: string) => http.delete(`/api/admin/managed-users/${id}`),
+    resendInvite: (id: string) =>
+      http.post<{
+        emailed: boolean;
+        action_link?: string;
+        message?: string;
+      }>(`/api/admin/managed-users/${id}/resend-invite`),
   },
 
   revenue: {
@@ -205,15 +321,35 @@ export const courtlyApi = {
   },
 
   flaggedReviews: {
-    list: () =>
-      http.get<{
-        reviews: (CourtReview & { court_name: string })[];
-      }>("/api/admin/flagged-reviews"),
+    list: (params?: { cursor?: string | null; limit?: number }) =>
+      http.get<
+        CursorPage<
+          CourtReview & {
+            court_name: string;
+            venue_name: string;
+          }
+        >
+      >("/api/admin/flagged-reviews", { params }),
   },
 
   notifications: {
-    list: () => http.get<NotificationsListResponse>("/api/notifications"),
-    markAllRead: () => http.patch("/api/notifications"),
-    markRead: (id: string) => http.patch(`/api/notifications/${id}`),
+    list: (params?: { cursor?: string | null; limit?: number }) =>
+      http.get<NotificationsListResponse>("/api/notifications", { params }),
+    markAllRead: () => http.patch<{ ok: boolean }>("/api/notifications"),
+    markRead: (id: string) => http.patch<{ ok: boolean }>(`/api/notifications/${id}`),
+  },
+
+  dashboard: {
+    overview: (params?: { sport?: string; date?: string }) =>
+      http.get<DashboardOverviewResponse>("/api/dashboard/overview", { params }),
+  },
+
+  me: {
+    bookingsOverview: (params?: {
+      sport?: string;
+      bookings_cursor?: string | null;
+      registrations_cursor?: string | null;
+      limit?: number;
+    }) => http.get<MyBookingsOverviewResponse>("/api/me/bookings-overview", { params }),
   },
 };

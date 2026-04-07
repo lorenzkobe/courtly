@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import {
+  deleteRow,
+  getCourtById,
+  getCourtClosureById,
+  listVenueAdminAssignments,
+  updateRow,
+} from "@/lib/data/courtly-db";
 import type { CourtClosure } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string; closureId: string }> };
@@ -9,19 +15,18 @@ type Ctx = { params: Promise<{ id: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [court, cur, assignments] = await Promise.all([
+    getCourtById(courtId),
+    getCourtClosureById(courtId, closureId),
+    listVenueAdminAssignments(),
+  ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const idx = mockDb.courtClosures.findIndex(
-    (closure) => closure.id === closureId && closure.court_id === courtId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = (await req.json()) as Partial<CourtClosure>;
-  const cur = mockDb.courtClosures[idx]!;
   const date =
     typeof body.date === "string" ? body.date.trim() : cur.date;
   const start_time =
@@ -54,30 +59,29 @@ export async function PATCH(req: Request, ctx: Ctx) {
         : cur.note
       : cur.note;
 
-  mockDb.courtClosures[idx] = {
-    ...cur,
+  const updated = await updateRow("court_closures", closureId, {
     date,
     start_time,
     end_time,
     reason,
-    note,
-  };
-  return NextResponse.json(mockDb.courtClosures[idx]);
+    note: note ?? null,
+  });
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [court, cur, assignments] = await Promise.all([
+    getCourtById(courtId),
+    getCourtClosureById(courtId, closureId),
+    listVenueAdminAssignments(),
+  ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const idx = mockDb.courtClosures.findIndex(
-    (closure) => closure.id === closureId && closure.court_id === courtId,
-  );
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  mockDb.courtClosures.splice(idx, 1);
+  if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  await deleteRow("court_closures", closureId);
   return NextResponse.json({ ok: true });
 }

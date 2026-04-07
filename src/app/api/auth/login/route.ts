@@ -1,51 +1,30 @@
 import { NextResponse } from "next/server";
-import { readSessionUser, SESSION_COOKIE } from "@/lib/auth/cookie-session";
-import { mockDb } from "@/lib/mock/db";
-import type { SessionUser } from "@/lib/types/courtly";
-
-function userForRole(role: SessionUser["role"]): SessionUser | null {
-  const managed = mockDb.managedUsers.find(
-    (managedUser) => managedUser.role === role,
-  );
-  if (!managed) return null;
-  return {
-    id: managed.id,
-    email: managed.email,
-    full_name: managed.full_name,
-    role: managed.role,
-    is_active: managed.is_active,
-  };
-}
+import { readSessionUserFromAuthUser } from "@/lib/auth/cookie-session";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
-  const existing = await readSessionUser();
-  if (existing) {
-    return NextResponse.json({ user: existing });
-  }
-
-  let role: SessionUser["role"] = "user";
+  let email = "";
+  let password = "";
   try {
     const body = await req.json();
-    if (body?.role === "admin") role = "admin";
-    if (body?.role === "superadmin") role = "superadmin";
+    email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    password = typeof body?.password === "string" ? body.password : "";
   } catch {
     /* empty body */
   }
+  if (!email || !password) {
+    return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
+  }
 
-  const user = userForRole(role);
-  if (!user || user.is_active === false) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
     return NextResponse.json(
-      { error: "This account is inactive and cannot log in." },
-      { status: 403 },
+      { error: "Invalid email or password." },
+      { status: 401 },
     );
   }
 
-  const res = NextResponse.json({ user });
-  res.cookies.set(SESSION_COOKIE, JSON.stringify(user), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
-  return res;
+  const user = await readSessionUserFromAuthUser(data.user);
+  return NextResponse.json({ user });
 }

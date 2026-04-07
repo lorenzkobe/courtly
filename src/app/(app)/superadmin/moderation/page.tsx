@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ArrowLeft, Flag, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -16,21 +16,28 @@ import { courtlyApi } from "@/lib/api/courtly-client";
 import { cn } from "@/lib/utils";
 
 export default function SuperadminModerationPage() {
+  const PAGE_LIMIT = 20;
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState<{
     venueId: string;
     reviewId: string;
   } | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["flagged-reviews"],
-    queryFn: async () => {
-      const { data: res } = await courtlyApi.flaggedReviews.list();
+  const { data, isLoading, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
+    queryKey: ["flagged-reviews", PAGE_LIMIT],
+    queryFn: async ({ pageParam }) => {
+      const { data: res } = await courtlyApi.flaggedReviews.list({
+        limit: PAGE_LIMIT,
+        cursor: pageParam,
+      });
       return res;
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
   });
 
-  const reviews = data?.reviews ?? [];
+  const reviews = (data?.pages ?? []).flatMap((page) => page.items);
+  const hasMore = data?.pages?.[data.pages.length - 1]?.has_more ?? false;
 
   const clearFlagMut = useMutation({
     mutationFn: async (payload: { venueId: string; reviewId: string }) => {
@@ -188,6 +195,18 @@ export default function SuperadminModerationPage() {
               </Card>
             </li>
           ))}
+          {hasMore ? (
+            <li className="flex justify-center pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </li>
+          ) : null}
         </ul>
       )}
     </div>

@@ -1,31 +1,51 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
-import { withVenueHydration } from "@/lib/court-response";
+import {
+  deleteRow,
+  getCourtById,
+  getCourtWithReviewSummary,
+  hasActiveConfirmedBookingsForCourt,
+  listCourtsByVenue,
+  listVenueAdminAssignments,
+  updateRow,
+} from "@/lib/data/courtly-db";
 import type { Court } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 function withReviewSummary(court: Court) {
-  return withVenueHydration(court);
+  return court;
 }
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
+  const { searchParams } = new URL(req.url);
+  const includeContext = searchParams.get("include_context") === "true";
   const { id } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === id);
+  const court = await getCourtWithReviewSummary(id);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(withReviewSummary(court));
+  if (!includeContext) {
+    return NextResponse.json(withReviewSummary(court));
+  }
+
+  const siblingCourts = (await listCourtsByVenue(court.venue_id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return NextResponse.json({
+    court: withReviewSummary(court),
+    sibling_courts: siblingCourts,
+  });
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.courts.findIndex((row) => row.id === id);
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const [court, assignments] = await Promise.all([
+    getCourtById(id),
+    listVenueAdminAssignments(),
+  ]);
+  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const court = mockDb.courts[idx];
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -34,29 +54,29 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if ("venue_id" in patch) {
     delete patch.venue_id;
   }
-  mockDb.courts[idx] = {
-    ...mockDb.courts[idx],
+  const updated = await updateRow("courts", id, {
     ...(typeof patch.name === "string" && patch.name.trim()
       ? { name: patch.name.trim() }
       : {}),
-  };
-  return NextResponse.json(withReviewSummary(mockDb.courts[idx]!));
+    ...(patch.status ? { status: patch.status } : {}),
+  });
+  const hydrated = await getCourtWithReviewSummary((updated as { id: string }).id);
+  return NextResponse.json(withReviewSummary((hydrated ?? updated) as Court));
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id } = await ctx.params;
-  const idx = mockDb.courts.findIndex((row) => row.id === id);
-  if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const court = mockDb.courts[idx];
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  const [court, assignments] = await Promise.all([
+    getCourtById(id),
+    listVenueAdminAssignments(),
+  ]);
+  if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const hasActiveBookings = mockDb.bookings.some(
-    (booking) => booking.court_id === court.id && booking.status === "confirmed",
-  );
+  const hasActiveBookings = await hasActiveConfirmedBookingsForCourt(court.id);
   if (hasActiveBookings) {
     return NextResponse.json(
       {
@@ -67,6 +87,6 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     );
   }
 
-  mockDb.courts.splice(idx, 1);
+  await deleteRow("courts", court.id);
   return NextResponse.json({ ok: true });
 }

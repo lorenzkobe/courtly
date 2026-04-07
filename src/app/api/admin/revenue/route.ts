@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { manageableCourtIds } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
 import {
-  filterBookingsByDateRange,
+  listCourtsDirectory,
+  listRevenueBookings,
+  listVenueAdminAssignmentsByAdminUser,
+  listVenues,
+} from "@/lib/data/courtly-db";
+import { formatHourToken, hourFromTime } from "@/lib/booking-range";
+import { hourlyRateForHourStart } from "@/lib/court-pricing";
+import {
   normalizeDateRange,
   parseIsoDateParam,
 } from "@/lib/revenue-filters";
 import { aggregateRevenueByCourt } from "@/lib/revenue-aggregate";
-import type { RevenueByAccountRow, Venue } from "@/lib/types/courtly";
+import type { Booking, Court, RevenueByAccountRow, RevenueRateBreakdownRow, Venue } from "@/lib/types/courtly";
 
 function attachVenueNames(
   rows: ReturnType<typeof aggregateRevenueByCourt>,
+  venues: Venue[],
 ): ReturnType<typeof aggregateRevenueByCourt> {
   return rows.map((row) => {
     const name = row.venue_id
-      ? mockDb.venues.find((venue) => venue.id === row.venue_id)?.name ?? null
+      ? venues.find((venue) => venue.id === row.venue_id)?.name ?? null
       : null;
     return { ...row, venue_name: name };
   });
@@ -27,6 +33,47 @@ type Roll = {
   customer_total: number;
   booking_count: number;
 };
+
+function buildCourtRateBreakdownMap(
+  bookings: Booking[],
+  courts: Court[],
+): Map<string, RevenueRateBreakdownRow[]> {
+  const courtMap = new Map(courts.map((court) => [court.id, court] as const));
+  const byCourtRate = new Map<string, Map<number, { hours_booked: number; court_subtotal: number }>>();
+
+  for (const booking of bookings) {
+    if (booking.status !== "confirmed" && booking.status !== "completed") continue;
+    const court = courtMap.get(booking.court_id);
+    if (!court) continue;
+    const startHour = hourFromTime(booking.start_time);
+    const endHour = hourFromTime(booking.end_time);
+    if (!Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) continue;
+    const rateMap =
+      byCourtRate.get(booking.court_id) ??
+      new Map<number, { hours_booked: number; court_subtotal: number }>();
+    for (let hour = startHour; hour < endHour; hour += 1) {
+      const hourlyRate = hourlyRateForHourStart(court, formatHourToken(hour));
+      const current = rateMap.get(hourlyRate) ?? { hours_booked: 0, court_subtotal: 0 };
+      current.hours_booked += 1;
+      current.court_subtotal += hourlyRate;
+      rateMap.set(hourlyRate, current);
+    }
+    byCourtRate.set(booking.court_id, rateMap);
+  }
+
+  const out = new Map<string, RevenueRateBreakdownRow[]>();
+  for (const [courtId, rateMap] of byCourtRate) {
+    const rows = [...rateMap.entries()]
+      .map(([hourly_rate, agg]) => ({
+        hourly_rate,
+        hours_booked: agg.hours_booked,
+        court_subtotal: agg.court_subtotal,
+      }))
+      .sort((a, b) => b.hourly_rate - a.hourly_rate);
+    out.set(courtId, rows);
+  }
+  return out;
+}
 
 function platformVenueRows(
   venues: Venue[],
@@ -60,7 +107,7 @@ function platformVenueRows(
     };
   });
 
-  if (mockDb.courts.some((court) => !court.venue_id)) {
+  if (byCourt.some((court) => !court.venue_id)) {
     const hit = agg.get("");
     out.push({
       venue_id: "",
@@ -82,6 +129,7 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
+  const allVenues = await listVenues();
   let dateFrom = parseIsoDateParam(searchParams.get("from"));
   let dateTo = parseIsoDateParam(searchParams.get("to"));
   ({ from: dateFrom, to: dateTo } = normalizeDateRange(dateFrom, dateTo));
@@ -101,17 +149,18 @@ export async function GET(req: Request) {
   if (
     venueFilter &&
     venueFilter !== "unassigned" &&
-    !mockDb.venues.some((venue) => venue.id === venueFilter)
+    !allVenues.some((venue) => venue.id === venueFilter)
   ) {
     return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
 
-  let courts = [...mockDb.courts];
+  let courts: Court[] = [];
   if (user.role === "admin") {
-    const ids = new Set(
-      manageableCourtIds(user, mockDb.courts, mockDb.venueAdminAssignments),
-    );
-    courts = courts.filter((court) => ids.has(court.id));
+    const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+    const venueIds = [...new Set(assignments.map((row) => row.venue_id))];
+    courts = await listCourtsDirectory({ venueIds });
+  } else {
+    courts = await listCourtsDirectory({});
   }
 
   if (venueFilter === "unassigned") {
@@ -121,12 +170,19 @@ export async function GET(req: Request) {
   }
 
   const courtIds = new Set(courts.map((court) => court.id));
-  let bookings = mockDb.bookings.filter((booking) =>
-    courtIds.has(booking.court_id),
-  );
-  bookings = filterBookingsByDateRange(bookings, dateFrom, dateTo);
+  let bookings = await listRevenueBookings({
+    courtIds: [...courtIds],
+    dateFrom,
+    dateTo,
+  });
+  bookings = bookings.filter((booking) => courtIds.has(booking.court_id));
 
-  const byCourt = attachVenueNames(aggregateRevenueByCourt(bookings, courts));
+  const byCourtBase = attachVenueNames(aggregateRevenueByCourt(bookings, courts), allVenues);
+  const rateBreakdownMap = buildCourtRateBreakdownMap(bookings, courts);
+  const byCourt = byCourtBase.map((row) => ({
+    ...row,
+    rate_breakdown: rateBreakdownMap.get(row.court_id) ?? [],
+  }));
 
   const totals = byCourt.reduce(
     (acc, row) => ({
@@ -146,7 +202,7 @@ export async function GET(req: Request) {
 
   let byAccount: RevenueByAccountRow[] | undefined;
   if (user.role === "superadmin" && !venueFilter) {
-    byAccount = platformVenueRows(mockDb.venues, byCourt);
+    byAccount = platformVenueRows(allVenues, byCourt);
     byAccount.sort((a, b) => b.customer_total - a.customer_total);
   }
 
@@ -154,7 +210,7 @@ export async function GET(req: Request) {
   if (venueFilter === "unassigned") {
     focus_venue = { id: "unassigned", name: "Unassigned venue" };
   } else if (venueFilter) {
-    const venue = mockDb.venues.find((row) => row.id === venueFilter);
+    const venue = allVenues.find((row) => row.id === venueFilter);
     focus_venue = venue ? { id: venue.id, name: venue.name } : null;
   }
 

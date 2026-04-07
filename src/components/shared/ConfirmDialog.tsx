@@ -35,7 +35,7 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" linkDescription={!!description}>
         <DialogHeader>
           <DialogTitle className="font-heading">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

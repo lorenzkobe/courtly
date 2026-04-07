@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Calendar, Clock, ListFilter, Search, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -29,25 +29,19 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import type { Booking } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
-}
-
 const statusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -55,6 +49,7 @@ const statusStyles: Record<string, string> = {
 
 type AdminBookingFilters = {
   status: "all" | Booking["status"];
+  paymentReview: "all" | "refund_required" | "failed" | "pending" | "paid";
   venueId: string;
   dateFrom: string;
   dateTo: string;
@@ -65,6 +60,7 @@ type AdminBookingFilters = {
 function defaultAdminBookingFilters(): AdminBookingFilters {
   return {
     status: "confirmed",
+    paymentReview: "all",
     venueId: "",
     dateFrom: "",
     dateTo: "",
@@ -75,6 +71,16 @@ function defaultAdminBookingFilters(): AdminBookingFilters {
 
 function cloneAdminBookingFilters(s: AdminBookingFilters): AdminBookingFilters {
   return { ...s };
+}
+
+function bookingPaymentTraceStatus(
+  booking: Pick<Booking, "status" | "refund_required" | "payment_failed_at" | "paid_at">,
+): "refund_required" | "failed" | "pending" | "paid" | "none" {
+  if (booking.refund_required) return "refund_required";
+  if (booking.status === "pending_payment" && booking.payment_failed_at) return "failed";
+  if (booking.status === "pending_payment") return "pending";
+  if (booking.paid_at || booking.status === "confirmed" || booking.status === "completed") return "paid";
+  return "none";
 }
 
 type AppliedFilterChip = {
@@ -140,6 +146,7 @@ function AdminBookingNoteFields({
 }
 
 export default function AdminBookingsPage() {
+  const PAGE_LIMIT = 25;
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
   const queryClient = useQueryClient();
@@ -157,14 +164,40 @@ export default function AdminBookingsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
   const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
+  const adminRealtimeKeys = useMemo(
+    () => [["admin-bookings"], ["admin-booking-detail"], ["admin-booking-group"]],
+    [],
+  );
+  useBookingsRealtime({
+    enabled: !!user && (user.role === "admin" || user.role === "superadmin"),
+    queryKeysToInvalidate: adminRealtimeKeys,
+  });
 
-  const { data: bookings = [], isLoading } = useQuery({
-    queryKey: ["admin-bookings", globalAdmin ? "all" : "managed"],
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({ manageable: true });
+  const {
+    data: bookingsPages,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["admin-bookings", globalAdmin ? "all" : "managed", PAGE_LIMIT],
+    queryFn: async ({ pageParam }) => {
+      const { data } = await courtlyApi.bookings.listPaged({
+        manageable: true,
+        limit: PAGE_LIMIT,
+        cursor: pageParam,
+      });
       return data;
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    staleTime: 20_000,
   });
+  const bookings = useMemo(
+    () => (bookingsPages?.pages ?? []).flatMap((page) => page.items),
+    [bookingsPages?.pages],
+  );
+  const hasMoreBookings =
+    bookingsPages?.pages?.[bookingsPages.pages.length - 1]?.has_more ?? false;
 
   const openFilterDialog = useCallback(() => {
     if (!filterDialogOpen) {
@@ -200,35 +233,23 @@ export default function AdminBookingsPage() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [bookings]);
 
-  const { data: detailBooking } = useQuery({
-    queryKey: ["admin-booking-detail", detailId],
+  const { data: detailPayload } = useQuery({
+    queryKey: ["admin-booking-detail", detailId, "with-group"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.get(detailId!);
+      const { data } = await courtlyApi.bookings.getWithGroup(detailId!);
       return data;
     },
     enabled: !!detailId,
+    staleTime: 15_000,
   });
-
-  const { data: detailGroup = [] } = useQuery({
-    queryKey: [
-      "admin-booking-group",
-      detailBooking?.booking_group_id,
-      detailId,
-    ],
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        manageable: true,
-        booking_group_id: detailBooking!.booking_group_id!,
-      });
-      return data.sort((a, b) => a.start_time.localeCompare(b.start_time));
-    },
-    enabled: !!detailBooking?.booking_group_id,
-  });
+  const detailBooking = detailPayload?.booking;
+  const detailGroup = detailPayload?.group_segments;
+  const paymentTransactions = detailPayload?.payment_transactions ?? [];
 
   const detailSegments = useMemo(() => {
     if (!detailBooking) return [];
-    if (detailBooking.booking_group_id && detailGroup.length > 0) {
-      return detailGroup;
+    if (detailBooking.booking_group_id && (detailGroup?.length ?? 0) > 0) {
+      return detailGroup ?? [];
     }
     return [detailBooking];
   }, [detailBooking, detailGroup]);
@@ -256,29 +277,17 @@ export default function AdminBookingsPage() {
       status: string;
     }) => {
       await courtlyApi.bookings.update(id, {
-        status: status as "confirmed" | "cancelled" | "completed",
+        status: status as Booking["status"],
       });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-group"] });
       void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
       toast.success("Booking updated");
     },
-    onMutate: async ({ id, status }) => {
-      queryClient.setQueriesData(
-        { queryKey: ["admin-bookings"] },
-        (old: Booking[] | undefined) =>
-          old?.map((booking) =>
-            booking.id === id
-              ? { ...booking, status: status as typeof booking.status }
-              : booking,
-          ),
-      );
-    },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not update booking"));
+      toast.error(apiErrorMessage(error, "Could not update booking"));
     },
   });
 
@@ -290,12 +299,14 @@ export default function AdminBookingsPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-booking-detail", detailId, "with-group"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note saved");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not save note"));
+      toast.error(apiErrorMessage(error, "Could not save note"));
     },
   });
 
@@ -307,19 +318,24 @@ export default function AdminBookingsPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail", detailId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-booking-detail", detailId, "with-group"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note deleted");
     },
     onError: (error) => {
-      toast.error(mutationErrorMessage(error, "Could not delete note"));
+      toast.error(apiErrorMessage(error, "Could not delete note"));
     },
   });
 
   const filtered = useMemo(() => {
-    const searchLower = search.toLowerCase();
+    const searchTerm = search.trim();
+    const searchLower = searchTerm.toLowerCase();
+    const searchUpper = searchTerm.toUpperCase();
     const {
       status: statusFilter,
+      paymentReview,
       venueId,
       dateFrom,
       dateTo,
@@ -330,6 +346,9 @@ export default function AdminBookingsPage() {
     const list = bookings.filter((booking) => {
       const statusMatch =
         statusFilter === "all" || booking.status === statusFilter;
+      const paymentReviewMatch =
+        paymentReview === "all" ||
+        bookingPaymentTraceStatus(booking) === paymentReview;
       const venueMatch = !venueId || booking.venue_id === venueId;
       const fromOk = !dateFrom || booking.date >= dateFrom;
       const toOk = !dateTo || booking.date <= dateTo;
@@ -349,12 +368,22 @@ export default function AdminBookingsPage() {
       }
 
       const searchMatch =
-        !search ||
+        !searchTerm ||
         booking.player_name?.toLowerCase().includes(searchLower) ||
         booking.player_email?.toLowerCase().includes(searchLower) ||
         booking.court_name?.toLowerCase().includes(searchLower) ||
-        booking.establishment_name?.toLowerCase().includes(searchLower);
-      return statusMatch && venueMatch && fromOk && toOk && timeOk && searchMatch;
+        booking.establishment_name?.toLowerCase().includes(searchLower) ||
+        booking.booking_number?.toUpperCase().includes(searchUpper) ||
+        booking.booking_number?.split("-").at(-1)?.toUpperCase().includes(searchUpper);
+      return (
+        statusMatch &&
+        paymentReviewMatch &&
+        venueMatch &&
+        fromOk &&
+        toOk &&
+        timeOk &&
+        searchMatch
+      );
     });
     list.sort((a, b) => {
       if (sortBy === "oldest_date") {
@@ -385,6 +414,35 @@ export default function AdminBookingsPage() {
         label: `Status: ${formatStatusLabel(f.status)}`,
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, status: "all" })),
+      });
+    }
+    if (f.paymentReview === "refund_required") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Refund required",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "failed") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Failed",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "pending") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Pending",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
+      });
+    } else if (f.paymentReview === "paid") {
+      chips.push({
+        id: "payment-review",
+        label: "Payment: Paid",
+        onRemove: () =>
+          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
     }
     if (f.venueId) {
@@ -434,6 +492,8 @@ export default function AdminBookingsPage() {
     confirmed: bookings.filter((booking) => booking.status === "confirmed")
       .length,
     cancelled: bookings.filter((booking) => booking.status === "cancelled")
+      .length,
+    refundRequired: bookings.filter((booking) => booking.refund_required === true)
       .length,
     revenue: bookings
       .filter((booking) => booking.status !== "cancelled")
@@ -485,12 +545,20 @@ export default function AdminBookingsPage() {
                   <dd className="font-medium">
                     {detailBooking.establishment_name ?? "—"}
                   </dd>
+                  <dt className="text-muted-foreground">Booking #</dt>
+                  <dd className="font-mono text-xs">
+                    {detailBooking.booking_number ?? "—"}
+                  </dd>
                   <dt className="text-muted-foreground">Court</dt>
                   <dd className="font-medium">{detailBooking.court_name ?? "—"}</dd>
                   <dt className="text-muted-foreground">Player</dt>
                   <dd>{detailBooking.player_name ?? "—"}</dd>
                   <dt className="text-muted-foreground">Email</dt>
                   <dd className="break-all">{detailBooking.player_email ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Contact number</dt>
+                  <dd className="tabular-nums">
+                    {detailBooking.player_mobile_number?.trim() || "—"}
+                  </dd>
                   <dt className="text-muted-foreground">Date</dt>
                   <dd>
                     {detailBooking.date
@@ -528,10 +596,26 @@ export default function AdminBookingsPage() {
                   </dd>
                   <dt className="text-muted-foreground">Status</dt>
                   <dd>
-                    <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
-                      {formatStatusLabel(detailBooking.status)}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
+                        {formatStatusLabel(detailBooking.status)}
+                      </Badge>
+                      {detailBooking.refund_required ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        >
+                          Refund required
+                        </Badge>
+                      ) : null}
+                    </div>
                   </dd>
+                  {detailBooking.payment_reference_id ? (
+                    <>
+                      <dt className="text-muted-foreground">Payment reference</dt>
+                      <dd className="break-all text-xs">{detailBooking.payment_reference_id}</dd>
+                    </>
+                  ) : null}
                   {adminBookingNotes ? (
                     <>
                       <dt className="text-muted-foreground">Booking notes</dt>
@@ -588,6 +672,38 @@ export default function AdminBookingsPage() {
                 savePending={saveAdminNote.isPending}
                 clearPending={clearAdminNote.isPending}
               />
+              <section className="border-t border-border/60 pt-4">
+                <h3 className="mb-2 font-heading font-semibold text-foreground">
+                  Payment audit
+                </h3>
+                {paymentTransactions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No payment audit events yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {paymentTransactions.map((tx) => (
+                      <li
+                        key={tx.id}
+                        className="rounded-md border border-border/50 bg-muted/20 p-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] uppercase">
+                            {tx.trace_status}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {tx.created_at ? format(new Date(tx.created_at), "PPpp") : "—"}
+                          </span>
+                          {tx.provider_payment_id ? (
+                            <span className="font-mono text-[10px]">{tx.provider_payment_id}</span>
+                          ) : null}
+                        </div>
+                        {tx.trace_note ? (
+                          <p className="mt-1 text-muted-foreground">{tx.trace_note}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -604,7 +720,7 @@ export default function AdminBookingsPage() {
         }
       />
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[
           { label: "Total Bookings", value: stats.total, color: "text-foreground" },
           { label: "Confirmed", value: stats.confirmed, color: "text-primary" },
@@ -612,6 +728,11 @@ export default function AdminBookingsPage() {
             label: "Cancelled",
             value: stats.cancelled,
             color: "text-destructive",
+          },
+          {
+            label: "Refund Required",
+            value: stats.refundRequired,
+            color: "text-amber-700",
           },
           {
             label: "Revenue",
@@ -637,7 +758,7 @@ export default function AdminBookingsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, court, venue..."
+              placeholder="Search name, email, court, venue, booking # or suffix..."
               className="pl-9"
             />
           </div>
@@ -716,7 +837,10 @@ export default function AdminBookingsPage() {
       </div>
 
       <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
-        <DialogContent className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto">
+        <DialogContent
+          className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto"
+          linkDescription
+        >
           <DialogHeader>
             <DialogTitle className="font-heading">Filters</DialogTitle>
             <DialogDescription>
@@ -741,9 +865,33 @@ export default function AdminBookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending_payment">Pending payment</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="admin-booking-filter-payment-review">Payment review</Label>
+              <Select
+                value={draftFilters.paymentReview}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    paymentReview: v as AdminBookingFilters["paymentReview"],
+                  }))
+                }
+              >
+                <SelectTrigger id="admin-booking-filter-payment-review" className="mt-1.5">
+                  <SelectValue placeholder="All payment states" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All payment states</SelectItem>
+                  <SelectItem value="refund_required">Refund required only</SelectItem>
+                  <SelectItem value="failed">Failed (pending_payment with failed callback)</SelectItem>
+                  <SelectItem value="pending">Pending payment</SelectItem>
+                  <SelectItem value="paid">Paid / confirmed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -799,7 +947,7 @@ export default function AdminBookingsPage() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label htmlFor="admin-booking-filter-time-from">Time from (HH:mm)</Label>
+                <Label htmlFor="admin-booking-filter-time-from">Time from</Label>
                 <Input
                   id="admin-booking-filter-time-from"
                   className="mt-1.5"
@@ -811,7 +959,7 @@ export default function AdminBookingsPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="admin-booking-filter-time-to">Time through (HH:mm)</Label>
+                <Label htmlFor="admin-booking-filter-time-to">Time through</Label>
                 <Input
                   id="admin-booking-filter-time-to"
                   className="mt-1.5"
@@ -877,12 +1025,25 @@ export default function AdminBookingsPage() {
                       <span className="font-heading font-bold text-foreground">
                         {booking.court_name || "Court"}
                       </span>
+                      {booking.booking_number ? (
+                        <Badge variant="outline" className="font-mono text-[11px]">
+                          {booking.booking_number}
+                        </Badge>
+                      ) : null}
                       <Badge
                         variant="outline"
                         className={statusStyles[booking.status] ?? ""}
                       >
                         {formatStatusLabel(booking.status)}
                       </Badge>
+                      {booking.refund_required ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        >
+                          Refund required
+                        </Badge>
+                      ) : null}
                     </div>
                     {booking.establishment_name?.trim() ? (
                       <p className="mb-1 text-xs text-muted-foreground">
@@ -926,6 +1087,18 @@ export default function AdminBookingsPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreBookings ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/internal/jobs/bookings/complete-hourly",
+      "schedule": "0 18 * * *"
+    }
+  ]
+}

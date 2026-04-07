@@ -1,27 +1,34 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
+import {
+  applyPlayerMobileVisibility,
+  enrichBookingsWithProfileMobile,
+} from "@/lib/booking-player-mobile";
+import {
+  getBookingById,
+  getCourtById,
+  listPaymentTransactionsByBookingIdAdmin,
+  listPaymentTransactionsByGroupIdAdmin,
+  listBookingsFiltered,
+  listCourtReviewsByVenue,
+  listVenueAdminAssignmentsByAdminUser,
+  updateRow,
+} from "@/lib/data/courtly-db";
+import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
 import type { Booking } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  const venue = court
-    ? mockDb.venues.find((row) => row.id === court.venue_id)
-    : undefined;
-  return {
-    ...booking,
-    venue_id: venue?.id,
-    establishment_name: booking.establishment_name ?? venue?.name,
-  };
+  return booking;
 }
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function canReadBooking(
+async function canReadBooking(
   user: Awaited<ReturnType<typeof readSessionUser>>,
   booking: Booking,
-): boolean {
+  adminVenueIds?: Set<string>,
+  courtVenueByCourtId?: Map<string, string>,
+): Promise<boolean> {
   if (!user) return false;
   if (user.email) {
     const userEmailNormalized = user.email.trim().toLowerCase();
@@ -34,34 +41,199 @@ function canReadBooking(
       return true;
     }
   }
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
-  if (court && canMutateCourt(user, court, mockDb.venueAdminAssignments)) return true;
+  if (user.role === "superadmin") return true;
+  if (user.role === "admin") {
+    const venueIdFromCache = courtVenueByCourtId?.get(booking.court_id);
+    if (venueIdFromCache) {
+      return (adminVenueIds ?? new Set()).has(venueIdFromCache);
+    }
+    const court = await getCourtById(booking.court_id);
+    if (!court) return false;
+    courtVenueByCourtId?.set(booking.court_id, court.venue_id);
+    if (adminVenueIds) return adminVenueIds.has(court.venue_id);
+    const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
+    return assignments.some((assignment) => assignment.venue_id === court.venue_id);
+  }
   return false;
 }
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
+  const adminVenueIds =
+    user?.role === "admin"
+      ? new Set(
+        (await listVenueAdminAssignmentsByAdminUser(user.id)).map(
+          (assignment) => assignment.venue_id,
+        ),
+      )
+      : undefined;
+  const courtVenueByCourtId = new Map<string, string>();
+  const { searchParams } = new URL(req.url);
+  const includeGroup = searchParams.get("include_group") === "true";
+  const includeContext = searchParams.get("include_context") === "true";
   const { id } = await ctx.params;
-  const booking = mockDb.bookings.find((row) => row.id === id);
+  const booking = await getBookingById(id);
   if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!canReadBooking(user, booking)) {
+  if (!(await canReadBooking(user, booking, adminVenueIds, courtVenueByCourtId))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(hydrateBooking(booking));
+
+  if (!includeGroup) {
+    const [enriched] = await enrichBookingsWithProfileMobile(
+      [hydrateBooking(booking)],
+      user,
+    );
+    if (!includeContext) {
+      return NextResponse.json(
+        applyPlayerMobileVisibility(enriched ?? hydrateBooking(booking), user),
+      );
+    }
+    const court = await getCourtById(booking.court_id);
+    const reviews = court?.venue_id
+      ? await listCourtReviewsByVenue(court.venue_id)
+      : [];
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
+    return NextResponse.json({
+      booking: applyPlayerMobileVisibility(
+        enriched ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: [applyPlayerMobileVisibility(hydrateBooking(booking), user)],
+      ...(court ? { court } : {}),
+      ...(reviews.length > 0 ? { reviews } : {}),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+    });
+  }
+
+  const groupSegments = booking.booking_group_id
+    ? (await listBookingsFiltered({ bookingGroupId: booking.booking_group_id }))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+      .map(hydrateBooking)
+    : [hydrateBooking(booking)];
+
+  if (booking.booking_group_id) {
+    const readable: Booking[] = [];
+    for (const segment of groupSegments) {
+      if (await canReadBooking(user, segment, adminVenueIds, courtVenueByCourtId)) {
+        readable.push(segment);
+      }
+    }
+    const [enrichedBooking] = await enrichBookingsWithProfileMobile(
+      [hydrateBooking(booking)],
+      user,
+    );
+    const enrichedSegments = await enrichBookingsWithProfileMobile(readable, user);
+    if (!includeContext) {
+      const paymentTransactions =
+        user?.role === "admin" || user?.role === "superadmin"
+          ? booking.booking_group_id
+            ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+            : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+          : [];
+      return NextResponse.json({
+        booking: applyPlayerMobileVisibility(
+          enrichedBooking ?? hydrateBooking(booking),
+          user,
+        ),
+        group_segments: enrichedSegments.map((seg) =>
+          applyPlayerMobileVisibility(hydrateBooking(seg), user),
+        ),
+        ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+      });
+    }
+    const court = await getCourtById(booking.court_id);
+    const reviews = court?.venue_id
+      ? await listCourtReviewsByVenue(court.venue_id)
+      : [];
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? booking.booking_group_id
+          ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+          : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
+    return NextResponse.json({
+      booking: applyPlayerMobileVisibility(
+        enrichedBooking ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: enrichedSegments.map((seg) =>
+        applyPlayerMobileVisibility(hydrateBooking(seg), user),
+      ),
+      ...(court ? { court } : {}),
+      ...(reviews.length > 0 ? { reviews } : {}),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+    });
+  }
+
+  const [enrichedBooking] = await enrichBookingsWithProfileMobile(
+    [hydrateBooking(booking)],
+    user,
+  );
+  const enrichedGroupSegments = await enrichBookingsWithProfileMobile(groupSegments, user);
+  if (!includeContext) {
+    const paymentTransactions =
+      user?.role === "admin" || user?.role === "superadmin"
+        ? booking.booking_group_id
+          ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+          : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+        : [];
+    return NextResponse.json({
+      booking: applyPlayerMobileVisibility(
+        enrichedBooking ?? hydrateBooking(booking),
+        user,
+      ),
+      group_segments: enrichedGroupSegments.map((seg) =>
+        applyPlayerMobileVisibility(hydrateBooking(seg), user),
+      ),
+      ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+    });
+  }
+  const court = await getCourtById(booking.court_id);
+  const reviews = court?.venue_id
+    ? await listCourtReviewsByVenue(court.venue_id)
+    : [];
+  const paymentTransactions =
+    user?.role === "admin" || user?.role === "superadmin"
+      ? booking.booking_group_id
+        ? await listPaymentTransactionsByGroupIdAdmin(booking.booking_group_id)
+        : await listPaymentTransactionsByBookingIdAdmin(booking.id)
+      : [];
+  return NextResponse.json({
+    booking: applyPlayerMobileVisibility(
+      enrichedBooking ?? hydrateBooking(booking),
+      user,
+    ),
+    group_segments: enrichedGroupSegments.map((seg) =>
+      applyPlayerMobileVisibility(hydrateBooking(seg), user),
+    ),
+    ...(court ? { court } : {}),
+    ...(reviews.length > 0 ? { reviews } : {}),
+    ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
+  });
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
+  const adminVenueIds =
+    user?.role === "admin"
+      ? new Set(
+        (await listVenueAdminAssignmentsByAdminUser(user.id)).map(
+          (assignment) => assignment.venue_id,
+        ),
+      )
+      : undefined;
   const { id } = await ctx.params;
-  const idx = mockDb.bookings.findIndex((row) => row.id === id);
-  if (idx === -1) {
+  const booking = await getBookingById(id);
+  if (!booking) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const booking = mockDb.bookings[idx];
-  const court = mockDb.courts.find((row) => row.id === booking.court_id);
+  const court = await getCourtById(booking.court_id);
   const body = (await req.json()) as Partial<Booking> & {
     admin_note?: string;
     clear_admin_note?: boolean;
@@ -90,7 +262,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
 
-  if (!court || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!court) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const canMutate =
+    !!user &&
+    (user.role === "superadmin" ||
+      (user.role === "admin" && !!adminVenueIds?.has(court.venue_id)));
+  if (!canMutate) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -115,8 +294,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
-  mockDb.bookings[idx] = { ...mockDb.bookings[idx], ...patch };
-  // TODO(notifications): emit placeholder event hook for booking changes/completion
-  // when Supabase notifications are wired.
-  return NextResponse.json(hydrateBooking(mockDb.bookings[idx]!));
+  const updated = await updateRow("bookings", id, {
+    ...patch,
+    admin_note: patch.admin_note ?? null,
+    admin_note_updated_by_user_id: patch.admin_note_updated_by_user_id ?? null,
+    admin_note_updated_by_name: patch.admin_note_updated_by_name ?? null,
+    admin_note_updated_at: patch.admin_note_updated_at ?? null,
+  });
+  await emitBookingLifecycleNotifications({
+    prev: booking,
+    nextRow: updated as Record<string, unknown>,
+    bookingId: id,
+  });
+  return NextResponse.json(hydrateBooking(updated as Booking));
 }

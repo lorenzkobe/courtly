@@ -1,14 +1,17 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Calendar,
   Clock,
+  ExternalLink,
+  Loader2,
+  RefreshCcw,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
@@ -26,32 +29,38 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp } from "@/lib/format-currency";
 import {
   bookingDurationHours,
   formatTimeShort,
 } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
-import type { Booking } from "@/lib/types/courtly";
+import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response;
-    const msg = response?.data?.error;
-    if (typeof msg === "string" && msg.trim()) return msg;
-  }
-  return fallback;
-}
-
 const statusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
   registered: "bg-primary/10 text-primary border-primary/20",
   waitlisted: "bg-chart-3/15 text-chart-3 border-chart-3/30",
 };
+
+function remainingTimeLabel(holdExpiresAt: string | null | undefined, nowMs: number): string {
+  if (!holdExpiresAt) return "Expired";
+  const remaining = Math.max(0, new Date(holdExpiresAt).getTime() - nowMs);
+  if (remaining <= 0) return "Expired";
+  const sec = Math.ceil(remaining / 1000);
+  const mm = Math.floor(sec / 60)
+    .toString()
+    .padStart(2, "0");
+  const ss = (sec % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
 
 type CourtDateGroup = {
   key: string;
@@ -95,24 +104,78 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
 }
 
 export default function MyBookingsPage() {
+  const PAGE_LIMIT = 20;
   const [tab, setTab] = useState("bookings");
   const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("confirmed");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const { user } = useAuth();
-  const queryClient = useQueryClient();
   const selectedSport = useSelectedSport((s) => s.sport);
+  const queryClient = useQueryClient();
 
-  const { data: bookings = [], isLoading: loadingBookings } = useQuery({
-    queryKey: ["my-bookings", user?.email, selectedSport],
-    queryFn: async () => {
-      const { data } = await courtlyApi.bookings.list({
-        player_email: user?.email,
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const { data, isLoading, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
+    queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT),
+    queryFn: async ({ pageParam }) => {
+      const cursorParam = (pageParam ?? {
+        bookings_cursor: null,
+        registrations_cursor: null,
+      }) as { bookings_cursor: string | null; registrations_cursor: string | null };
+      const { data } = await courtlyApi.me.bookingsOverview({
         sport: selectedSport,
+        bookings_cursor: cursorParam.bookings_cursor,
+        registrations_cursor: cursorParam.registrations_cursor,
+        limit: PAGE_LIMIT,
       });
       return data;
     },
+    initialPageParam: {
+      bookings_cursor: null as string | null,
+      registrations_cursor: null as string | null,
+    },
+    getNextPageParam: (lastPage) => ({
+      bookings_cursor: lastPage.bookings.next_cursor,
+      registrations_cursor: lastPage.registrations.next_cursor,
+    }),
     enabled: !!user?.email,
+  });
+  const pages = useMemo(
+    () => (data?.pages ?? []) as MyBookingsOverviewResponse[],
+    [data?.pages],
+  );
+  const bookings = useMemo(() => pages.flatMap((page) => page.bookings.items), [pages]);
+  const registrations = useMemo(
+    () => pages.flatMap((page) => page.registrations.items),
+    [pages],
+  );
+  const latestPage = pages.length > 0 ? pages[pages.length - 1] : undefined;
+  const hasMoreBookings = latestPage?.bookings.has_more ?? false;
+  const hasMoreRegistrations = latestPage?.registrations.has_more ?? false;
+  const bookingsRealtimeKeys = useMemo(() => [queryKeys.bookings.all()], []);
+  useBookingsRealtime({
+    playerEmail: user?.email,
+    enabled: !!user?.email,
+    queryKeysToInvalidate: bookingsRealtimeKeys,
+  });
+
+  const retryPayment = useMutation({
+    mutationFn: async (bookingId: string) => {
+      const { data } = await courtlyApi.bookings.retryPayment(bookingId);
+      return data;
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT) });
+      window.open(data.payment_link_url, "_blank", "noopener,noreferrer");
+    },
+    onError: () => {
+      toast.error("Could not retry payment right now.");
+    },
   });
 
   const bookingGroups = useMemo(() => {
@@ -141,18 +204,7 @@ export default function MyBookingsPage() {
     return groups;
   }, [bookings, query, sortBy, statusFilter]);
 
-  const { data: registrations = [], isLoading: loadingRegs } = useQuery({
-    queryKey: ["my-registrations", user?.email],
-    queryFn: async () => {
-      const { data } = await courtlyApi.registrations.list({
-        player_email: user?.email,
-      });
-      return data;
-    },
-    enabled: !!user?.email,
-  });
-
-  const isLoading = loadingBookings || loadingRegs;
+  const tabLoading = isLoading && pages.length === 0;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -172,7 +224,7 @@ export default function MyBookingsPage() {
         </TabsList>
       </Tabs>
 
-      {isLoading ? (
+      {tabLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-32 rounded-xl" />
@@ -206,6 +258,7 @@ export default function MyBookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending_payment">Pending payment</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -306,10 +359,54 @@ export default function MyBookingsPage() {
                                 >
                                   {formatStatusLabel(booking.status)}
                                 </Badge>
+                                {booking.status === "pending_payment" ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    Time left: {remainingTimeLabel(booking.hold_expires_at, countdownNow)}
+                                  </span>
+                                ) : null}
                                 <span className="text-sm font-semibold text-foreground tabular-nums">
                                   {formatPhp(booking.total_cost ?? 0)}
                                 </span>
                               </div>
+                              {booking.status === "pending_payment" &&
+                              booking.hold_expires_at &&
+                              new Date(booking.hold_expires_at).getTime() > countdownNow ? (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  {booking.payment_link_url ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        window.open(booking.payment_link_url ?? "", "_blank", "noopener,noreferrer");
+                                      }}
+                                    >
+                                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                                      Pay now
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      retryPayment.mutate(booking.id);
+                                    }}
+                                    disabled={retryPayment.isPending}
+                                  >
+                                    {retryPayment.isPending ? (
+                                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                                    )}
+                                    Retry payment
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                           </li>
                         );
@@ -330,6 +427,18 @@ export default function MyBookingsPage() {
                 </Card>
               );
             })}
+            {hasMoreBookings ? (
+              <div className="flex justify-center pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  {isFetchingNextPage ? "Loading..." : "Load more"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         )
       ) : registrations.length === 0 ? (
@@ -374,6 +483,18 @@ export default function MyBookingsPage() {
               </CardContent>
             </Card>
           ))}
+          {hasMoreRegistrations ? (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

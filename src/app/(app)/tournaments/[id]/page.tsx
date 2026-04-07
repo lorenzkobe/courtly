@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import { formatStatusLabel } from "@/lib/utils";
@@ -62,7 +63,7 @@ export default function TournamentDetailPage() {
   });
 
   const { data: tournament, isLoading, isError } = useQuery({
-    queryKey: ["tournament", tournamentId, selectedSport],
+    queryKey: queryKeys.tournaments.detail(tournamentId, selectedSport),
     queryFn: async () => {
       const { data } = await courtlyApi.tournaments.get(tournamentId, {
         sport: selectedSport,
@@ -83,9 +84,9 @@ export default function TournamentDetailPage() {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["tournament", tournamentId] });
-      void queryClient.invalidateQueries({ queryKey: ["tournaments"] });
-      void queryClient.invalidateQueries({ queryKey: ["my-registrations"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tournaments.detail(tournamentId, selectedSport) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tournaments.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.all() });
       toast.success("Registered successfully!");
       setOpen(false);
     },

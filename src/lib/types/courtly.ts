@@ -63,11 +63,11 @@ export type Venue = {
   name: string;
   location: string;
   contact_phone: string;
+  facebook_url?: string;
+  instagram_url?: string;
   sport: CourtSport;
-  hourly_rate: number;
-  hourly_rate_windows?: CourtRateWindow[];
-  opens_at: string;
-  closes_at: string;
+  /** Non-overlapping [start, end) price ranges; sole source for bookable hours and rates. */
+  hourly_rate_windows: CourtRateWindow[];
   status: VenueStatus;
   amenities: string[];
   image_url: string;
@@ -93,6 +93,10 @@ export type Court = {
   /** Derived on read from linked venue. */
   contact_phone?: string;
   /** Derived on read from linked venue. */
+  facebook_url?: string;
+  /** Derived on read from linked venue. */
+  instagram_url?: string;
+  /** Derived on read from linked venue. */
   location: string;
   /** Derived on read from linked venue. */
   sport: CourtSport;
@@ -111,12 +115,10 @@ export type Court = {
   /** Deprecated but retained for compatibility in current UI. */
   surface: "concrete" | "asphalt" | "wood" | "sport_court";
   /** Derived on read from linked venue. */
-  hourly_rate: number;
-  /** Derived on read from linked venue. */
-  hourly_rate_windows?: CourtRateWindow[];
+  hourly_rate_windows: CourtRateWindow[];
   /** Derived on read from linked venue. */
   amenities: string[];
-  /** Derived on read from linked venue. */
+  /** Earliest range start / latest range end (filters); gaps between ranges may exist. */
   available_hours: { open: string; close: string };
   /** Populated on read APIs from reviews table — not stored on court row. */
   review_summary?: CourtReviewSummary;
@@ -124,6 +126,7 @@ export type Court = {
 
 export type Booking = {
   id: string;
+  booking_number?: string;
   court_id: string;
   court_name?: string;
   /** Hydrated from the court’s venue on read APIs. */
@@ -137,6 +140,10 @@ export type Booking = {
   end_time: string;
   player_name?: string;
   player_email?: string;
+  /** Profile id when the booking is tied to a logged-in user (from DB). */
+  user_id?: string | null;
+  /** Hydrated on read for venue admins / superadmin from `profiles.mobile_number`. */
+  player_mobile_number?: string | null;
   players_count?: number;
   /** Amount attributed to the court before booking fee (reservation subtotal). */
   court_subtotal?: number;
@@ -144,7 +151,19 @@ export type Booking = {
   booking_fee?: number;
   /** What the customer paid (court subtotal + booking fee) when both are set. */
   total_cost?: number;
-  status: "confirmed" | "cancelled" | "completed";
+  status: "pending_payment" | "confirmed" | "cancelled" | "completed";
+  hold_expires_at?: string | null;
+  payment_provider?: "paymongo" | null;
+  payment_link_id?: string | null;
+  payment_link_url?: string | null;
+  payment_link_created_at?: string | null;
+  payment_attempt_count?: number;
+  paid_at?: string | null;
+  payment_failed_at?: string | null;
+  payment_reference_id?: string | null;
+  cancel_reason?: string | null;
+  refund_required?: boolean;
+  refunded_at?: string | null;
   /** Player-provided booking note. Set during booking creation; immutable afterwards. */
   notes?: string;
   /** Internal shared note for court admins/superadmin managing this booking's court. */
@@ -153,6 +172,45 @@ export type Booking = {
   admin_note_updated_by_name?: string;
   admin_note_updated_at?: string;
   created_date?: string;
+};
+
+export type PaymentTransaction = {
+  id: string;
+  provider: string;
+  booking_id: string;
+  booking_group_id?: string | null;
+  payment_link_id?: string | null;
+  provider_event_id?: string | null;
+  event_type?: string | null;
+  provider_payment_id?: string | null;
+  provider_payment_intent_id?: string | null;
+  provider_balance_transaction_id?: string | null;
+  provider_external_reference_number?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  fee?: number | null;
+  net_amount?: number | null;
+  source_id?: string | null;
+  source_type?: string | null;
+  source_brand?: string | null;
+  source_last4?: string | null;
+  source_country?: string | null;
+  source_provider_id?: string | null;
+  refund_id?: string | null;
+  refund_status?: string | null;
+  refund_amount?: number | null;
+  refund_reason?: string | null;
+  refund_notes?: string | null;
+  trace_status: string;
+  reconciled_by: "webhook" | "manual_reconcile";
+  trace_note?: string | null;
+  provider_created_at?: string | null;
+  provider_updated_at?: string | null;
+  paid_at?: string | null;
+  refund_attempted_at?: string | null;
+  refund_created_at?: string | null;
+  raw_payload?: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export type Tournament = {
@@ -223,6 +281,13 @@ export type ManagedUser = {
   id: string;
   email: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  /** yyyy-MM-dd */
+  birthdate?: string | null;
+  mobile_number?: string | null;
+  /** From Supabase Auth; null means invite / signup not completed. */
+  email_confirmed_at?: string | null;
   role: "user" | "admin" | "superadmin";
   is_active: boolean;
   created_at: string;
@@ -237,6 +302,13 @@ export type RevenueByCourtRow = {
   court_net: number;
   booking_fees: number;
   customer_total: number;
+  rate_breakdown?: RevenueRateBreakdownRow[];
+};
+
+export type RevenueRateBreakdownRow = {
+  hourly_rate: number;
+  hours_booked: number;
+  court_subtotal: number;
 };
 
 export type RevenueByAccountRow = {
@@ -269,8 +341,76 @@ export type RevenueSummaryResponse = {
   focus_venue?: { id: string; name: string } | null;
 };
 
+export type CourtDayAvailability = {
+  bookings: Booking[];
+  court_closures: CourtClosure[];
+  venue_closures: VenueClosure[];
+};
+
+export type CourtBookingSurfaceResponse = {
+  court: Court;
+  sibling_courts: Court[];
+  availability: CourtDayAvailability;
+  reviews: CourtReview[];
+};
+
+export type CourtDetailContextResponse = {
+  court: Court;
+  sibling_courts: Court[];
+};
+
+export type BookingDetailGroupResponse = {
+  booking: Booking;
+  group_segments: Booking[];
+  payment_transactions?: PaymentTransaction[];
+};
+
+export type BookingDetailContextResponse = BookingDetailGroupResponse & {
+  court?: Court;
+  reviews?: CourtReview[];
+};
+
 export type VenueDetailResponse = {
   venue: Venue;
   courts: Court[];
   admins: ManagedUser[];
+};
+
+export type DashboardOverviewResponse = {
+  today_bookings: Booking[];
+  tournaments_open: Tournament[];
+  open_play_sessions: OpenPlaySession[];
+};
+
+export type AdminVenueWorkspaceResponse = {
+  venue: Venue;
+  courts: Court[];
+};
+
+export type SuperadminDirectoryResponse = {
+  venues: Venue[];
+  managed_users: ManagedUser[];
+};
+
+export type CursorPage<T> = {
+  items: T[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
+export type MyBookingsOverviewResponse = {
+  bookings: CursorPage<Booking>;
+  registrations: CursorPage<TournamentRegistration>;
+};
+
+export type BookingCheckoutResponse = {
+  booking_id: string;
+  booking_group_id: string;
+  payment_link_url: string;
+  hold_expires_at: string;
+};
+
+export type SuperadminDirectoryPagedResponse = {
+  venues: CursorPage<Venue>;
+  managed_users: CursorPage<ManagedUser>;
 };

@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import {
   ArrowRight,
@@ -15,9 +13,9 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { readSessionUser } from "@/lib/auth/cookie-session";
 import { homePathForRole } from "@/lib/auth/management";
 import { Card, CardContent } from "@/components/ui/card";
-import { useAuth } from "@/lib/auth/auth-context";
 
 const features = [
   {
@@ -91,8 +89,8 @@ const testimonials = [
   },
 ];
 
-export default function HomePage() {
-  const { user } = useAuth();
+export default async function HomePage() {
+  const user = await readSessionUser();
   const appHomePath = homePathForRole(user?.role);
 
   return (

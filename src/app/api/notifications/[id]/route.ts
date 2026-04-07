@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { LocalPlaceholderNotificationRepository } from "@/lib/notifications/adapters/local-placeholder";
+import { createNotificationRepository } from "@/lib/notifications/repository-factory";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const repo = new LocalPlaceholderNotificationRepository();
+const repo = createNotificationRepository();
 
 export async function PATCH(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
@@ -13,11 +13,10 @@ export async function PATCH(_req: Request, ctx: Ctx) {
   }
 
   const { id } = await ctx.params;
-  await repo.markRead(id, user.id);
+  const result = await repo.markRead(id, user.id);
+  if (!result.ok) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
-  return NextResponse.json({
-    ok: true,
-    status: "placeholder",
-    message: "Read state persistence will be enabled when Supabase notifications are implemented.",
-  });
+  return NextResponse.json({ ok: true });
 }

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateCourt } from "@/lib/auth/management";
-import { mockDb } from "@/lib/mock/db";
-import { timeRangesOverlap } from "@/lib/booking-overlap";
+import {
+  getCourtById,
+  hasConfirmedBookingConflictForCourt,
+  insertRow,
+  listCourtClosuresByCourt,
+  listVenueAdminAssignments,
+} from "@/lib/data/courtly-db";
 import type { CourtClosure } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -10,39 +15,41 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Public: `?date=yyyy-MM-dd` for that day. Authenticated venue/superadmin: all blocks for the court. */
 export async function GET(req: Request, ctx: Ctx) {
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [court, assignments] = await Promise.all([
+    getCourtById(courtId),
+    listVenueAdminAssignments(),
+  ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
 
   if (date) {
-    const list = mockDb.courtClosures.filter(
-      (closure) => closure.court_id === courtId && closure.date === date,
-    );
-    return NextResponse.json(list);
+    return NextResponse.json(await listCourtClosuresByCourt(courtId, date));
   }
 
   const user = await readSessionUser();
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const list = mockDb.courtClosures
-    .filter((closure) => closure.court_id === courtId)
-    .sort((a, b) => {
-      const d = a.date.localeCompare(b.date);
-      return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
-    });
+  const list = await listCourtClosuresByCourt(courtId);
+  list.sort((a, b) => {
+    const d = a.date.localeCompare(b.date);
+    return d !== 0 ? d : a.start_time.localeCompare(b.start_time);
+  });
   return NextResponse.json(list);
 }
 
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId } = await ctx.params;
-  const court = mockDb.courts.find((row) => row.id === courtId);
+  const [court, assignments] = await Promise.all([
+    getCourtById(courtId),
+    listVenueAdminAssignments(),
+  ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!user || !canMutateCourt(user, court, mockDb.venueAdminAssignments)) {
+  if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -68,17 +75,11 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Reason is required" }, { status: 400 });
   }
 
-  const conflicts = mockDb.bookings.some(
-    (booking) =>
-      booking.court_id === courtId &&
-      booking.date === date &&
-      booking.status === "confirmed" &&
-      timeRangesOverlap(
-        booking.start_time,
-        booking.end_time,
-        start_time,
-        end_time,
-      ),
+  const conflicts = await hasConfirmedBookingConflictForCourt(
+    courtId,
+    date,
+    start_time,
+    end_time,
   );
   if (conflicts) {
     return NextResponse.json(
@@ -90,16 +91,14 @@ export async function POST(req: Request, ctx: Ctx) {
     );
   }
 
-  const row: CourtClosure = {
-    id: `clos-${crypto.randomUUID().slice(0, 8)}`,
+  const row = {
     court_id: courtId,
     date,
     start_time,
     end_time,
     reason,
-    note: typeof body.note === "string" ? body.note.trim() || undefined : undefined,
-    created_at: new Date().toISOString(),
+    note: typeof body.note === "string" ? body.note.trim() || null : null,
   };
-  mockDb.courtClosures.push(row);
-  return NextResponse.json(row);
+  const inserted = await insertRow("court_closures", row);
+  return NextResponse.json(inserted as CourtClosure);
 }
