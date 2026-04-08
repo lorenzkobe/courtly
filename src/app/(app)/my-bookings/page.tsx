@@ -1,18 +1,14 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  ExternalLink,
-  Loader2,
-  RefreshCcw,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +35,11 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
-import { formatStatusLabel } from "@/lib/utils";
+import { formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  pending_confirmation: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -106,13 +103,12 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
 export default function MyBookingsPage() {
   const PAGE_LIMIT = 20;
   const [tab, setTab] = useState("bookings");
-  const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("confirmed");
+  const [statusFilter, setStatusFilter] = useState<"all" | Booking["status"]>("all");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const { user } = useAuth();
   const selectedSport = useSelectedSport((s) => s.sport);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
@@ -156,26 +152,11 @@ export default function MyBookingsPage() {
   const latestPage = pages.length > 0 ? pages[pages.length - 1] : undefined;
   const hasMoreBookings = latestPage?.bookings.has_more ?? false;
   const hasMoreRegistrations = latestPage?.registrations.has_more ?? false;
-  const bookingsRealtimeKeys = useMemo(() => [queryKeys.bookings.all()], []);
+  const bookingsRealtimeKeys = useMemo(() => [["me", "bookings-overview"]], []);
   useBookingsRealtime({
     playerEmail: user?.email,
     enabled: !!user?.email,
     queryKeysToInvalidate: bookingsRealtimeKeys,
-  });
-
-  const retryPayment = useMutation({
-    mutationFn: async (bookingId: string) => {
-      const { data } = await courtlyApi.bookings.retryPayment(bookingId);
-      return data;
-    },
-    onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT) });
-      window.open(data.payment_link_url, "_blank", "noopener,noreferrer");
-    },
-    onError: () => {
-      toast.error("Could not retry payment right now.");
-    },
   });
 
   const bookingGroups = useMemo(() => {
@@ -259,6 +240,9 @@ export default function MyBookingsPage() {
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="pending_payment">Pending payment</SelectItem>
+                  <SelectItem value="pending_confirmation">
+                    Waiting for venue confirmation
+                  </SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -357,7 +341,7 @@ export default function MyBookingsPage() {
                                   variant="outline"
                                   className={statusStyles[booking.status] ?? ""}
                                 >
-                                  {formatStatusLabel(booking.status)}
+                                  {formatBookingStatusLabel(booking.status)}
                                 </Badge>
                                 {booking.status === "pending_payment" ? (
                                   <span className="text-xs text-muted-foreground">
@@ -368,44 +352,10 @@ export default function MyBookingsPage() {
                                   {formatPhp(booking.total_cost ?? 0)}
                                 </span>
                               </div>
-                              {booking.status === "pending_payment" &&
-                              booking.hold_expires_at &&
-                              new Date(booking.hold_expires_at).getTime() > countdownNow ? (
-                                <div className="flex flex-wrap items-center gap-2 pt-1">
-                                  {booking.payment_link_url ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        window.open(booking.payment_link_url ?? "", "_blank", "noopener,noreferrer");
-                                      }}
-                                    >
-                                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                                      Pay now
-                                    </Button>
-                                  ) : null}
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      retryPayment.mutate(booking.id);
-                                    }}
-                                    disabled={retryPayment.isPending}
-                                  >
-                                    {retryPayment.isPending ? (
-                                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                                    )}
-                                    Retry payment
-                                  </Button>
-                                </div>
+                              {booking.status === "pending_confirmation" ? (
+                                <p className="pt-1 text-xs text-muted-foreground">
+                                  Payment proof submitted. Waiting for venue confirmation.
+                                </p>
                               ) : null}
                             </div>
                           </li>

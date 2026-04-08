@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 import {
   format,
   isBefore,
@@ -10,21 +15,21 @@ import {
 } from "date-fns";
 import {
   ArrowLeft,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Copy,
   ExternalLink,
   Heart,
   Loader2,
   MapPin,
-  RefreshCcw,
   Star,
+  Upload,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -91,6 +96,11 @@ import type {
 import { formatStatusLabel } from "@/lib/utils";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { cn } from "@/lib/utils";
+import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
+import { optimizePaymentProofImage } from "@/lib/payments/optimize-payment-proof";
+import {
+  PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES,
+} from "@/lib/payments/payment-proof-constraints";
 
 function buildBookingPayloads(
   segments: BookingSegment[],
@@ -153,8 +163,12 @@ const EMPTY_VENUE_CLOSURES: VenueClosure[] = [];
 type PaymentOverlayState = {
   booking_id: string;
   booking_group_id: string;
-  payment_link_url: string;
   hold_expires_at: string;
+  payment_methods: Array<{
+    method: "gcash" | "maya";
+    account_name: string;
+    account_number: string;
+  }>;
 };
 
 function StarRow({ rating, className }: { rating: number; className?: string }) {
@@ -262,7 +276,6 @@ export default function BookCourtPage() {
   const paramCourtId = params.id;
   const [activeCourtId, setActiveCourtId] = useState(paramCourtId);
   const router = useRouter();
-  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
@@ -274,7 +287,19 @@ export default function BookCourtPage() {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
-  const reconciledBookingIdsRef = useRef<Set<string>>(new Set());
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
+    null,
+  );
+  const [optimizedProof, setOptimizedProof] = useState<{
+    dataUrl: string;
+    mimeType: "image/jpeg";
+    bytes: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const proofFileInputRef = useRef<HTMLInputElement>(null);
+  const [proofOptimizing, setProofOptimizing] = useState(false);
+  const [proofDragActive, setProofDragActive] = useState(false);
 
   const selectedSet = useMemo(() => new Set(selectedSlots), [selectedSlots]);
 
@@ -284,10 +309,22 @@ export default function BookCourtPage() {
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
   const bookingSurfaceKey = queryKeys.bookingSurface.courtDay(activeCourtId, dateIso);
-  const bookingRealtimeKeys = useMemo(
-    () => [bookingSurfaceKey],
-    [bookingSurfaceKey],
+  const myDayBookingsQueryKey = useMemo(
+    () =>
+      user?.email
+        ? queryKeys.bookings.list({
+            court_id: activeCourtId,
+            date: dateIso,
+            player_email: user.email,
+          })
+        : null,
+    [activeCourtId, dateIso, user?.email],
   );
+  const bookingRealtimeKeys = useMemo((): QueryKey[] => {
+    const keys: QueryKey[] = [bookingSurfaceKey];
+    if (myDayBookingsQueryKey) keys.push(myDayBookingsQueryKey);
+    return keys;
+  }, [bookingSurfaceKey, myDayBookingsQueryKey]);
   useBookingsRealtime({
     filter: activeCourtId ? `court_id=eq.${activeCourtId}` : null,
     enabled: !!activeCourtId,
@@ -307,11 +344,13 @@ export default function BookCourtPage() {
   });
 
   const { data: myDayBookings = [] } = useQuery({
-    queryKey: queryKeys.bookings.list({
-      court_id: activeCourtId,
-      date: dateIso,
-      player_email: user?.email,
-    }),
+    queryKey:
+      myDayBookingsQueryKey ??
+      queryKeys.bookings.list({
+        court_id: activeCourtId,
+        date: dateIso,
+        player_email: user?.email,
+      }),
     queryFn: async () => {
       if (!user?.email) return [] as Booking[];
       const { data } = await courtlyApi.bookings.list({
@@ -322,7 +361,6 @@ export default function BookCourtPage() {
       return data;
     },
     enabled: !!user?.email && !!activeCourtId,
-    refetchInterval: 5000,
   });
   const court = bookingSurface?.court;
   const establishmentCourts = bookingSurface?.sibling_courts ?? [];
@@ -360,6 +398,33 @@ export default function BookCourtPage() {
 
   const courtReviews = bookingSurface?.reviews ?? [];
   const isLoadingReviews = isLoadingBookingSurface;
+
+  const reviewsNewestFirst = useMemo(
+    () =>
+      [...courtReviews].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ),
+    [courtReviews],
+  );
+
+  const reviewsSummaryLine = useMemo(() => {
+    const s = court?.review_summary;
+    if (s && s.review_count > 0) {
+      return {
+        average: s.average_rating,
+        count: s.review_count,
+      };
+    }
+    if (courtReviews.length > 0) {
+      const sum = courtReviews.reduce((acc, r) => acc + r.rating, 0);
+      return {
+        average: sum / courtReviews.length,
+        count: courtReviews.length,
+      };
+    }
+    return null;
+  }, [court?.review_summary, courtReviews]);
 
   const galleryUrls = useMemo(
     () => (court ? courtGalleryUrls(court) : []),
@@ -491,7 +556,9 @@ export default function BookCourtPage() {
       setSummaryOpen(false);
       setSelectedSlots([]);
       setPaymentOverlay(checkout);
-      toast.success("Payment link ready. Complete payment within 5 minutes.");
+      setSelectedPaymentMethod(checkout.payment_methods[0]?.method ?? null);
+      setOptimizedProof(null);
+      toast.success("Booking hold created. Submit payment proof within 5 minutes.");
     },
     onError: (err: unknown) => {
       toast.error(
@@ -500,19 +567,31 @@ export default function BookCourtPage() {
     },
   });
 
-  const reconcilePayment = useMutation({
-    mutationFn: async (bookingId: string) => {
-      const { data } = await courtlyApi.bookings.reconcilePayment(bookingId);
+  const submitPaymentProof = useMutation({
+    mutationFn: async () => {
+      if (!paymentOverlay) throw new Error("No active booking hold.");
+      if (!selectedPaymentMethod) throw new Error("Select a payment method.");
+      if (!optimizedProof) throw new Error("Upload a payment screenshot first.");
+      const { data } = await courtlyApi.bookings.submitPaymentProof(paymentOverlay.booking_id, {
+        payment_method: selectedPaymentMethod,
+        payment_proof_data_url: optimizedProof.dataUrl,
+        payment_proof_mime_type: optimizedProof.mimeType,
+        payment_proof_bytes: optimizedProof.bytes,
+        payment_proof_width: optimizedProof.width,
+        payment_proof_height: optimizedProof.height,
+      });
       return data;
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: bookingSurfaceKey });
-      if (result.status === "confirmed") {
-        toast.success("Payment verified. Booking confirmed.");
-      } else if (result.status === "cancelled") {
-        toast.error("Payment received too late for this slot. Refund review required.");
-      }
+      setPaymentOverlay(null);
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      toast.success("Payment submitted. Waiting for venue confirmation.");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Could not submit payment proof."));
     },
   });
 
@@ -536,49 +615,22 @@ export default function BookCourtPage() {
   }, [myDayBookings, countdownNow]);
 
   useEffect(() => {
-    if (!activePendingBooking || !activePendingBooking.hold_expires_at || !activePendingBooking.payment_link_url) {
+    if (!activePendingBooking || !activePendingBooking.hold_expires_at) {
       return;
     }
     const holdExpiresAt = activePendingBooking.hold_expires_at;
-    const paymentLinkUrl = activePendingBooking.payment_link_url;
+    const paymentMethods = venuePaymentMethodsForCheckout(court ?? {});
     setPaymentOverlay((current) => {
       if (current?.booking_id === activePendingBooking.id) return current;
       return {
         booking_id: activePendingBooking.id,
         booking_group_id: activePendingBooking.booking_group_id ?? activePendingBooking.id,
-        payment_link_url: paymentLinkUrl,
         hold_expires_at: holdExpiresAt,
+        payment_methods: paymentMethods,
       };
     });
-  }, [activePendingBooking]);
-
-  useEffect(() => {
-    if (!activePendingBooking) return;
-    if (reconcilePayment.isPending) return;
-    const bookingId = activePendingBooking.id;
-    if (reconciledBookingIdsRef.current.has(bookingId)) return;
-    reconciledBookingIdsRef.current.add(bookingId);
-    void reconcilePayment.mutateAsync(bookingId);
-  }, [activePendingBooking, reconcilePayment]);
-
-  useEffect(() => {
-    const paymentResult = searchParams.get("payment");
-    const bookingId = searchParams.get("booking_id");
-    if (!paymentResult || !bookingId) return;
-    if (paymentResult === "success") {
-      void reconcilePayment.mutateAsync(bookingId);
-    } else if (paymentResult === "failed") {
-      toast.error("Payment was not completed. You can retry while hold is active.");
-    }
-    const next = new URLSearchParams(searchParams.toString());
-    next.delete("payment");
-    next.delete("booking_id");
-    const query = next.toString();
-    router.replace(
-      query ? `/courts/${activeCourtId}/book?${query}` : `/courts/${activeCourtId}/book`,
-      { scroll: false },
-    );
-  }, [searchParams, router, reconcilePayment, activeCourtId]);
+    setSelectedPaymentMethod((current) => current ?? paymentMethods[0]?.method ?? null);
+  }, [activePendingBooking, court]);
 
   useEffect(() => {
     if (!paymentOverlay) return;
@@ -589,16 +641,17 @@ export default function BookCourtPage() {
     );
     if (related.length === 0) return;
     const hasConfirmed = related.some((booking) => booking.status === "confirmed");
-    const hasFailed =
-      related.some((booking) => booking.status === "pending_payment" && !!booking.payment_failed_at) ||
-      related.some((booking) => booking.status === "cancelled");
+    const hasSubmitted = related.some(
+      (booking) => booking.status === "pending_confirmation",
+    );
+    const hasFailed = related.some((booking) => booking.status === "cancelled");
     const holdExpired = related.every(
       (booking) =>
         booking.status !== "pending_payment" ||
         !booking.hold_expires_at ||
         new Date(booking.hold_expires_at).getTime() <= Date.now(),
     );
-    if (hasConfirmed || hasFailed || holdExpired) {
+    if (hasConfirmed || hasSubmitted || hasFailed || holdExpired) {
       setPaymentOverlay(null);
     }
   }, [myDayBookings, paymentOverlay]);
@@ -617,19 +670,38 @@ export default function BookCourtPage() {
     }
   }, [overlayRemainingSeconds, paymentOverlay]);
 
-  const openPaymentLink = () => {
-    if (!paymentOverlay?.payment_link_url) return;
-    window.open(paymentOverlay.payment_link_url, "_blank", "noopener,noreferrer");
+  const processProofFile = async (file: File) => {
+    const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
+    if (!allowed.includes(file.type)) {
+      toast.error("Please use a JPG, PNG, or WebP photo.");
+      return;
+    }
+    setProofOptimizing(true);
+    setOptimizedProof(null);
+    try {
+      const optimized = await optimizePaymentProofImage(file);
+      setOptimizedProof(optimized);
+      toast.success("Photo uploaded");
+    } catch (error) {
+      toast.error(
+        apiErrorMessage(error, "Could not use that image. Try another photo."),
+      );
+      setOptimizedProof(null);
+    } finally {
+      setProofOptimizing(false);
+    }
   };
 
-  const copyPaymentLink = async () => {
-    if (!paymentOverlay?.payment_link_url) return;
-    try {
-      await navigator.clipboard.writeText(paymentOverlay.payment_link_url);
-      toast.success("Payment link copied");
-    } catch {
-      toast.error("Could not copy payment link");
-    }
+  const onProofFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await processProofFile(file);
+    event.target.value = "";
+  };
+
+  const clearProofSelection = () => {
+    setOptimizedProof(null);
+    if (proofFileInputRef.current) proofFileInputRef.current.value = "";
   };
 
   const toggleSlotSelection = (time: string) => {
@@ -1126,28 +1198,7 @@ export default function BookCourtPage() {
                 </div>
               </dl>
 
-              <div className="space-y-2 border-t border-border/60 pt-4">
-                <h3 className="font-heading text-sm font-semibold text-foreground">
-                  Player ratings
-                </h3>
-                {court.review_summary &&
-                court.review_summary.review_count > 0 ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StarRow rating={court.review_summary.average_rating} />
-                    <span className="text-sm text-muted-foreground">
-                      {court.review_summary.average_rating.toFixed(1)} average ·{" "}
-                      {court.review_summary.review_count}{" "}
-                      {court.review_summary.review_count === 1
-                        ? "review"
-                        : "reviews"}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No reviews yet.</p>
-                )}
-              </div>
-
-              <div className="space-y-3 border-t border-border/60 pt-6">
+              <div className="space-y-3 border-t border-border/60 pt-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-1">
                     <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
@@ -1174,104 +1225,123 @@ export default function BookCourtPage() {
                 </div>
               </div>
 
-              <div className="space-y-3 border-t border-border/60 pt-6">
+              <div className="space-y-3 border-t border-border/60 pt-4">
                 <h3 className="font-heading text-base font-semibold text-foreground">
-                  Recent reviews
+                  Reviews
                 </h3>
                 {isLoadingReviews ? (
                   <div className="space-y-2">
+                    <Skeleton className="h-8 w-56 rounded-lg" />
                     <Skeleton className="h-14 rounded-lg" />
                     <Skeleton className="h-14 rounded-lg" />
                   </div>
-                ) : courtReviews.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Be the first to review after a completed visit.
-                  </p>
                 ) : (
-                  <ul className="space-y-3">
-                    {courtReviews.map((review) => {
-                      const isOwner = user?.id === review.user_id;
-                      const canFlag =
-                        user &&
-                        canCourtVenueAdminFlagReview(user, court) &&
-                        review.user_id !== user.id &&
-                        !review.flagged;
-                      const canPlatformDelete =
-                        user && isSuperadmin(user);
-                      return (
-                        <li
-                          key={review.id}
-                          className="rounded-xl border border-border/60 bg-muted/10 px-3 py-3 text-sm"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <StarRow rating={review.rating} />
-                                <span className="font-medium text-foreground">
-                                  {review.user_name}
-                                </span>
-                                {review.flagged ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] text-amber-800 border-amber-500/40 bg-amber-500/10"
-                                  >
-                                    Flagged for review
-                                  </Badge>
-                                ) : null}
+                  <>
+                    {reviewsSummaryLine ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StarRow rating={reviewsSummaryLine.average} />
+                        <span className="text-sm text-muted-foreground">
+                          {reviewsSummaryLine.average.toFixed(1)} average ·{" "}
+                          {reviewsSummaryLine.count}{" "}
+                          {reviewsSummaryLine.count === 1
+                            ? "rating"
+                            : "ratings"}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No reviews yet. Leave one after a completed visit.
+                      </p>
+                    )}
+                    {reviewsNewestFirst.length > 0 ? (
+                      <ul className="space-y-3">
+                        {reviewsNewestFirst.map((review) => {
+                          const isOwner = user?.id === review.user_id;
+                          const canFlag =
+                            user &&
+                            canCourtVenueAdminFlagReview(user, court) &&
+                            review.user_id !== user.id &&
+                            !review.flagged;
+                          const canPlatformDelete =
+                            user && isSuperadmin(user);
+                          return (
+                            <li
+                              key={review.id}
+                              className="rounded-xl border border-border/60 bg-muted/10 px-3 py-3 text-sm"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0 space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <StarRow rating={review.rating} />
+                                    <span className="font-medium text-foreground">
+                                      {review.user_name}
+                                    </span>
+                                    {review.flagged ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] text-amber-800 border-amber-500/40 bg-amber-500/10"
+                                      >
+                                        Flagged for review
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {format(
+                                      new Date(review.created_at),
+                                      "MMM d, yyyy",
+                                    )}
+                                  </p>
+                                  {review.comment ? (
+                                    <p className="pt-1 text-foreground/90">
+                                      {review.comment}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                                  {canFlag ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setFlagNote("");
+                                        setFlagReviewId(review.id);
+                                      }}
+                                    >
+                                      Report
+                                    </Button>
+                                  ) : null}
+                                  {isOwner ? (
+                                    <Button variant="outline" size="sm" asChild>
+                                      <Link
+                                        href={`/my-bookings/${review.booking_id}`}
+                                      >
+                                        Edit review
+                                      </Link>
+                                    </Button>
+                                  ) : null}
+                                  {canPlatformDelete ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-destructive hover:text-destructive"
+                                      disabled={deleteReviewMut.isPending}
+                                      onClick={() =>
+                                        setConfirmDeleteReviewId(review.id)
+                                      }
+                                    >
+                                      Delete
+                                    </Button>
+                                  ) : null}
+                                </div>
                               </div>
-                              <p className="text-xs text-muted-foreground">
-                                {format(
-                                  new Date(review.created_at),
-                                  "MMM d, yyyy",
-                                )}
-                              </p>
-                              {review.comment ? (
-                                <p className="pt-1 text-foreground/90">
-                                  {review.comment}
-                                </p>
-                              ) : null}
-                            </div>
-                            <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                              {canFlag ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setFlagNote("");
-                                    setFlagReviewId(review.id);
-                                  }}
-                                >
-                                  Report
-                                </Button>
-                              ) : null}
-                              {isOwner ? (
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link
-                                    href={`/my-bookings/${review.booking_id}`}
-                                  >
-                                    Edit review
-                                  </Link>
-                                </Button>
-                              ) : null}
-                              {canPlatformDelete ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive hover:text-destructive"
-                                  disabled={deleteReviewMut.isPending}
-                                  onClick={() => setConfirmDeleteReviewId(review.id)}
-                                >
-                                  Delete
-                                </Button>
-                              ) : null}
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </>
                 )}
               </div>
             </CardContent>
@@ -1617,17 +1687,22 @@ export default function BookCourtPage() {
       </div>
       {paymentOverlay ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
-          <Card className="w-full max-w-md border-primary/30 shadow-2xl">
-            <CardContent className="space-y-4 p-6">
-              <div className="space-y-1 text-center">
-                <h2 className="font-heading text-xl font-semibold">Payment in progress</h2>
-                <p className="text-sm text-muted-foreground">
-                  Complete payment before time runs out.
+          <Card className="w-full max-w-md border-primary/25 shadow-2xl">
+            <CardContent className="space-y-5 p-6">
+              <div className="space-y-1.5 text-center">
+                <h2 className="font-heading text-xl font-semibold tracking-tight">
+                  Complete your payment
+                </h2>
+                <p className="text-sm text-muted-foreground leading-snug">
+                  Send the amount to the account below, then add a clear photo of your
+                  receipt or transfer screen.
                 </p>
               </div>
-              <div className="rounded-xl border border-primary/25 bg-primary/8 p-4 text-center">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Time left</p>
-                <p className="font-heading text-3xl font-bold text-primary tabular-nums">
+              <div className="rounded-2xl bg-primary/10 px-4 py-4 text-center ring-1 ring-primary/20">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Time left to submit
+                </p>
+                <p className="mt-1 font-heading text-3xl font-bold text-primary tabular-nums">
                   {Math.floor(overlayRemainingSeconds / 60)
                     .toString()
                     .padStart(2, "0")}
@@ -1635,37 +1710,184 @@ export default function BookCourtPage() {
                   {(overlayRemainingSeconds % 60).toString().padStart(2, "0")}
                 </p>
               </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-method-select" className="text-sm font-medium">
+                    Pay with
+                  </Label>
+                  <Select
+                    value={selectedPaymentMethod ?? ""}
+                    onValueChange={(value) =>
+                      setSelectedPaymentMethod(value as "gcash" | "maya")
+                    }
+                  >
+                    <SelectTrigger id="payment-method-select" className="h-11">
+                      <SelectValue placeholder="Choose GCash or Maya" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentOverlay.payment_methods.map((method) => (
+                        <SelectItem key={method.method} value={method.method}>
+                          {formatStatusLabel(method.method)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedPaymentMethod ? (
+                    <div className="rounded-xl bg-muted/50 px-3.5 py-3 text-sm">
+                      {(() => {
+                        const selected = paymentOverlay.payment_methods.find(
+                          (method) => method.method === selectedPaymentMethod,
+                        );
+                        if (!selected) return null;
+                        return (
+                          <dl className="space-y-1">
+                            <div>
+                              <dt className="text-xs text-muted-foreground">Account name</dt>
+                              <dd className="font-medium text-foreground">
+                                {selected.account_name}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-muted-foreground">Number</dt>
+                              <dd className="font-mono text-[15px] font-medium tracking-wide text-foreground">
+                                {selected.account_number}
+                              </dd>
+                            </div>
+                          </dl>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div
+                  className="space-y-2"
+                  aria-busy={proofOptimizing}
+                >
+                  <span className="text-sm font-medium text-foreground">
+                    Payment photo
+                  </span>
+                  <input
+                    ref={proofFileInputRef}
+                    id="payment-proof-file"
+                    type="file"
+                    accept={PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES.join(",")}
+                    onChange={onProofFileChange}
+                    className="sr-only"
+                  />
+                  {optimizedProof && !proofOptimizing ? (
+                    <div className="overflow-hidden rounded-2xl border border-border bg-muted/20">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- data URL preview */}
+                      <img
+                        src={optimizedProof.dataUrl}
+                        alt="Preview of your payment screenshot"
+                        className="max-h-48 w-full object-contain bg-black/5"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-background/80 px-3 py-2.5">
+                        <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          Looks good — tap submit when ready
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 shrink-0 text-muted-foreground"
+                          onClick={clearProofSelection}
+                        >
+                          Change photo
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="payment-proof-file"
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setProofDragActive(true);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setProofDragActive(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                          setProofDragActive(false);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setProofDragActive(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) void processProofFile(file);
+                      }}
+                      className={cn(
+                        "flex min-h-38 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
+                        proofDragActive
+                          ? "border-primary bg-primary/10"
+                          : "border-muted-foreground/25 bg-muted/15 hover:border-muted-foreground/40 hover:bg-muted/25",
+                        proofOptimizing && "pointer-events-none opacity-70",
+                      )}
+                    >
+                      {proofOptimizing ? (
+                        <>
+                          <Loader2
+                            className="h-9 w-9 animate-spin text-primary"
+                            aria-hidden
+                          />
+                          <span className="text-sm font-medium text-foreground">
+                            Preparing your photo…
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            This usually takes a moment
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex size-12 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border">
+                            <Upload className="h-5 w-5 text-muted-foreground" aria-hidden />
+                          </span>
+                          <span className="text-sm font-medium text-foreground">
+                            Tap to choose or drop a photo here
+                          </span>
+                          <span className="max-w-[16rem] text-xs text-muted-foreground leading-relaxed">
+                            Screenshot or camera photo of your payment confirmation. JPG,
+                            PNG, or WebP.
+                          </span>
+                        </>
+                      )}
+                    </label>
+                  )}
+                </div>
+              </div>
               <Button
                 type="button"
+                size="lg"
                 className="w-full font-heading font-semibold"
-                onClick={openPaymentLink}
+                onClick={() => submitPaymentProof.mutate()}
+                disabled={
+                  submitPaymentProof.isPending ||
+                  proofOptimizing ||
+                  !selectedPaymentMethod ||
+                  !optimizedProof
+                }
               >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Open payment link
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  if (!paymentOverlay?.booking_id) return;
-                  void reconcilePayment.mutateAsync(paymentOverlay.booking_id);
-                }}
-                disabled={reconcilePayment.isPending}
-              >
-                {reconcilePayment.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {submitPaymentProof.isPending ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Submitting…
+                  </span>
                 ) : (
-                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  "Submit for confirmation"
                 )}
-                Check payment status
               </Button>
-              <Button type="button" variant="outline" className="w-full" onClick={copyPaymentLink}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy payment link
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                This overlay closes once payment succeeds, fails, or expires.
+              <p className="text-center text-xs text-muted-foreground leading-relaxed">
+                This window closes when the timer ends or after you submit.
               </p>
             </CardContent>
           </Card>
@@ -1675,7 +1897,7 @@ export default function BookCourtPage() {
         <div className="fixed bottom-4 right-4 z-50 rounded-full border border-border bg-background/95 px-4 py-2 text-sm shadow-lg">
           <span className="inline-flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Creating payment link...
+            Creating booking hold...
           </span>
         </div>
       ) : null}

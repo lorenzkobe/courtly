@@ -51,6 +51,7 @@ import {
   validatePriceRangeFormRows,
 } from "@/lib/venue-price-ranges";
 import { validateSocialUrl } from "@/lib/social-url";
+import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import { queryKeys } from "@/lib/query/query-keys";
 
@@ -78,6 +79,12 @@ const defaultVenueForm = {
   hourly_rate_windows: [] as Array<{ start: string; end: string; rate: string }>,
   map_latitude: null as number | null,
   map_longitude: null as number | null,
+  accepts_gcash: false,
+  gcash_account_name: "",
+  gcash_account_number: "",
+  accepts_maya: false,
+  maya_account_name: "",
+  maya_account_number: "",
 };
 
 const amenityOptions = [
@@ -135,6 +142,13 @@ export default function AdminVenueCourtsPage() {
   const instagramUrlError = useMemo(
     () => validateSocialUrl(venueForm.instagram_url, "instagram"),
     [venueForm.instagram_url],
+  );
+  const paymentSettingsValidation = useMemo(
+    () =>
+      validateVenuePaymentSettings(venueForm, {
+        requireAtLeastOne: venueForm.status === "active",
+      }),
+    [venueForm],
   );
 
   const upsert = useMutation({
@@ -195,6 +209,12 @@ export default function AdminVenueCourtsPage() {
         ],
         image_url: venueForm.image_url.trim(),
         hourly_rate_windows: parsed.windows,
+        accepts_gcash: venueForm.accepts_gcash,
+        gcash_account_name: venueForm.gcash_account_name.trim(),
+        gcash_account_number: venueForm.gcash_account_number.trim(),
+        accepts_maya: venueForm.accepts_maya,
+        maya_account_name: venueForm.maya_account_name.trim(),
+        maya_account_number: venueForm.maya_account_number.trim(),
         ...mapBody,
       });
     },
@@ -318,6 +338,12 @@ export default function AdminVenueCourtsPage() {
         end: rateWindow.end,
         rate: String(rateWindow.hourly_rate),
       })),
+      accepts_gcash: venue.accepts_gcash ?? false,
+      gcash_account_name: venue.gcash_account_name ?? "",
+      gcash_account_number: venue.gcash_account_number ?? "",
+      accepts_maya: venue.accepts_maya ?? false,
+      maya_account_name: venue.maya_account_name ?? "",
+      maya_account_number: venue.maya_account_number ?? "",
     });
     setVenueOpen(true);
   };
@@ -725,6 +751,98 @@ export default function AdminVenueCourtsPage() {
               </p>
             </div>
             <div>
+              <Label className="mb-2 block">Payment methods *</Label>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Add at least one method for active venues. Only enabled methods are shown to players.
+              </p>
+              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                <label
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    venueForm.accepts_gcash
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/60 bg-background"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">GCash</span>
+                    <input
+                      type="checkbox"
+                      checked={venueForm.accepts_gcash}
+                      onChange={(e) =>
+                        setVenueForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
+                      }
+                    />
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Wallet number and account name shown to players.
+                  </span>
+                  {venueForm.accepts_gcash ? (
+                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={venueForm.gcash_account_name}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
+                        }
+                        placeholder="Account name"
+                      />
+                      <Input
+                        value={venueForm.gcash_account_number}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({
+                            ...prev,
+                            gcash_account_number: e.target.value,
+                          }))
+                        }
+                        placeholder="Account number"
+                      />
+                    </span>
+                  ) : null}
+                </label>
+                <label
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    venueForm.accepts_maya
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/60 bg-background"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Maya</span>
+                    <input
+                      type="checkbox"
+                      checked={venueForm.accepts_maya}
+                      onChange={(e) =>
+                        setVenueForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
+                      }
+                    />
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Wallet number and account name shown to players.
+                  </span>
+                  {venueForm.accepts_maya ? (
+                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={venueForm.maya_account_name}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
+                        }
+                        placeholder="Account name"
+                      />
+                      <Input
+                        value={venueForm.maya_account_number}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({
+                            ...prev,
+                            maya_account_number: e.target.value,
+                          }))
+                        }
+                        placeholder="Account number"
+                      />
+                    </span>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+            <div>
               <Label className="mb-2 block">Amenities</Label>
               <div className="mb-3 flex flex-wrap gap-2">
                 {amenityOptions.map((amenity) => (
@@ -923,6 +1041,14 @@ export default function AdminVenueCourtsPage() {
                 {venuePriceRangesValidation.error}
               </p>
             ) : null}
+            {paymentSettingsValidation.ok ? null : (
+              <p
+                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                role="alert"
+              >
+                {paymentSettingsValidation.error}
+              </p>
+            )}
             <Button
               className="w-full font-heading font-semibold"
               type="button"
@@ -930,6 +1056,7 @@ export default function AdminVenueCourtsPage() {
               disabled={
                 saveVenue.isPending ||
                 !venuePriceRangesValidation.ok ||
+                !paymentSettingsValidation.ok ||
                 Boolean(facebookUrlError) ||
                 Boolean(instagramUrlError)
               }

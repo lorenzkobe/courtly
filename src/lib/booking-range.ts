@@ -156,9 +156,14 @@ export function occupiedHourStartsFromClosures(
 export function occupiedHourStarts(bookings: Booking[]): Set<string> {
   const set = new Set<string>();
   for (const b of bookings) {
-    // Booking surface/availability endpoints already filter to only blocking bookings
-    // (confirmed + active pending_payment holds). Treat both as occupied in the grid.
-    if (b.status !== "confirmed" && b.status !== "pending_payment") continue;
+    // Booking surface/availability endpoints already filter to only blocking bookings.
+    if (
+      b.status !== "confirmed" &&
+      b.status !== "pending_payment" &&
+      b.status !== "pending_confirmation"
+    ) {
+      continue;
+    }
     const sh = hourFromTime(b.start_time);
     const eh = hourFromTime(b.end_time);
     for (let h = sh; h < eh; h++) {

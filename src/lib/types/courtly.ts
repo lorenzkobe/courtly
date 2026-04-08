@@ -56,6 +56,13 @@ export type CourtReviewSummary = {
 };
 
 export type VenueStatus = "active" | "closed";
+export type VenueManualPaymentMethod = "gcash" | "maya";
+
+export type VenuePaymentMethodDetails = {
+  method: VenueManualPaymentMethod;
+  account_name: string;
+  account_number: string;
+};
 
 /** Establishment/building that contains one or more physical courts. */
 export type Venue = {
@@ -74,6 +81,12 @@ export type Venue = {
   created_at: string;
   map_latitude?: number;
   map_longitude?: number;
+  accepts_gcash: boolean;
+  gcash_account_name?: string;
+  gcash_account_number?: string;
+  accepts_maya: boolean;
+  maya_account_name?: string;
+  maya_account_number?: string;
 };
 
 export type VenueAdminAssignment = {
@@ -110,6 +123,18 @@ export type Court = {
   map_latitude?: number;
   /** Derived on read from linked venue (maps). */
   map_longitude?: number;
+  /** Derived on read from linked venue payment settings. */
+  accepts_gcash?: boolean;
+  /** Derived on read from linked venue payment settings. */
+  gcash_account_name?: string;
+  /** Derived on read from linked venue payment settings. */
+  gcash_account_number?: string;
+  /** Derived on read from linked venue payment settings. */
+  accepts_maya?: boolean;
+  /** Derived on read from linked venue payment settings. */
+  maya_account_name?: string;
+  /** Derived on read from linked venue payment settings. */
+  maya_account_number?: string;
   /** Deprecated but retained for compatibility in current UI. */
   type: "indoor" | "outdoor";
   /** Deprecated but retained for compatibility in current UI. */
@@ -151,9 +176,14 @@ export type Booking = {
   booking_fee?: number;
   /** What the customer paid (court subtotal + booking fee) when both are set. */
   total_cost?: number;
-  status: "pending_payment" | "confirmed" | "cancelled" | "completed";
+  status:
+    | "pending_payment"
+    | "pending_confirmation"
+    | "confirmed"
+    | "cancelled"
+    | "completed";
   hold_expires_at?: string | null;
-  payment_provider?: "paymongo" | null;
+  payment_provider?: "paymongo" | "manual" | null;
   payment_link_id?: string | null;
   payment_link_url?: string | null;
   payment_link_created_at?: string | null;
@@ -161,6 +191,13 @@ export type Booking = {
   paid_at?: string | null;
   payment_failed_at?: string | null;
   payment_reference_id?: string | null;
+  payment_submitted_method?: VenueManualPaymentMethod | null;
+  payment_submitted_at?: string | null;
+  payment_proof_url?: string | null;
+  payment_proof_mime_type?: string | null;
+  payment_proof_bytes?: number | null;
+  payment_proof_width?: number | null;
+  payment_proof_height?: number | null;
   cancel_reason?: string | null;
   refund_required?: boolean;
   refunded_at?: string | null;
@@ -406,8 +443,8 @@ export type MyBookingsOverviewResponse = {
 export type BookingCheckoutResponse = {
   booking_id: string;
   booking_group_id: string;
-  payment_link_url: string;
   hold_expires_at: string;
+  payment_methods: VenuePaymentMethodDetails[];
 };
 
 export type SuperadminDirectoryPagedResponse = {

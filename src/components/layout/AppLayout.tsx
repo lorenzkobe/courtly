@@ -23,6 +23,7 @@ import {
 import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
+import { courtlyApi } from "@/lib/api/courtly-client";
 import { homePathForRole } from "@/lib/auth/management";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -116,7 +117,7 @@ export default function AppLayout({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const homePath = homePathForRole(user?.role);
 
   useEffect(() => {
@@ -141,8 +142,13 @@ export default function AppLayout({
   );
 
   const signOut = () => {
-    void logout();
-    window.location.href = "/";
+    void (async () => {
+      try {
+        await courtlyApi.auth.logout();
+      } finally {
+        window.location.replace("/");
+      }
+    })();
   };
 
   const linkClass = (itemPath: string) => {

@@ -24,9 +24,11 @@ import type { Booking } from "@/lib/types/courtly";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
-import { formatStatusLabel } from "@/lib/utils";
+import { formatBookingStatusLabel } from "@/lib/utils";
 
 const bookingStatusStyles: Record<string, string> = {
+  pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  pending_confirmation: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -236,7 +238,7 @@ export default function DashboardPage() {
                               bookingStatusStyles[first.status] ?? ""
                             }
                           >
-                            {formatStatusLabel(first.status)}
+                            {formatBookingStatusLabel(first.status)}
                           </Badge>
                         </div>
                         {multi ? (

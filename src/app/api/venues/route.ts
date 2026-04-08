@@ -12,6 +12,7 @@ import {
   validateVenuePriceRanges,
 } from "@/lib/venue-price-ranges";
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
+import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -66,6 +67,12 @@ export async function POST(req: Request) {
   if (instagramError) {
     return NextResponse.json({ error: instagramError }, { status: 400 });
   }
+  const paymentSettings = validateVenuePaymentSettings(body, {
+    requireAtLeastOne: true,
+  });
+  if (!paymentSettings.ok) {
+    return NextResponse.json({ error: paymentSettings.error }, { status: 400 });
+  }
 
   const venue: Omit<Venue, "id"> = {
     name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : "New venue",
@@ -80,6 +87,12 @@ export async function POST(req: Request) {
     amenities: Array.isArray(body.amenities) ? body.amenities : [],
     image_url: typeof body.image_url === "string" ? body.image_url.trim() : "",
     created_at: new Date().toISOString(),
+    accepts_gcash: paymentSettings.value.accepts_gcash,
+    gcash_account_name: paymentSettings.value.gcash_account_name,
+    gcash_account_number: paymentSettings.value.gcash_account_number,
+    accepts_maya: paymentSettings.value.accepts_maya,
+    maya_account_name: paymentSettings.value.maya_account_name,
+    maya_account_number: paymentSettings.value.maya_account_number,
     ...(mapCoords.mode === "set"
       ? {
           map_latitude: mapCoords.map_latitude,
