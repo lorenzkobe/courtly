@@ -2,8 +2,8 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, Clock, ListFilter, Search, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { Calendar, Clock, ListFilter, Loader2, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -38,10 +38,19 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import type { Booking } from "@/lib/types/courtly";
-import { cn, formatStatusLabel } from "@/lib/utils";
+import { cn, formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
+
+function isEmbedSafePaymentProofUrl(url: string): boolean {
+  const u = url.trim();
+  if (u.startsWith("data:image/jpeg;base64,")) return true;
+  if (u.startsWith("data:image/png;base64,")) return true;
+  if (u.startsWith("data:image/webp;base64,")) return true;
+  return /^https:\/\//i.test(u);
+}
 
 const statusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  pending_confirmation: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -49,7 +58,7 @@ const statusStyles: Record<string, string> = {
 
 type AdminBookingFilters = {
   status: "all" | Booking["status"];
-  paymentReview: "all" | "refund_required" | "failed" | "pending" | "paid";
+  paymentReview: "all" | "refund_required" | "paid";
   venueId: string;
   dateFrom: string;
   dateTo: string;
@@ -59,7 +68,7 @@ type AdminBookingFilters = {
 
 function defaultAdminBookingFilters(): AdminBookingFilters {
   return {
-    status: "confirmed",
+    status: "all",
     paymentReview: "all",
     venueId: "",
     dateFrom: "",
@@ -74,12 +83,11 @@ function cloneAdminBookingFilters(s: AdminBookingFilters): AdminBookingFilters {
 }
 
 function bookingPaymentTraceStatus(
-  booking: Pick<Booking, "status" | "refund_required" | "payment_failed_at" | "paid_at">,
-): "refund_required" | "failed" | "pending" | "paid" | "none" {
+  booking: Pick<Booking, "status" | "refund_required" | "paid_at">,
+): "refund_required" | "paid" | "none" {
   if (booking.refund_required) return "refund_required";
-  if (booking.status === "pending_payment" && booking.payment_failed_at) return "failed";
-  if (booking.status === "pending_payment") return "pending";
-  if (booking.paid_at || booking.status === "confirmed" || booking.status === "completed") return "paid";
+  if (booking.paid_at || booking.status === "confirmed" || booking.status === "completed")
+    return "paid";
   return "none";
 }
 
@@ -164,6 +172,18 @@ export default function AdminBookingsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
   const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
+  const [paymentProofPreviewUrl, setPaymentProofPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{
+    id: string;
+    status: Booking["status"];
+  } | null>(null);
+  const [paymentProofZoom, setPaymentProofZoom] = useState(1);
+  const dismissPaymentProofPreview = useCallback(() => {
+    setPaymentProofPreviewUrl(null);
+    setPaymentProofZoom(1);
+  }, []);
   const adminRealtimeKeys = useMemo(
     () => [["admin-bookings"], ["admin-booking-detail"], ["admin-booking-group"]],
     [],
@@ -172,6 +192,10 @@ export default function AdminBookingsPage() {
     enabled: !!user && (user.role === "admin" || user.role === "superadmin"),
     queryKeysToInvalidate: adminRealtimeKeys,
   });
+
+  useEffect(() => {
+    setPaymentProofPreviewUrl(null);
+  }, [detailId]);
 
   const {
     data: bookingsPages,
@@ -280,11 +304,18 @@ export default function AdminBookingsPage() {
         status: status as Booking["status"],
       });
     },
+    onMutate: ({ id, status }) => {
+      setPendingStatusUpdate({ id, status: status as Booking["status"] });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["my-bookings"] });
+      void queryClient.invalidateQueries({ queryKey: ["me", "bookings-overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["my-booking-detail"] });
       toast.success("Booking updated");
+    },
+    onSettled: () => {
+      setPendingStatusUpdate(null);
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Could not update booking"));
@@ -346,9 +377,11 @@ export default function AdminBookingsPage() {
     const list = bookings.filter((booking) => {
       const statusMatch =
         statusFilter === "all" || booking.status === statusFilter;
+      const trace = bookingPaymentTraceStatus(booking);
       const paymentReviewMatch =
         paymentReview === "all" ||
-        bookingPaymentTraceStatus(booking) === paymentReview;
+        (paymentReview === "refund_required" && trace === "refund_required") ||
+        (paymentReview === "paid" && trace === "paid");
       const venueMatch = !venueId || booking.venue_id === venueId;
       const fromOk = !dateFrom || booking.date >= dateFrom;
       const toOk = !dateTo || booking.date <= dateTo;
@@ -411,7 +444,7 @@ export default function AdminBookingsPage() {
     if (f.status !== "all") {
       chips.push({
         id: "status",
-        label: `Status: ${formatStatusLabel(f.status)}`,
+        label: `Status: ${formatBookingStatusLabel(f.status)}`,
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, status: "all" })),
       });
@@ -419,28 +452,14 @@ export default function AdminBookingsPage() {
     if (f.paymentReview === "refund_required") {
       chips.push({
         id: "payment-review",
-        label: "Payment: Refund required",
-        onRemove: () =>
-          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
-      });
-    } else if (f.paymentReview === "failed") {
-      chips.push({
-        id: "payment-review",
-        label: "Payment: Failed",
-        onRemove: () =>
-          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
-      });
-    } else if (f.paymentReview === "pending") {
-      chips.push({
-        id: "payment-review",
-        label: "Payment: Pending",
+        label: "Refund",
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
     } else if (f.paymentReview === "paid") {
       chips.push({
         id: "payment-review",
-        label: "Payment: Paid",
+        label: "Paid / confirmed",
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
@@ -529,12 +548,121 @@ export default function AdminBookingsPage() {
           setConfirmDeleteNoteOpen(false);
         }}
       />
-      <Dialog open={!!detailId} onOpenChange={(o) => !o && setDetailId(null)}>
-        <DialogContent className="max-h-[min(90dvh,40rem)] sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-heading">Booking details</DialogTitle>
-          </DialogHeader>
-          {detailBooking ? (
+      <Dialog
+        open={!!detailId}
+        onOpenChange={(open) => {
+          if (!open && paymentProofPreviewUrl) {
+            dismissPaymentProofPreview();
+            return;
+          }
+          if (!open) setDetailId(null);
+        }}
+      >
+        <DialogContent
+          className="max-h-[min(90dvh,40rem)] sm:max-w-lg"
+          onInteractOutside={(e) => {
+            if (!paymentProofPreviewUrl) return;
+            e.preventDefault();
+            dismissPaymentProofPreview();
+          }}
+          onFocusOutside={(e) => {
+            if (!paymentProofPreviewUrl) return;
+            e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (!paymentProofPreviewUrl) return;
+            e.preventDefault();
+            dismissPaymentProofPreview();
+          }}
+        >
+          <DialogTitle className="sr-only">
+            {paymentProofPreviewUrl ? "Payment proof" : "Booking details"}
+          </DialogTitle>
+          {paymentProofPreviewUrl ? (
+            <div className="flex max-h-[min(80dvh,36rem)] min-h-0 flex-col gap-4">
+              <DialogHeader className="pr-8 text-left">
+                <DialogTitle className="font-heading">Payment proof</DialogTitle>
+                <DialogDescription>
+                  Screenshot submitted by the player.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Zoom: {Math.round(paymentProofZoom * 100)}%
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() =>
+                      setPaymentProofZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))
+                    }
+                    disabled={paymentProofZoom <= 0.5}
+                    aria-label="Zoom out"
+                  >
+                    -
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => setPaymentProofZoom(1)}
+                    disabled={paymentProofZoom === 1}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() =>
+                      setPaymentProofZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))
+                    }
+                    disabled={paymentProofZoom >= 3}
+                    aria-label="Zoom in"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/20 p-2">
+                {isEmbedSafePaymentProofUrl(paymentProofPreviewUrl) ? (
+                  <div className="inline-block">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- data URL or HTTPS proof URL */}
+                    <img
+                      src={paymentProofPreviewUrl}
+                      alt="Payment proof submitted for this booking"
+                      className="block h-auto max-h-none max-w-none"
+                      style={{
+                        width: `${paymentProofZoom * 100}%`,
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <p className="p-4 text-sm text-muted-foreground">
+                    This proof link can&apos;t be previewed here.{" "}
+                    <a
+                      href={paymentProofPreviewUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                    >
+                      Open in new tab
+                    </a>
+                  </p>
+                )}
+              </div>
+              <DialogFooter className="sm:justify-end">
+                <Button type="button" variant="secondary" onClick={dismissPaymentProofPreview}>
+                  Back to booking details
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : detailBooking ? (
             <div className="space-y-6 text-sm">
               <section>
                 <h3 className="mb-2 font-heading font-semibold text-foreground">
@@ -571,19 +699,13 @@ export default function AdminBookingsPage() {
                       {detailSegments.map((segment) => (
                         <li
                           key={segment.id}
-                          className="flex flex-wrap items-center gap-2 text-foreground"
+                          className="flex flex-wrap items-center justify-between gap-2 text-foreground"
                         >
                           <span>
                             {formatTimeShort(segment.start_time)} –{" "}
                             {formatTimeShort(segment.end_time)}
                           </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${statusStyles[segment.status] ?? ""}`}
-                          >
-                            {formatStatusLabel(segment.status)}
-                          </Badge>
-                          <span className="text-muted-foreground">
+                          <span className="font-medium tabular-nums text-muted-foreground">
                             {formatPhp(segment.total_cost ?? 0)}
                           </span>
                         </li>
@@ -598,14 +720,14 @@ export default function AdminBookingsPage() {
                   <dd>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline" className={statusStyles[detailBooking.status] ?? ""}>
-                        {formatStatusLabel(detailBooking.status)}
+                        {formatBookingStatusLabel(detailBooking.status)}
                       </Badge>
                       {detailBooking.refund_required ? (
                         <Badge
                           variant="outline"
                           className="border-amber-500/30 bg-amber-500/10 text-amber-700"
                         >
-                          Refund required
+                          Refund
                         </Badge>
                       ) : null}
                     </div>
@@ -638,6 +760,75 @@ export default function AdminBookingsPage() {
                     </>
                   ) : null}
                 </dl>
+                {detailBooking.payment_submitted_method || detailBooking.payment_submitted_at ? (
+                  <div className="mt-3 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs">
+                    <p className="font-medium text-foreground">
+                      Submitted via{" "}
+                      {detailBooking.payment_submitted_method
+                        ? formatStatusLabel(detailBooking.payment_submitted_method)
+                        : "—"}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {detailBooking.payment_submitted_at
+                        ? format(new Date(detailBooking.payment_submitted_at), "PPpp")
+                        : "—"}
+                    </p>
+                    {detailBooking.payment_proof_url ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                      onClick={() => {
+                        setPaymentProofZoom(1);
+                        setPaymentProofPreviewUrl(detailBooking.payment_proof_url!);
+                      }}
+                      >
+                        View payment proof
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {detailBooking.status === "pending_confirmation" ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(() => {
+                      const isConfirming =
+                        updateStatus.isPending &&
+                        pendingStatusUpdate?.id === detailBooking.id &&
+                        pendingStatusUpdate?.status === "confirmed";
+                      return (
+                        <Button
+                          size="sm"
+                          disabled={updateStatus.isPending}
+                          onClick={() =>
+                            updateStatus.mutate({
+                              id: detailBooking.id,
+                              status: "confirmed",
+                            })
+                          }
+                        >
+                          {isConfirming ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Confirming...
+                            </span>
+                          ) : (
+                            "Confirm payment"
+                          )}
+                        </Button>
+                      );
+                    })()}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
+                      disabled={updateStatus.isPending}
+                      onClick={() => setConfirmCancelBookingId(detailBooking.id)}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" /> Reject payment
+                    </Button>
+                  </div>
+                ) : null}
                 {detailBooking.status === "confirmed" ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button
@@ -730,7 +921,7 @@ export default function AdminBookingsPage() {
             color: "text-destructive",
           },
           {
-            label: "Refund Required",
+            label: "Refund",
             value: stats.refundRequired,
             color: "text-amber-700",
           },
@@ -865,7 +1056,9 @@ export default function AdminBookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending_payment">Pending payment</SelectItem>
+                  <SelectItem value="pending_confirmation">
+                    Waiting for venue confirmation
+                  </SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
@@ -873,7 +1066,7 @@ export default function AdminBookingsPage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="admin-booking-filter-payment-review">Payment review</Label>
+              <Label htmlFor="admin-booking-filter-payment-review">Payment</Label>
               <Select
                 value={draftFilters.paymentReview}
                 onValueChange={(v) =>
@@ -884,13 +1077,11 @@ export default function AdminBookingsPage() {
                 }
               >
                 <SelectTrigger id="admin-booking-filter-payment-review" className="mt-1.5">
-                  <SelectValue placeholder="All payment states" />
+                  <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All payment states</SelectItem>
-                  <SelectItem value="refund_required">Refund required only</SelectItem>
-                  <SelectItem value="failed">Failed (pending_payment with failed callback)</SelectItem>
-                  <SelectItem value="pending">Pending payment</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="refund_required">Refund</SelectItem>
                   <SelectItem value="paid">Paid / confirmed</SelectItem>
                 </SelectContent>
               </Select>
@@ -1034,14 +1225,14 @@ export default function AdminBookingsPage() {
                         variant="outline"
                         className={statusStyles[booking.status] ?? ""}
                       >
-                        {formatStatusLabel(booking.status)}
+                        {formatBookingStatusLabel(booking.status)}
                       </Badge>
                       {booking.refund_required ? (
                         <Badge
                           variant="outline"
                           className="border-amber-500/30 bg-amber-500/10 text-amber-700"
                         >
-                          Refund required
+                          Refund
                         </Badge>
                       ) : null}
                     </div>

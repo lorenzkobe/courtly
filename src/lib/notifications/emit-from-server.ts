@@ -46,6 +46,7 @@ function coerceBookingStatus(
 ): Booking["status"] {
   if (
     value === "pending_payment" ||
+    value === "pending_confirmation" ||
     value === "confirmed" ||
     value === "cancelled" ||
     value === "completed"
@@ -56,6 +57,7 @@ function coerceBookingStatus(
     const t = value.trim().toLowerCase();
     if (
       t === "pending_payment" ||
+      t === "pending_confirmation" ||
       t === "confirmed" ||
       t === "cancelled" ||
       t === "completed"
@@ -278,12 +280,15 @@ async function emitBookingLifecycleNotificationsInner(params: {
     prev.admin_note !== next.admin_note;
 
   if (changed) {
+    const statusConfirmedNow = next.status === "confirmed" && prev.status !== "confirmed";
     await safeEmitMany([
       {
         user_id: uid,
         type: "booking_changed",
-        title: "Booking updated",
-        body: "Your booking details were updated by the venue.",
+        title: statusConfirmedNow ? "Booking confirmed" : "Booking updated",
+        body: statusConfirmedNow
+          ? "Your booking was confirmed by the venue."
+          : "Your booking details were updated by the venue.",
         metadata: {
           booking_id: params.bookingId,
           target_path: `/my-bookings/${params.bookingId}`,

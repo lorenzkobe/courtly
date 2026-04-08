@@ -202,6 +202,21 @@ export const courtlyApi = {
       http.post<Booking[]>("/api/bookings", { items }),
     checkout: (items: Partial<Booking>[]) =>
       http.post<BookingCheckoutResponse>("/api/bookings/checkout", { items }),
+    submitPaymentProof: (
+      id: string,
+      body: {
+        payment_method: "gcash" | "maya";
+        payment_proof_data_url: string;
+        payment_proof_mime_type: "image/jpeg";
+        payment_proof_bytes: number;
+        payment_proof_width: number;
+        payment_proof_height: number;
+      },
+    ) =>
+      http.post<{ ok: boolean; status: Booking["status"] }>(
+        `/api/bookings/${id}/submit-proof`,
+        body,
+      ),
     retryPayment: (id: string) =>
       http.post<BookingCheckoutResponse>(`/api/bookings/${id}/retry-payment`),
     reconcilePayment: (id: string) =>

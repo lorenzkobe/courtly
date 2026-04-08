@@ -7,9 +7,7 @@ import {
   Calendar,
   Clock,
   ExternalLink,
-  Loader2,
   MapPin,
-  RefreshCcw,
   Star,
   Trash2,
 } from "lucide-react";
@@ -36,11 +34,12 @@ import {
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
-import { cn, formatStatusLabel } from "@/lib/utils";
+import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 
 const statusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  pending_confirmation: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
@@ -221,7 +220,6 @@ export default function BookingDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const bookingId = params.id;
-  const queryClient = useQueryClient();
   const bookingRealtimeKeys = useMemo(
     () => [["my-booking-detail", bookingId, "with-group"], queryKeys.bookings.all()],
     [bookingId],
@@ -241,30 +239,6 @@ export default function BookingDetailPage() {
     enabled: !!bookingId,
   });
 
-  const reconcilePaymentMut = useMutation({
-    mutationFn: async () => {
-      const { data } = await courtlyApi.bookings.reconcilePayment(bookingId);
-      return data;
-    },
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({
-        queryKey: ["my-booking-detail", bookingId, "with-group"],
-      });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      if (result.status === "confirmed") {
-        toast.success("Payment verified. Booking confirmed.");
-        return;
-      }
-      if (result.status === "cancelled") {
-        toast.error("Payment could not be applied to this slot. Support may be needed.");
-        return;
-      }
-      toast.message("Payment is still pending.");
-    },
-    onError: (err: unknown) => {
-      toast.error(apiErrorMessage(err, "Could not check payment status."));
-    },
-  });
   const booking = bookingPayload?.booking;
   const groupMembers = bookingPayload?.group_segments;
   const court = bookingPayload?.court;
@@ -401,6 +375,15 @@ export default function BookingDetailPage() {
                   ? format(new Date(`${booking.date}T12:00:00`), "EEE, MMM d, yyyy")
                   : "—"}
               </dd>
+              <dt className="text-muted-foreground">Status</dt>
+              <dd>
+                <Badge
+                  variant="outline"
+                  className={statusStyles[booking.status] ?? ""}
+                >
+                  {formatBookingStatusLabel(booking.status)}
+                </Badge>
+              </dd>
             </dl>
 
             <div className="space-y-3 border-t border-border/60 pt-4">
@@ -413,29 +396,19 @@ export default function BookingDetailPage() {
                   return (
                     <li
                       key={segment.id}
-                      className="flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 p-3"
                     >
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
-                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          {formatTimeShort(segment.start_time)} –{" "}
-                          {formatTimeShort(segment.end_time)}
-                          <span className="text-muted-foreground">
-                            ({hours} {hours === 1 ? "hr" : "hrs"})
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={statusStyles[segment.status] ?? ""}
-                          >
-                            {formatStatusLabel(segment.status)}
-                          </Badge>
-                          <span className="text-sm font-semibold text-foreground tabular-nums">
-                            {formatPhp(segment.total_cost ?? 0)}
-                          </span>
-                        </div>
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {formatTimeShort(segment.start_time)} –{" "}
+                        {formatTimeShort(segment.end_time)}
+                        <span className="text-muted-foreground">
+                          ({hours} {hours === 1 ? "hr" : "hrs"})
+                        </span>
                       </div>
+                      <span className="text-sm font-semibold text-foreground tabular-nums">
+                        {formatPhp(segment.total_cost ?? 0)}
+                      </span>
                     </li>
                   );
                 })}
@@ -450,20 +423,16 @@ export default function BookingDetailPage() {
             </div>
             {booking.status === "pending_payment" ? (
               <div className="border-t border-border/60 pt-4">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => reconcilePaymentMut.mutate()}
-                  disabled={reconcilePaymentMut.isPending}
-                >
-                  {reconcilePaymentMut.isPending ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  Check payment status
-                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Payment is still pending. Open the booking page again to submit proof before the timer expires.
+                </p>
+              </div>
+            ) : null}
+            {booking.status === "pending_confirmation" ? (
+              <div className="border-t border-border/60 pt-4">
+                <p className="text-sm text-muted-foreground">
+                  Payment proof submitted. Waiting for venue confirmation.
+                </p>
               </div>
             ) : null}
 

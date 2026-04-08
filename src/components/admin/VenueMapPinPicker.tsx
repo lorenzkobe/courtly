@@ -18,6 +18,7 @@ const DEFAULT_CENTER = { lat: 14.5995, lng: 120.9842 };
 
 const PLACES_API_LIBRARY_URL =
   "https://console.cloud.google.com/apis/library/places.googleapis.com";
+let mapsLoaderInitialized = false;
 
 function placesConsoleUrlFromError(message: string): string {
   const m = message.match(/project\s+(\d+)/i);
@@ -70,8 +71,9 @@ export function VenueMapPinPicker({
   const mapElRef = useRef<HTMLDivElement>(null);
   const pacHostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const markerClassRef = useRef<google.maps.MarkerLibrary["Marker"] | null>(null);
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const advancedMarkerClassRef =
+    useRef<google.maps.MarkerLibrary["AdvancedMarkerElement"] | null>(null);
   const pacElementRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(null);
   const onChangeRef = useRef(onChange);
   const [mapReady, setMapReady] = useState(false);
@@ -85,17 +87,21 @@ export function VenueMapPinPicker({
   }, [onChange]);
 
   const ensureMarkerOnMap = useCallback((map: google.maps.Map) => {
-    const Marker = markerClassRef.current;
-    if (!Marker) return null;
+    const AdvancedMarkerElement = advancedMarkerClassRef.current;
+    if (!AdvancedMarkerElement) return null;
     if (markerRef.current) return markerRef.current;
-    const marker = new Marker({
+    const marker = new AdvancedMarkerElement({
       map,
-      draggable: true,
+      gmpDraggable: true,
     });
     marker.addListener("dragend", () => {
-      const pos = marker.getPosition();
+      const pos = marker.position;
       if (!pos) return;
-      onChangeRef.current({ lat: pos.lat(), lng: pos.lng() });
+      const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
+      const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
+      if (typeof lat === "number" && typeof lng === "number") {
+        onChangeRef.current({ lat, lng });
+      }
     });
     markerRef.current = marker;
     return marker;
@@ -105,8 +111,8 @@ export function VenueMapPinPicker({
     (map: google.maps.Map, lat: number, lng: number) => {
       const marker = ensureMarkerOnMap(map);
       if (!marker) return;
-      marker.setPosition({ lat, lng });
-      marker.setMap(map);
+      marker.position = { lat, lng };
+      marker.map = map;
       map.panTo({ lat, lng });
       map.setZoom(16);
       onChangeRef.current({ lat, lng });
@@ -128,13 +134,16 @@ export function VenueMapPinPicker({
 
     void (async () => {
       try {
-        setOptions({ key: apiKey, v: "weekly" });
+        if (!mapsLoaderInitialized) {
+          setOptions({ key: apiKey, v: "weekly" });
+          mapsLoaderInitialized = true;
+        }
         const mapsLib = await importLibrary("maps");
         const markerLib = await importLibrary("marker");
         const mapEl = mapElRef.current;
         if (cancelled || !mapEl) return;
 
-        markerClassRef.current = markerLib.Marker;
+        advancedMarkerClassRef.current = markerLib.AdvancedMarkerElement;
 
         const center = initialPin ?? DEFAULT_CENTER;
         const map = new mapsLib.Map(mapEl, {
@@ -143,6 +152,7 @@ export function VenueMapPinPicker({
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
+          mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
         });
         mapRef.current = map;
 
@@ -210,8 +220,8 @@ export function VenueMapPinPicker({
         if (initialPin) {
           const marker = ensureMarkerOnMap(map);
           if (marker) {
-            marker.setPosition(initialPin);
-            marker.setMap(map);
+            marker.position = initialPin;
+            marker.map = map;
           }
         }
 
@@ -228,11 +238,11 @@ export function VenueMapPinPicker({
       }
       pacElementRef.current = null;
       pacHostMounted?.replaceChildren();
-      markerClassRef.current = null;
       if (markerRef.current) {
-        markerRef.current.setMap(null);
+        markerRef.current.map = null;
         markerRef.current = null;
       }
+      advancedMarkerClassRef.current = null;
       mapRef.current = null;
       setMapReady(false);
     };
@@ -246,11 +256,11 @@ export function VenueMapPinPicker({
     if (value) {
       const marker = ensureMarkerOnMap(map);
       if (!marker) return;
-      marker.setPosition(value);
-      marker.setMap(map);
+      marker.position = value;
+      marker.map = map;
       map.panTo(value);
     } else if (markerRef.current) {
-      markerRef.current.setMap(null);
+      markerRef.current.map = null;
       markerRef.current = null;
     }
   }, [value, mapReady, ensureMarkerOnMap]);

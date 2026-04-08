@@ -3,16 +3,14 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
 import { splitBookingAmounts } from "@/lib/platform-fee";
-import { createPaymongoPaymentLink } from "@/lib/paymongo/client";
-import { getPublicAppUrl } from "@/lib/supabase/app-url";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  createPaymentTransactionAudit,
   hasBlockingBookingConflictForCourt,
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
+import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 
 function toBookingPayloadList(body: unknown): Partial<Booking>[] {
   if (Array.isArray(body)) return body as Partial<Booking>[];
@@ -20,10 +18,6 @@ function toBookingPayloadList(body: unknown): Partial<Booking>[] {
     return (body as { items: Partial<Booking>[] }).items;
   }
   return [body as Partial<Booking>];
-}
-
-function toCentavos(value: number): number {
-  return Math.round(value * 100);
 }
 
 export async function POST(req: Request) {
@@ -39,13 +33,11 @@ export async function POST(req: Request) {
   }
 
   const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
-  const appUrl = getPublicAppUrl();
   const holdExpiresAt = holdExpiresAtFrom();
   const bookingGroupId = crypto.randomUUID();
   let bookingNumber = generateBookingNumber(payloads[0]?.date ?? null);
   const rows: Array<Record<string, unknown>> = [];
-  let firstCourtId: string | null = null;
-  let totalCost = 0;
+  let checkoutPaymentMethods: BookingCheckoutResponse["payment_methods"] = [];
 
   for (const body of payloads) {
     const court = courts.find((row) => row.id === body.court_id);
@@ -74,7 +66,16 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    if (!firstCourtId) firstCourtId = court.id;
+    const methods = venuePaymentMethodsForCheckout(venue);
+    if (methods.length === 0) {
+      return NextResponse.json(
+        { error: "This venue has no enabled payment methods yet." },
+        { status: 409 },
+      );
+    }
+    if (checkoutPaymentMethods.length === 0) {
+      checkoutPaymentMethods = methods;
+    }
 
     let courtSubtotal = body.court_subtotal;
     let bookingFee = body.booking_fee;
@@ -98,7 +99,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Missing booking amount." }, { status: 400 });
       }
     }
-    totalCost += Number(itemTotal ?? 0);
     rows.push({
       user_id: sessionUser.id,
       booking_number: bookingNumber,
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
       status: "pending_payment",
       hold_expires_at: holdExpiresAt.toISOString(),
       notes: body.notes ?? null,
-      payment_provider: "paymongo",
+      payment_provider: "manual",
       payment_attempt_count: 1,
     });
   }
@@ -147,55 +147,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to create booking hold." }, { status: 500 });
   }
   const bookingId = (insertedRows[0] as { id: string }).id;
-  const link = await createPaymongoPaymentLink({
-    amount: toCentavos(totalCost),
-    description: `Courtly booking ${bookingGroupId}`,
-    metadata: {
-      booking_group_id: bookingGroupId,
-      booking_id: bookingId,
-      user_id: sessionUser.id,
-      user_email: sessionUser.email,
-    },
-    ...(appUrl && firstCourtId
-      ? {
-          successUrl: `${appUrl}/courts/${firstCourtId}/book?payment=success&booking_id=${bookingId}`,
-          failedUrl: `${appUrl}/courts/${firstCourtId}/book?payment=failed&booking_id=${bookingId}`,
-        }
-      : {}),
-  });
-  const { error: updateError } = await supabase
-    .from("bookings")
-    .update(
-      {
-        payment_link_id: link.id,
-        payment_link_url: link.checkout_url,
-        payment_link_created_at: new Date().toISOString(),
-      } as never,
-    )
-    .eq("booking_group_id", bookingGroupId);
-  if (updateError) {
-    return NextResponse.json({ error: "Failed to save payment link." }, { status: 500 });
-  }
 
   const body: BookingCheckoutResponse = {
     booking_id: bookingId,
     booking_group_id: bookingGroupId,
-    payment_link_url: link.checkout_url,
     hold_expires_at: holdExpiresAt.toISOString(),
+    payment_methods: checkoutPaymentMethods,
   };
-
-  await createPaymentTransactionAudit({
-    provider: "paymongo",
-    booking_id: bookingId,
-    booking_group_id: bookingGroupId,
-    payment_link_id: link.id,
-    amount: toCentavos(totalCost),
-    currency: "PHP",
-    trace_status: "link_created",
-    reconciled_by: "manual_reconcile",
-    trace_note: "Checkout payment link created",
-    provider_created_at: new Date().toISOString(),
-  });
 
   return NextResponse.json(body);
 }

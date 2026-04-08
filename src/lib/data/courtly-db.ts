@@ -62,6 +62,12 @@ function mapCourtRow(row: unknown): Court {
     instagram_url: venue?.instagram_url,
     map_latitude: venue?.map_latitude,
     map_longitude: venue?.map_longitude,
+    accepts_gcash: venue?.accepts_gcash,
+    gcash_account_name: venue?.gcash_account_name,
+    gcash_account_number: venue?.gcash_account_number,
+    accepts_maya: venue?.accepts_maya,
+    maya_account_name: venue?.maya_account_name,
+    maya_account_number: venue?.maya_account_number,
   };
 }
 
@@ -95,6 +101,13 @@ function mapBookingRow(row: unknown): Booking {
     paid_at?: string | null;
     payment_failed_at?: string | null;
     payment_reference_id?: string | null;
+    payment_submitted_method?: "gcash" | "maya" | null;
+    payment_submitted_at?: string | null;
+    payment_proof_url?: string | null;
+    payment_proof_mime_type?: string | null;
+    payment_proof_bytes?: number | null;
+    payment_proof_width?: number | null;
+    payment_proof_height?: number | null;
     cancel_reason?: string | null;
     refund_required?: boolean | null;
     refunded_at?: string | null;
@@ -145,7 +158,11 @@ function mapBookingRow(row: unknown): Booking {
     status: record.status,
     hold_expires_at: record.hold_expires_at ?? null,
     payment_provider:
-      record.payment_provider === "paymongo" ? "paymongo" : null,
+      record.payment_provider === "paymongo"
+        ? "paymongo"
+        : record.payment_provider === "manual"
+          ? "manual"
+          : null,
     payment_link_id: record.payment_link_id ?? null,
     payment_link_url: record.payment_link_url ?? null,
     payment_link_created_at: record.payment_link_created_at ?? null,
@@ -153,6 +170,16 @@ function mapBookingRow(row: unknown): Booking {
     paid_at: record.paid_at ?? null,
     payment_failed_at: record.payment_failed_at ?? null,
     payment_reference_id: record.payment_reference_id ?? null,
+    payment_submitted_method:
+      record.payment_submitted_method === "gcash" || record.payment_submitted_method === "maya"
+        ? record.payment_submitted_method
+        : null,
+    payment_submitted_at: record.payment_submitted_at ?? null,
+    payment_proof_url: record.payment_proof_url ?? null,
+    payment_proof_mime_type: record.payment_proof_mime_type ?? null,
+    payment_proof_bytes: record.payment_proof_bytes ?? null,
+    payment_proof_width: record.payment_proof_width ?? null,
+    payment_proof_height: record.payment_proof_height ?? null,
     cancel_reason: record.cancel_reason ?? null,
     refund_required: record.refund_required ?? false,
     refunded_at: record.refunded_at ?? null,
@@ -221,6 +248,20 @@ export async function listVenues(): Promise<Venue[]> {
       ...v,
       hourly_rate_windows: v.hourly_rate_windows ?? [],
       created_at: toIsoString((row as { created_at: string | null }).created_at),
+      accepts_gcash: Boolean((row as { accepts_gcash?: unknown }).accepts_gcash),
+      gcash_account_name:
+        ((row as { gcash_account_name?: string | null }).gcash_account_name ?? undefined) ||
+        undefined,
+      gcash_account_number:
+        ((row as { gcash_account_number?: string | null }).gcash_account_number ?? undefined) ||
+        undefined,
+      accepts_maya: Boolean((row as { accepts_maya?: unknown }).accepts_maya),
+      maya_account_name:
+        ((row as { maya_account_name?: string | null }).maya_account_name ?? undefined) ||
+        undefined,
+      maya_account_number:
+        ((row as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
+        undefined,
     };
   });
 }
@@ -239,6 +280,20 @@ export async function listVenuesByIds(venueIds: string[]): Promise<Venue[]> {
       ...v,
       hourly_rate_windows: v.hourly_rate_windows ?? [],
       created_at: toIsoString((row as { created_at: string | null }).created_at),
+      accepts_gcash: Boolean((row as { accepts_gcash?: unknown }).accepts_gcash),
+      gcash_account_name:
+        ((row as { gcash_account_name?: string | null }).gcash_account_name ?? undefined) ||
+        undefined,
+      gcash_account_number:
+        ((row as { gcash_account_number?: string | null }).gcash_account_number ?? undefined) ||
+        undefined,
+      accepts_maya: Boolean((row as { accepts_maya?: unknown }).accepts_maya),
+      maya_account_name:
+        ((row as { maya_account_name?: string | null }).maya_account_name ?? undefined) ||
+        undefined,
+      maya_account_number:
+        ((row as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
+        undefined,
     };
   });
 }
@@ -257,6 +312,20 @@ export async function getVenueById(venueId: string): Promise<Venue | null> {
     ...v,
     hourly_rate_windows: v.hourly_rate_windows ?? [],
     created_at: toIsoString((data as { created_at: string | null }).created_at),
+    accepts_gcash: Boolean((data as { accepts_gcash?: unknown }).accepts_gcash),
+    gcash_account_name:
+      ((data as { gcash_account_name?: string | null }).gcash_account_name ?? undefined) ||
+      undefined,
+    gcash_account_number:
+      ((data as { gcash_account_number?: string | null }).gcash_account_number ?? undefined) ||
+      undefined,
+    accepts_maya: Boolean((data as { accepts_maya?: unknown }).accepts_maya),
+    maya_account_name:
+      ((data as { maya_account_name?: string | null }).maya_account_name ?? undefined) ||
+      undefined,
+    maya_account_number:
+      ((data as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
+      undefined,
   };
 }
 
@@ -880,6 +949,7 @@ export function isBlockingBookingNow(
   now = new Date(),
 ): boolean {
   if (booking.status === "confirmed") return true;
+  if (booking.status === "pending_confirmation") return true;
   return isActivePendingPaymentHold(booking, now);
 }
 
@@ -895,7 +965,7 @@ export async function hasBlockingBookingConflictForCourt(
     .select("status, hold_expires_at, start_time, end_time")
     .eq("court_id", courtId)
     .eq("date", date)
-    .in("status", ["confirmed", "pending_payment"])
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
     .lt("start_time", endTime)
     .gt("end_time", startTime);
   if (error) throw error;
@@ -1321,6 +1391,20 @@ export async function listVenuesPage(params: PaginationParams): Promise<{
       ...v,
       hourly_rate_windows: v.hourly_rate_windows ?? [],
       created_at: toIsoString((row as { created_at: string | null }).created_at),
+      accepts_gcash: Boolean((row as { accepts_gcash?: unknown }).accepts_gcash),
+      gcash_account_name:
+        ((row as { gcash_account_name?: string | null }).gcash_account_name ?? undefined) ||
+        undefined,
+      gcash_account_number:
+        ((row as { gcash_account_number?: string | null }).gcash_account_number ?? undefined) ||
+        undefined,
+      accepts_maya: Boolean((row as { accepts_maya?: unknown }).accepts_maya),
+      maya_account_name:
+        ((row as { maya_account_name?: string | null }).maya_account_name ?? undefined) ||
+        undefined,
+      maya_account_number:
+        ((row as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
+        undefined,
     };
   });
   const hasMore = list.length > params.limit;

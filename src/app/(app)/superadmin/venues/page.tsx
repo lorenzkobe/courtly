@@ -40,6 +40,7 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
 import type { ManagedUser, Venue } from "@/lib/types/courtly";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
+import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { formatStatusLabel } from "@/lib/utils";
 
 type PriceRangeRow = { start: string; end: string; rate: string };
@@ -58,6 +59,12 @@ const emptyForm = {
   hourly_rate_windows: [] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
+  accepts_gcash: false,
+  gcash_account_name: "",
+  gcash_account_number: "",
+  accepts_maya: false,
+  maya_account_name: "",
+  maya_account_number: "",
 };
 
 const amenityOptions = [
@@ -137,6 +144,13 @@ export default function SuperadminVenuesPage() {
     () => validateSocialUrl(form.instagram_url, "instagram"),
     [form.instagram_url],
   );
+  const paymentSettingsValidation = useMemo(
+    () =>
+      validateVenuePaymentSettings(form, {
+        requireAtLeastOne: true,
+      }),
+    [form],
+  );
 
   const saveAccount = useMutation({
     mutationFn: async () => {
@@ -167,6 +181,12 @@ export default function SuperadminVenuesPage() {
         ],
         image_url: form.image_url.trim(),
         initial_admin_user_id: form.initial_admin_user_id.trim() || undefined,
+        accepts_gcash: form.accepts_gcash,
+        gcash_account_name: form.gcash_account_name.trim(),
+        gcash_account_number: form.gcash_account_number.trim(),
+        accepts_maya: form.accepts_maya,
+        maya_account_name: form.maya_account_name.trim(),
+        maya_account_number: form.maya_account_number.trim(),
         ...mapBody,
       };
       if (editing) {
@@ -247,6 +267,12 @@ export default function SuperadminVenuesPage() {
               rate: String(w.hourly_rate),
             }))
           : [{ start: "07:00", end: "22:00", rate: "" }],
+      accepts_gcash: a.accepts_gcash ?? false,
+      gcash_account_name: a.gcash_account_name ?? "",
+      gcash_account_number: a.gcash_account_number ?? "",
+      accepts_maya: a.accepts_maya ?? false,
+      maya_account_name: a.maya_account_name ?? "",
+      maya_account_number: a.maya_account_number ?? "",
     });
     setDialogOpen(true);
   };
@@ -593,6 +619,92 @@ export default function SuperadminVenuesPage() {
               )}
             </div>
             <div>
+              <Label className="mb-2 block">Payment methods *</Label>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Add at least one method. Only enabled methods appear in checkout.
+              </p>
+              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                <label
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    form.accepts_gcash
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/60 bg-background"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">GCash</span>
+                    <input
+                      type="checkbox"
+                      checked={form.accepts_gcash}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
+                      }
+                    />
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Mobile wallet transfer details shown to players.
+                  </span>
+                  {form.accepts_gcash ? (
+                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={form.gcash_account_name}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
+                        }
+                        placeholder="Account name"
+                      />
+                      <Input
+                        value={form.gcash_account_number}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, gcash_account_number: e.target.value }))
+                        }
+                        placeholder="Account number"
+                      />
+                    </span>
+                  ) : null}
+                </label>
+                <label
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    form.accepts_maya
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/60 bg-background"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Maya</span>
+                    <input
+                      type="checkbox"
+                      checked={form.accepts_maya}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
+                      }
+                    />
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Wallet transfer details shown to players.
+                  </span>
+                  {form.accepts_maya ? (
+                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={form.maya_account_name}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
+                        }
+                        placeholder="Account name"
+                      />
+                      <Input
+                        value={form.maya_account_number}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, maya_account_number: e.target.value }))
+                        }
+                        placeholder="Account number"
+                      />
+                    </span>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+            <div>
               <Label className="mb-2 block">Amenities</Label>
               <div className="mb-3 flex flex-wrap gap-2">
                 {amenityOptions.map((amenity) => (
@@ -711,6 +823,14 @@ export default function SuperadminVenuesPage() {
               {priceRangeFormValidation.error}
             </p>
           ) : null}
+          {paymentSettingsValidation.ok ? null : (
+            <p
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+              role="alert"
+            >
+              {paymentSettingsValidation.error}
+            </p>
+          )}
           <DialogFooter className="gap-2 sm:gap-0">
             {editing ? (
               <Button
@@ -740,6 +860,7 @@ export default function SuperadminVenuesPage() {
                 !form.contact_phone.trim() ||
                 !form.image_url.trim() ||
                 !priceRangeFormValidation.ok ||
+                !paymentSettingsValidation.ok ||
                 Boolean(facebookUrlError) ||
                 Boolean(instagramUrlError) ||
                 (!editing && !form.initial_admin_user_id.trim())

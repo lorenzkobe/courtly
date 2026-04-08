@@ -23,6 +23,7 @@ import {
   validateVenuePriceRanges,
 } from "@/lib/venue-price-ranges";
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
+import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 
 function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
   const keys: (keyof Venue)[] = [
@@ -38,6 +39,12 @@ function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
     "image_url",
     "map_latitude",
     "map_longitude",
+    "accepts_gcash",
+    "gcash_account_name",
+    "gcash_account_number",
+    "accepts_maya",
+    "maya_account_name",
+    "maya_account_number",
   ];
   const out: Partial<Venue> = {};
   for (const key of keys) {
@@ -136,6 +143,52 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return NextResponse.json({ error }, { status: 400 });
     }
     venuePatch.instagram_url = value;
+  }
+  const paymentKeys: Array<keyof Venue> = [
+    "accepts_gcash",
+    "gcash_account_name",
+    "gcash_account_number",
+    "accepts_maya",
+    "maya_account_name",
+    "maya_account_number",
+  ];
+  const hasPaymentPatch = paymentKeys.some((key) =>
+    Object.prototype.hasOwnProperty.call(venuePatch, key),
+  );
+  const nextStatus = (venuePatch.status ?? cur.status) === "active" ? "active" : "closed";
+  const mergedPaymentSource = {
+    accepts_gcash: hasPaymentPatch
+      ? (venuePatch.accepts_gcash as boolean | undefined)
+      : cur.accepts_gcash,
+    gcash_account_name: hasPaymentPatch
+      ? (venuePatch.gcash_account_name as string | undefined)
+      : cur.gcash_account_name,
+    gcash_account_number: hasPaymentPatch
+      ? (venuePatch.gcash_account_number as string | undefined)
+      : cur.gcash_account_number,
+    accepts_maya: hasPaymentPatch
+      ? (venuePatch.accepts_maya as boolean | undefined)
+      : cur.accepts_maya,
+    maya_account_name: hasPaymentPatch
+      ? (venuePatch.maya_account_name as string | undefined)
+      : cur.maya_account_name,
+    maya_account_number: hasPaymentPatch
+      ? (venuePatch.maya_account_number as string | undefined)
+      : cur.maya_account_number,
+  };
+  const paymentSettings = validateVenuePaymentSettings(mergedPaymentSource, {
+    requireAtLeastOne: nextStatus === "active",
+  });
+  if (!paymentSettings.ok) {
+    return NextResponse.json({ error: paymentSettings.error }, { status: 400 });
+  }
+  if (hasPaymentPatch) {
+    venuePatch.accepts_gcash = paymentSettings.value.accepts_gcash;
+    venuePatch.gcash_account_name = paymentSettings.value.gcash_account_name;
+    venuePatch.gcash_account_number = paymentSettings.value.gcash_account_number;
+    venuePatch.accepts_maya = paymentSettings.value.accepts_maya;
+    venuePatch.maya_account_name = paymentSettings.value.maya_account_name;
+    venuePatch.maya_account_number = paymentSettings.value.maya_account_number;
   }
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 

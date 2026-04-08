@@ -16,3 +16,14 @@ export function formatStatusLabel(status: string): string {
     )
     .join(" ");
 }
+
+const BOOKING_STATUS_UI_LABELS: Record<string, string> = {
+  pending_confirmation: "Waiting for venue confirmation",
+};
+
+/** Player- and admin-facing label for `booking.status` (and segment status). */
+export function formatBookingStatusLabel(status: string): string {
+  const mapped = BOOKING_STATUS_UI_LABELS[status];
+  if (mapped) return mapped;
+  return formatStatusLabel(status);
+}
