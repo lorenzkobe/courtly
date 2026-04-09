@@ -12,7 +12,7 @@ async function readSessionProfileById(authUser: AuthUserLike): Promise<SessionUs
   const supabase = await createSupabaseServerClient();
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, first_name, last_name, role, is_active")
+    .select("id, full_name, first_name, last_name, role, is_active, dupr_rating")
     .eq("id", authUser.id)
     .maybeSingle();
 
@@ -25,6 +25,7 @@ async function readSessionProfileById(authUser: AuthUserLike): Promise<SessionUs
     last_name: string | null;
     role: SessionUser["role"];
     is_active: boolean;
+    dupr_rating: number | null;
   };
   const fromParts = [row.first_name, row.last_name]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
@@ -39,6 +40,7 @@ async function readSessionProfileById(authUser: AuthUserLike): Promise<SessionUs
     full_name: displayName,
     role: row.role,
     is_active: row.is_active,
+    dupr_rating: Number(row.dupr_rating ?? 0),
   };
 }
 

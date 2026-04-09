@@ -9,6 +9,8 @@ import type {
   CourtClosure,
   CourtReview,
   ManagedUser,
+  OpenPlayComment,
+  OpenPlayJoinRequest,
   OpenPlaySession,
   Tournament,
   TournamentRegistration,
@@ -235,6 +237,150 @@ function mapPaymentTransactionRow(row: unknown): PaymentTransaction {
     refund_created_at: (record.refund_created_at as string | null | undefined) ?? null,
     raw_payload: (record.raw_payload as Record<string, unknown> | null | undefined) ?? null,
     created_at: toIsoString((record.created_at as string | null | undefined) ?? null),
+  };
+}
+
+function mapOpenPlaySessionRow(row: unknown): OpenPlaySession {
+  const record = row as {
+    id: string;
+    sport: CourtSport;
+    title: string;
+    date: string | null;
+    start_time: string;
+    end_time: string;
+    skill_level: OpenPlaySession["skill_level"];
+    location: string;
+    booking_group_id?: string | null;
+    court_id?: string | null;
+    max_players: number;
+    current_players: number;
+    host_user_id?: string | null;
+    host_name: string;
+    host_email?: string | null;
+    description?: string | null;
+    fee?: number | null;
+    price_per_player?: number | null;
+    dupr_min?: number | null;
+    dupr_max?: number | null;
+    accepts_gcash?: boolean | null;
+    gcash_account_name?: string | null;
+    gcash_account_number?: string | null;
+    accepts_maya?: boolean | null;
+    maya_account_name?: string | null;
+    maya_account_number?: string | null;
+    status: OpenPlaySession["status"];
+    courts?: {
+      name?: string | null;
+      venue_id?: string | null;
+      venues?: { id: string; name: string; location: string } | null;
+    } | null;
+  };
+  const court = record.courts ?? null;
+  const venue = court?.venues ?? null;
+  const price = Number(record.price_per_player ?? record.fee ?? 0);
+  return {
+    id: record.id,
+    sport: record.sport,
+    title: record.title,
+    date: toDateString(record.date),
+    start_time: record.start_time,
+    end_time: record.end_time,
+    skill_level: record.skill_level,
+    location: venue?.location ?? record.location,
+    booking_group_id: record.booking_group_id ?? null,
+    court_id: record.court_id ?? undefined,
+    max_players: record.max_players,
+    current_players: record.current_players,
+    host_user_id: record.host_user_id ?? null,
+    host_name: record.host_name,
+    host_email: record.host_email ?? undefined,
+    description: record.description ?? undefined,
+    fee: Number(record.fee ?? price),
+    price_per_player: price,
+    dupr_min: record.dupr_min ?? null,
+    dupr_max: record.dupr_max ?? null,
+    accepts_gcash: Boolean(record.accepts_gcash),
+    gcash_account_name: record.gcash_account_name ?? null,
+    gcash_account_number: record.gcash_account_number ?? null,
+    accepts_maya: Boolean(record.accepts_maya),
+    maya_account_name: record.maya_account_name ?? null,
+    maya_account_number: record.maya_account_number ?? null,
+    status: record.status,
+    court_name: court?.name ?? null,
+    venue_name: venue?.name ?? null,
+    venue_id: venue?.id ?? court?.venue_id ?? null,
+  };
+}
+
+function mapOpenPlayJoinRequestRow(row: unknown): OpenPlayJoinRequest {
+  const record = row as {
+    id: string;
+    open_play_session_id: string;
+    user_id: string;
+    status: OpenPlayJoinRequest["status"];
+    payment_lock_expires_at?: string | null;
+    payment_method?: "gcash" | "maya" | null;
+    payment_proof_url?: string | null;
+    payment_proof_mime_type?: string | null;
+    payment_proof_bytes?: number | null;
+    payment_proof_width?: number | null;
+    payment_proof_height?: number | null;
+    payment_submitted_at?: string | null;
+    join_note?: string | null;
+    organizer_note?: string | null;
+    decided_at?: string | null;
+    decided_by_user_id?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    profiles?: {
+      full_name?: string | null;
+      dupr_rating?: number | null;
+    } | null;
+  };
+  return {
+    id: record.id,
+    open_play_session_id: record.open_play_session_id,
+    user_id: record.user_id,
+    user_name: record.profiles?.full_name ?? null,
+    user_email: null,
+    user_dupr_rating:
+      record.profiles?.dupr_rating == null ? null : Number(record.profiles.dupr_rating),
+    status: record.status,
+    payment_lock_expires_at: record.payment_lock_expires_at ?? null,
+    payment_method: record.payment_method ?? null,
+    payment_proof_url: record.payment_proof_url ?? null,
+    payment_proof_mime_type: record.payment_proof_mime_type ?? null,
+    payment_proof_bytes: record.payment_proof_bytes ?? null,
+    payment_proof_width: record.payment_proof_width ?? null,
+    payment_proof_height: record.payment_proof_height ?? null,
+    payment_submitted_at: record.payment_submitted_at ?? null,
+    join_note: record.join_note ?? null,
+    organizer_note: record.organizer_note ?? null,
+    decided_at: record.decided_at ?? null,
+    decided_by_user_id: record.decided_by_user_id ?? null,
+    created_at: toIsoString(record.created_at ?? null),
+    updated_at: toIsoString(record.updated_at ?? null),
+  };
+}
+
+function mapOpenPlayCommentRow(row: unknown): OpenPlayComment {
+  const record = row as {
+    id: string;
+    open_play_session_id: string;
+    user_id: string;
+    comment: string;
+    created_at: string | null;
+    updated_at: string | null;
+    profiles?: { full_name?: string | null } | null;
+  };
+  return {
+    id: record.id,
+    open_play_session_id: record.open_play_session_id,
+    user_id: record.user_id,
+    user_name: record.profiles?.full_name ?? null,
+    comment: record.comment,
+    created_at: toIsoString(record.created_at),
+    updated_at: toIsoString(record.updated_at),
   };
 }
 
@@ -1416,12 +1562,14 @@ export async function listVenuesPage(params: PaginationParams): Promise<{
 
 export async function listOpenPlay(): Promise<OpenPlaySession[]> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("open_play_sessions").select("*");
+  const { data, error } = await supabase
+    .from("open_play_sessions")
+    .select("*, courts(name,venue_id,venues(id,name,location))")
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as OpenPlaySession),
-    date: toDateString((row as { date: string | null }).date),
-  }));
+  const sessions = (data ?? []).map(mapOpenPlaySessionRow);
+  return hydrateOpenPlayRegisteredCounts(sessions);
 }
 
 export async function listOpenPlayByStatus(
@@ -1432,7 +1580,7 @@ export async function listOpenPlayByStatus(
   const supabase = await createSupabaseServerClient();
   let query = supabase
     .from("open_play_sessions")
-    .select("*")
+    .select("*, courts(name,venue_id,venues(id,name,location))")
     .eq("status", status)
     .order("date", { ascending: true })
     .order("start_time", { ascending: true });
@@ -1444,10 +1592,301 @@ export async function listOpenPlayByStatus(
   }
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as OpenPlaySession),
-    date: toDateString((row as { date: string | null }).date),
-  }));
+  const sessions = (data ?? []).map(mapOpenPlaySessionRow);
+  return hydrateOpenPlayRegisteredCounts(sessions);
+}
+
+async function hydrateOpenPlayRegisteredCounts(
+  sessions: OpenPlaySession[],
+): Promise<OpenPlaySession[]> {
+  if (sessions.length === 0) return [];
+  const sessionIds = sessions.map((session) => session.id);
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .select("open_play_session_id,status")
+    .in("open_play_session_id", sessionIds)
+    .in("status", ["approved", "pending_approval", "payment_locked"]);
+  if (error) throw error;
+  const consumingBySession = new Map<string, number>();
+  for (const row of data ?? []) {
+    const record = row as { open_play_session_id: string };
+    consumingBySession.set(
+      record.open_play_session_id,
+      (consumingBySession.get(record.open_play_session_id) ?? 0) + 1,
+    );
+  }
+  return sessions.map((session) => {
+    const consuming = consumingBySession.get(session.id) ?? 0;
+    const statusValue = consuming >= session.max_players ? "full" : session.status;
+    return {
+      ...session,
+      status: statusValue,
+      registered_players_count: consuming,
+      current_players: consuming,
+    };
+  });
+}
+
+export async function getOpenPlayById(id: string): Promise<OpenPlaySession | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("open_play_sessions")
+    .select("*, courts(name,venue_id,venues(id,name,location))")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const [session] = await hydrateOpenPlayRegisteredCounts([mapOpenPlaySessionRow(data)]);
+  return session ?? null;
+}
+
+export async function getOpenPlayByBookingGroupId(
+  bookingGroupId: string,
+): Promise<OpenPlaySession | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("open_play_sessions")
+    .select("*, courts(name,venue_id,venues(id,name,location))")
+    .eq("booking_group_id", bookingGroupId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const [session] = await hydrateOpenPlayRegisteredCounts([mapOpenPlaySessionRow(data)]);
+  return session ?? null;
+}
+
+export async function getOpenPlayJoinRequestByUser(
+  sessionId: string,
+  userId: string,
+): Promise<OpenPlayJoinRequest | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .select("*, profiles(full_name,dupr_rating)")
+    .eq("open_play_session_id", sessionId)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOpenPlayJoinRequestRow(data) : null;
+}
+
+export async function listOpenPlayJoinRequestsByUser(
+  userId: string,
+  sessionIds?: string[],
+): Promise<OpenPlayJoinRequest[]> {
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("open_play_join_requests")
+    .select("*, profiles(full_name,dupr_rating)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (sessionIds && sessionIds.length > 0) {
+    query = query.in("open_play_session_id", sessionIds);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapOpenPlayJoinRequestRow);
+}
+
+export async function createWaitlistJoinRequest(params: {
+  sessionId: string;
+  userId: string;
+  joinNote?: string;
+}): Promise<OpenPlayJoinRequest> {
+  const supabase = createSupabaseAdminClient();
+  const existing = await getOpenPlayJoinRequestByUser(params.sessionId, params.userId);
+  if (
+    existing &&
+    ["waitlisted", "payment_locked", "pending_approval", "approved"].includes(existing.status)
+  ) {
+    return existing;
+  }
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .insert({
+      open_play_session_id: params.sessionId,
+      user_id: params.userId,
+      status: "waitlisted",
+      join_note: params.joinNote ?? null,
+    } as never)
+    .select("*, profiles(full_name,dupr_rating)")
+    .single();
+  if (error) throw error;
+  return mapOpenPlayJoinRequestRow(data);
+}
+
+export async function acquireOpenPlayPaymentLock(params: {
+  sessionId: string;
+  userId: string;
+  lockMinutes?: number;
+}): Promise<{ result: "locked" | "full" | "already_active" | "not_found"; request: OpenPlayJoinRequest | null }> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.rpc("open_play_acquire_payment_lock", {
+    p_session_id: params.sessionId,
+    p_user_id: params.userId,
+    p_lock_minutes: params.lockMinutes ?? 5,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : null) as
+    | { result?: "locked" | "full" | "already_active" | "not_found"; request_id?: string | null }
+    | null;
+  const result = row?.result ?? "not_found";
+  if (!row?.request_id) {
+    return { result, request: null };
+  }
+  const request = await getOpenPlayJoinRequestById(row.request_id);
+  return { result, request };
+}
+
+export async function getOpenPlayJoinRequestById(
+  requestId: string,
+): Promise<OpenPlayJoinRequest | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .select("*, profiles(full_name,dupr_rating)")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOpenPlayJoinRequestRow(data) : null;
+}
+
+export async function submitOpenPlayJoinPaymentProof(params: {
+  sessionId: string;
+  userId: string;
+  paymentMethod: "gcash" | "maya";
+  paymentProofDataUrl: string;
+  paymentProofMimeType: "image/jpeg";
+  paymentProofBytes: number;
+  paymentProofWidth: number;
+  paymentProofHeight: number;
+  joinNote?: string;
+}): Promise<OpenPlayJoinRequest | null> {
+  const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .update({
+      status: "pending_approval",
+      payment_method: params.paymentMethod,
+      payment_proof_url: params.paymentProofDataUrl,
+      payment_proof_mime_type: params.paymentProofMimeType,
+      payment_proof_bytes: params.paymentProofBytes,
+      payment_proof_width: params.paymentProofWidth,
+      payment_proof_height: params.paymentProofHeight,
+      payment_submitted_at: nowIso,
+      payment_lock_expires_at: null,
+      join_note: params.joinNote ?? null,
+    } as never)
+    .eq("open_play_session_id", params.sessionId)
+    .eq("user_id", params.userId)
+    .eq("status", "payment_locked")
+    .gt("payment_lock_expires_at", nowIso)
+    .select("*, profiles(full_name,dupr_rating)")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOpenPlayJoinRequestRow(data) : null;
+}
+
+export async function listOpenPlayJoinRequestsBySession(
+  sessionId: string,
+): Promise<OpenPlayJoinRequest[]> {
+  const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  await supabase
+    .from("open_play_join_requests")
+    .update({ status: "expired", payment_lock_expires_at: null } as never)
+    .eq("open_play_session_id", sessionId)
+    .eq("status", "payment_locked")
+    .lte("payment_lock_expires_at", nowIso);
+
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .select("*, profiles(full_name,dupr_rating)")
+    .eq("open_play_session_id", sessionId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(mapOpenPlayJoinRequestRow);
+}
+
+export async function countOpenPlayJoinRequestsBySession(
+  sessionId: string,
+): Promise<Record<OpenPlayJoinRequest["status"], number>> {
+  const requests = await listOpenPlayJoinRequestsBySession(sessionId);
+  const out: Record<OpenPlayJoinRequest["status"], number> = {
+    waitlisted: 0,
+    payment_locked: 0,
+    pending_approval: 0,
+    approved: 0,
+    denied: 0,
+    expired: 0,
+    cancelled: 0,
+  };
+  for (const request of requests) {
+    out[request.status] = (out[request.status] ?? 0) + 1;
+  }
+  return out;
+}
+
+export async function setOpenPlayJoinRequestDecision(params: {
+  sessionId: string;
+  requestId: string;
+  status: "approved" | "denied";
+  decidedByUserId: string;
+  organizerNote?: string;
+}): Promise<OpenPlayJoinRequest | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .update({
+      status: params.status,
+      decided_by_user_id: params.decidedByUserId,
+      decided_at: new Date().toISOString(),
+      organizer_note: params.organizerNote ?? null,
+      payment_lock_expires_at: null,
+    } as never)
+    .eq("id", params.requestId)
+    .eq("open_play_session_id", params.sessionId)
+    .in("status", ["pending_approval", "payment_locked"])
+    .select("*, profiles(full_name,dupr_rating)")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOpenPlayJoinRequestRow(data) : null;
+}
+
+export async function listOpenPlayCommentsBySession(
+  sessionId: string,
+): Promise<OpenPlayComment[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_comments")
+    .select("*, profiles(full_name)")
+    .eq("open_play_session_id", sessionId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(mapOpenPlayCommentRow);
+}
+
+export async function createOpenPlayComment(params: {
+  sessionId: string;
+  userId: string;
+  comment: string;
+}): Promise<OpenPlayComment> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_comments")
+    .insert({
+      open_play_session_id: params.sessionId,
+      user_id: params.userId,
+      comment: params.comment,
+    } as never)
+    .select("*, profiles(full_name)")
+    .single();
+  if (error) throw error;
+  return mapOpenPlayCommentRow(data);
 }
 
 export async function insertRow<T extends Record<string, unknown>>(

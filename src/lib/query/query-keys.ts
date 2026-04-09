@@ -138,6 +138,8 @@ export const queryKeys = {
           sport: normalized(params?.sport),
         },
       ] as const,
+    detail: (sessionId: NullableString) =>
+      ["open-play", "detail", normalized(sessionId)] as const,
   },
   registrations: {
     all: () => ["registrations"] as const,

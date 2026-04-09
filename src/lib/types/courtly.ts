@@ -295,14 +295,86 @@ export type OpenPlaySession = {
   end_time: string;
   skill_level: "all_levels" | "beginner" | "intermediate" | "advanced";
   location: string;
+  booking_group_id?: string | null;
   court_id?: string;
   max_players: number;
   current_players: number;
+  host_user_id?: string | null;
   host_name: string;
   host_email?: string;
   description?: string;
-  fee: number;
+  fee?: number;
+  price_per_player: number;
+  dupr_min?: number | null;
+  dupr_max?: number | null;
+  accepts_gcash: boolean;
+  gcash_account_name?: string | null;
+  gcash_account_number?: string | null;
+  accepts_maya: boolean;
+  maya_account_name?: string | null;
+  maya_account_number?: string | null;
   status: "open" | "full" | "cancelled" | "completed";
+  court_name?: string | null;
+  venue_name?: string | null;
+  venue_id?: string | null;
+  registered_players_count?: number;
+  current_user_request_status?: OpenPlayJoinRequestStatus | null;
+};
+
+export type OpenPlayJoinRequestStatus =
+  | "waitlisted"
+  | "payment_locked"
+  | "pending_approval"
+  | "approved"
+  | "denied"
+  | "expired"
+  | "cancelled";
+
+export type OpenPlayJoinRequest = {
+  id: string;
+  open_play_session_id: string;
+  user_id: string;
+  user_name?: string | null;
+  user_email?: string | null;
+  user_dupr_rating?: number | null;
+  status: OpenPlayJoinRequestStatus;
+  payment_lock_expires_at?: string | null;
+  payment_method?: VenueManualPaymentMethod | null;
+  payment_proof_url?: string | null;
+  payment_proof_mime_type?: string | null;
+  payment_proof_bytes?: number | null;
+  payment_proof_width?: number | null;
+  payment_proof_height?: number | null;
+  payment_submitted_at?: string | null;
+  join_note?: string | null;
+  organizer_note?: string | null;
+  decided_at?: string | null;
+  decided_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OpenPlayComment = {
+  id: string;
+  open_play_session_id: string;
+  user_id: string;
+  user_name?: string | null;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OpenPlayDetailResponse = {
+  session: OpenPlaySession;
+  my_request?: OpenPlayJoinRequest | null;
+  pending_requests?: OpenPlayJoinRequest[];
+  comments: OpenPlayComment[];
+  counts: {
+    approved: number;
+    pending_approval: number;
+    payment_locked: number;
+    waitlisted: number;
+  };
 };
 
 export type SessionUser = {
@@ -311,6 +383,7 @@ export type SessionUser = {
   full_name: string;
   role: "user" | "admin" | "superadmin";
   is_active?: boolean;
+  dupr_rating?: number;
 };
 
 /** Directory user record (superadmin CRUD); aligns with demo login identities. */

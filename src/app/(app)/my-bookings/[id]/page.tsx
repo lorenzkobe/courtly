@@ -287,6 +287,41 @@ export default function BookingDetailPage() {
   }, [reviews, bookingId]);
 
   const loading = loadingBooking;
+  const [openPlayTitle, setOpenPlayTitle] = useState("");
+  const [openPlaySlots, setOpenPlaySlots] = useState(8);
+  const [openPlayPrice, setOpenPlayPrice] = useState(0);
+  const [openPlayDuprMin, setOpenPlayDuprMin] = useState(0);
+  const [openPlayDuprMax, setOpenPlayDuprMax] = useState(8);
+  const [openPlayDescription, setOpenPlayDescription] = useState("");
+
+  const createOpenPlayMutation = useMutation({
+    mutationFn: async () => {
+      if (!booking) throw new Error("Booking missing");
+      const bookingGroupId = booking.booking_group_id ?? booking.id;
+      return courtlyApi.openPlay.create({
+        booking_group_id: bookingGroupId,
+        title: openPlayTitle.trim(),
+        max_players: Number(openPlaySlots),
+        price_per_player: Number(openPlayPrice),
+        dupr_min: Number(openPlayDuprMin),
+        dupr_max: Number(openPlayDuprMax),
+        description: openPlayDescription.trim() || undefined,
+        accepts_gcash: Boolean(court?.accepts_gcash),
+        gcash_account_name: court?.gcash_account_name ?? undefined,
+        gcash_account_number: court?.gcash_account_number ?? undefined,
+        accepts_maya: Boolean(court?.accepts_maya),
+        maya_account_name: court?.maya_account_name ?? undefined,
+        maya_account_number: court?.maya_account_number ?? undefined,
+      });
+    },
+    onSuccess: ({ data }) => {
+      toast.success("Open play created.");
+      router.push(`/open-play/${data.id}`);
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not create open play"));
+    },
+  });
 
   const hasMapPin =
     court &&
@@ -337,6 +372,7 @@ export default function BookingDetailPage() {
     user &&
     myReview.user_id === user.id,
   );
+  const canCreateOpenPlay = Boolean(isMyBooking) && booking.status === "confirmed";
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
@@ -446,6 +482,85 @@ export default function BookingDetailPage() {
             ) : null}
           </CardContent>
         </Card>
+
+        {canCreateOpenPlay ? (
+          <Card className="border-border/50">
+            <CardContent className="space-y-4 p-6">
+              <h2 className="font-heading text-lg font-semibold text-foreground">
+                Create open play from this booking
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Turn this confirmed booking into an open play lobby for other players.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-title">Lobby name</Label>
+                  <Textarea
+                    id="open-play-title"
+                    rows={1}
+                    value={openPlayTitle}
+                    onChange={(event) => setOpenPlayTitle(event.target.value)}
+                    placeholder="Friday Evening Games"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-slots">Slots</Label>
+                  <Textarea
+                    id="open-play-slots"
+                    rows={1}
+                    value={String(openPlaySlots)}
+                    onChange={(event) => setOpenPlaySlots(Number(event.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-price">Price per player (PHP)</Label>
+                  <Textarea
+                    id="open-play-price"
+                    rows={1}
+                    value={String(openPlayPrice)}
+                    onChange={(event) => setOpenPlayPrice(Number(event.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>DUPR range</Label>
+                  <div className="flex gap-2">
+                    <Textarea
+                      rows={1}
+                      value={String(openPlayDuprMin)}
+                      onChange={(event) => setOpenPlayDuprMin(Number(event.target.value) || 0)}
+                    />
+                    <Textarea
+                      rows={1}
+                      value={String(openPlayDuprMax)}
+                      onChange={(event) => setOpenPlayDuprMax(Number(event.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="open-play-description">Description</Label>
+                <Textarea
+                  id="open-play-description"
+                  rows={3}
+                  value={openPlayDescription}
+                  onChange={(event) => setOpenPlayDescription(event.target.value)}
+                  placeholder="Optional notes for players"
+                />
+              </div>
+              <Button
+                onClick={() => createOpenPlayMutation.mutate()}
+                disabled={
+                  createOpenPlayMutation.isPending ||
+                  !openPlayTitle.trim() ||
+                  openPlaySlots < 2 ||
+                  openPlayDuprMin > openPlayDuprMax
+                }
+              >
+                {createOpenPlayMutation.isPending ? "Creating..." : "Create Open Play"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {canRate || canEditReview ? (
           court ? (
