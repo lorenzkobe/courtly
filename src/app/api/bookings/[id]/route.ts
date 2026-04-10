@@ -71,6 +71,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const { searchParams } = new URL(req.url);
   const includeGroup = searchParams.get("include_group") === "true";
   const includeContext = searchParams.get("include_context") === "true";
+  const serverNowIso = new Date().toISOString();
   const { id } = await ctx.params;
   const booking = await getBookingById(id);
   if (!booking) {
@@ -104,6 +105,7 @@ export async function GET(req: Request, ctx: Ctx) {
         user,
       ),
       group_segments: [applyPlayerMobileVisibility(hydrateBooking(booking), user)],
+      server_now: serverNowIso,
       ...(court ? { court } : {}),
       ...(reviews.length > 0 ? { reviews } : {}),
       ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
@@ -164,6 +166,7 @@ export async function GET(req: Request, ctx: Ctx) {
       group_segments: enrichedSegments.map((seg) =>
         applyPlayerMobileVisibility(hydrateBooking(seg), user),
       ),
+      server_now: serverNowIso,
       ...(court ? { court } : {}),
       ...(reviews.length > 0 ? { reviews } : {}),
       ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),
@@ -211,6 +214,7 @@ export async function GET(req: Request, ctx: Ctx) {
     group_segments: enrichedGroupSegments.map((seg) =>
       applyPlayerMobileVisibility(hydrateBooking(seg), user),
     ),
+    server_now: serverNowIso,
     ...(court ? { court } : {}),
     ...(reviews.length > 0 ? { reviews } : {}),
     ...(paymentTransactions.length > 0 ? { payment_transactions: paymentTransactions } : {}),

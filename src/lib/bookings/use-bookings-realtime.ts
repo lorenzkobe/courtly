@@ -41,9 +41,10 @@ export function useBookingsRealtime({
       filter && filter.trim()
         ? filter.trim()
         : undefined;
+    // Values must be URL-encoded: '+' in emails (e.g. user+tag@gmail.com) breaks filters otherwise.
     const emailFilter =
       playerEmail && playerEmail.trim()
-        ? `player_email=eq.${playerEmail.trim()}`
+        ? `player_email=eq.${encodeURIComponent(playerEmail.trim())}`
         : undefined;
     const channelFilter = resolvedFilter ?? emailFilter;
     const channelName = `bookings:${encodeURIComponent(channelFilter ?? "all")}`;

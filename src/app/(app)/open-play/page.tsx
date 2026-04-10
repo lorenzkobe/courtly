@@ -7,14 +7,16 @@ import {
   Calendar,
   Clock,
   MapPin,
+  Settings2,
   Trophy,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -27,15 +29,35 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { queryKeys } from "@/lib/query/query-keys";
+import { formatTimeShort } from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
+import { useAuth } from "@/lib/auth/auth-context";
+import {
+  openPlaySchedulePhase,
+  openPlaySchedulePhaseLabel,
+} from "@/lib/open-play/schedule";
+import { queryKeys } from "@/lib/query/query-keys";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { OpenPlaySession } from "@/lib/types/courtly";
+import { cn } from "@/lib/utils";
+
+const scheduleBadgeStyles: Record<string, string> = {
+  upcoming: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+  in_progress: "border-primary/25 bg-primary/10 text-primary",
+  ended: "bg-muted text-muted-foreground border-border",
+  cancelled: "border-destructive/30 bg-destructive/10 text-destructive",
+};
 
 export default function OpenPlayPage() {
   const [skillFilter, setSkillFilter] = useState("all");
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const selectedSport = useSelectedSport((state) => state.sport);
+  const [listNowMs, setListNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setListNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: queryKeys.openPlay.list({ sport: selectedSport }),
@@ -43,6 +65,21 @@ export default function OpenPlayPage() {
       const { data } = await courtlyApi.openPlay.list({ sport: selectedSport });
       return data;
     },
+  });
+
+  const { data: hostedSessions = [], isLoading: loadingHosted } = useQuery({
+    queryKey: queryKeys.openPlay.list({
+      hosted_by_me: true,
+      sport: selectedSport,
+    }),
+    queryFn: async () => {
+      const { data } = await courtlyApi.openPlay.list({
+        hosted_by_me: true,
+        sport: selectedSport,
+      });
+      return data;
+    },
+    enabled: Boolean(user),
   });
 
   const joinWaitlistMutation = useMutation({
@@ -90,6 +127,65 @@ export default function OpenPlayPage() {
           </SelectContent>
         </Select>
       </PageHeader>
+
+      {user ? (
+        <Card className="mb-8 border-border/50">
+          <CardContent className="space-y-4 p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Settings2 className="h-5 w-5 text-muted-foreground" />
+              <h2 className="font-heading text-lg font-semibold text-foreground">
+                Manage open plays
+              </h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Sessions you created from your bookings. Open a card to approve join
+              requests and view comments.
+            </p>
+            {loadingHosted ? (
+              <Skeleton className="h-20 w-full rounded-lg" />
+            ) : hostedSessions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                You do not have any open play sessions yet. Create one from a confirmed
+                booking on{" "}
+                <Link href="/my-bookings" className="text-primary underline-offset-4 hover:underline">
+                  My bookings
+                </Link>
+                .
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {hostedSessions.map((session) => {
+                  const phase = openPlaySchedulePhase(session, listNowMs);
+                  return (
+                    <li key={session.id}>
+                      <Link
+                        href={`/open-play/${session.id}`}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 px-4 py-3 text-sm transition-colors hover:bg-muted/30"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="font-medium text-foreground">{session.title}</p>
+                          <p className="text-muted-foreground">
+                            {format(new Date(`${session.date}T12:00:00`), "EEE, MMM d")} ·{" "}
+                            {formatTimeShort(session.start_time)} –{" "}
+                            {formatTimeShort(session.end_time)}
+                            {session.court_name ? ` · ${session.court_name}` : ""}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn("shrink-0", scheduleBadgeStyles[phase] ?? "")}
+                        >
+                          {openPlaySchedulePhaseLabel(phase)}
+                        </Badge>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

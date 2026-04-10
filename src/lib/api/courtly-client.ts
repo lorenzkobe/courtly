@@ -15,6 +15,7 @@ import type {
   DashboardOverviewResponse,
   ManagedUser,
   OpenPlayComment,
+  OpenPlayCreateResponse,
   OpenPlayDetailResponse,
   OpenPlayJoinRequest,
   OpenPlaySession,
@@ -257,10 +258,16 @@ export const courtlyApi = {
   },
 
   openPlay: {
-    list: (params?: { status?: string; limit?: number; sport?: string }) =>
-      http.get<OpenPlaySession[]>("/api/open-play", { params }),
+    list: (params?: {
+      status?: string;
+      limit?: number;
+      sport?: string;
+      booking_group_id?: string;
+      hosted_by_me?: boolean;
+    }) => http.get<OpenPlaySession[]>("/api/open-play", { params }),
     create: (body: {
       booking_group_id: string;
+      court_ids?: string[];
       title: string;
       max_players: number;
       price_per_player: number;
@@ -273,7 +280,7 @@ export const courtlyApi = {
       accepts_maya: boolean;
       maya_account_name?: string;
       maya_account_number?: string;
-    }) => http.post<OpenPlaySession>("/api/open-play", body),
+    }) => http.post<OpenPlayCreateResponse>("/api/open-play", body),
     get: (id: string) => http.get<OpenPlayDetailResponse>(`/api/open-play/${id}`),
     join: (id: string, body?: { join_note?: string }) =>
       http.post<{ request: OpenPlayJoinRequest }>(`/api/open-play/${id}/join`, body ?? {}),

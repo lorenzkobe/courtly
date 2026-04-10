@@ -1641,19 +1641,41 @@ export async function getOpenPlayById(id: string): Promise<OpenPlaySession | nul
   return session ?? null;
 }
 
-export async function getOpenPlayByBookingGroupId(
+export async function listOpenPlaySessionsByBookingGroupId(
   bookingGroupId: string,
-): Promise<OpenPlaySession | null> {
+): Promise<OpenPlaySession[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("open_play_sessions")
     .select("*, courts(name,venue_id,venues(id,name,location))")
     .eq("booking_group_id", bookingGroupId)
-    .maybeSingle();
+    .order("start_time", { ascending: true });
   if (error) throw error;
-  if (!data) return null;
-  const [session] = await hydrateOpenPlayRegisteredCounts([mapOpenPlaySessionRow(data)]);
-  return session ?? null;
+  const sessions = (data ?? []).map(mapOpenPlaySessionRow);
+  return hydrateOpenPlayRegisteredCounts(sessions);
+}
+
+export async function getOpenPlaySessionByBookingGroupAndCourt(
+  bookingGroupId: string,
+  courtId: string,
+): Promise<OpenPlaySession | null> {
+  const sessions = await listOpenPlaySessionsByBookingGroupId(bookingGroupId);
+  return sessions.find((s) => s.court_id === courtId) ?? null;
+}
+
+export async function listOpenPlaySessionsByHostUserId(
+  hostUserId: string,
+): Promise<OpenPlaySession[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("open_play_sessions")
+    .select("*, courts(name,venue_id,venues(id,name,location))")
+    .eq("host_user_id", hostUserId)
+    .order("date", { ascending: false })
+    .order("start_time", { ascending: false });
+  if (error) throw error;
+  const sessions = (data ?? []).map(mapOpenPlaySessionRow);
+  return hydrateOpenPlayRegisteredCounts(sessions);
 }
 
 export async function getOpenPlayJoinRequestByUser(
@@ -1663,7 +1685,7 @@ export async function getOpenPlayJoinRequestByUser(
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("open_play_join_requests")
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .eq("open_play_session_id", sessionId)
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -1680,7 +1702,7 @@ export async function listOpenPlayJoinRequestsByUser(
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("open_play_join_requests")
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (sessionIds && sessionIds.length > 0) {
@@ -1712,7 +1734,7 @@ export async function createWaitlistJoinRequest(params: {
       status: "waitlisted",
       join_note: params.joinNote ?? null,
     } as never)
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .single();
   if (error) throw error;
   return mapOpenPlayJoinRequestRow(data);
@@ -1728,7 +1750,7 @@ export async function acquireOpenPlayPaymentLock(params: {
     p_session_id: params.sessionId,
     p_user_id: params.userId,
     p_lock_minutes: params.lockMinutes ?? 5,
-  });
+  } as never);
   if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : null) as
     | { result?: "locked" | "full" | "already_active" | "not_found"; request_id?: string | null }
@@ -1747,7 +1769,7 @@ export async function getOpenPlayJoinRequestById(
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("open_play_join_requests")
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .eq("id", requestId)
     .maybeSingle();
   if (error) throw error;
@@ -1785,7 +1807,7 @@ export async function submitOpenPlayJoinPaymentProof(params: {
     .eq("user_id", params.userId)
     .eq("status", "payment_locked")
     .gt("payment_lock_expires_at", nowIso)
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .maybeSingle();
   if (error) throw error;
   return data ? mapOpenPlayJoinRequestRow(data) : null;
@@ -1805,7 +1827,7 @@ export async function listOpenPlayJoinRequestsBySession(
 
   const { data, error } = await supabase
     .from("open_play_join_requests")
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .eq("open_play_session_id", sessionId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -1851,7 +1873,7 @@ export async function setOpenPlayJoinRequestDecision(params: {
     .eq("id", params.requestId)
     .eq("open_play_session_id", params.sessionId)
     .in("status", ["pending_approval", "payment_locked"])
-    .select("*, profiles(full_name,dupr_rating)")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .maybeSingle();
   if (error) throw error;
   return data ? mapOpenPlayJoinRequestRow(data) : null;
@@ -1863,7 +1885,7 @@ export async function listOpenPlayCommentsBySession(
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("open_play_comments")
-    .select("*, profiles(full_name)")
+    .select("*, profiles!open_play_comments_user_id_fkey(full_name)")
     .eq("open_play_session_id", sessionId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -1883,7 +1905,7 @@ export async function createOpenPlayComment(params: {
       user_id: params.userId,
       comment: params.comment,
     } as never)
-    .select("*, profiles(full_name)")
+    .select("*, profiles!open_play_comments_user_id_fkey(full_name)")
     .single();
   if (error) throw error;
   return mapOpenPlayCommentRow(data);

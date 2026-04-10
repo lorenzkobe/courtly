@@ -10,6 +10,7 @@ import {
   PAYMENT_PROOF_MAX_LONG_EDGE_PX,
   PAYMENT_PROOF_MIN_SHORT_EDGE_PX,
 } from "@/lib/payments/payment-proof-constraints";
+import { isOpenPlayJoinableBySchedule } from "@/lib/open-play/schedule";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -38,6 +39,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const session = await getOpenPlayById(id);
   if (!session) {
     return NextResponse.json({ error: "Open play not found" }, { status: 404 });
+  }
+  if (!isOpenPlayJoinableBySchedule(session, Date.now())) {
+    return NextResponse.json({ error: "Open play has ended" }, { status: 409 });
   }
 
   const body = (await req.json()) as Partial<SubmitProofBody>;

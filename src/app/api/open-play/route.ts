@@ -1,21 +1,56 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
-  getOpenPlayByBookingGroupId,
   getCourtById,
   insertRow,
-  listOpenPlayJoinRequestsByUser,
   listBookingsFiltered,
+  listOpenPlayJoinRequestsByUser,
   listOpenPlay,
+  listOpenPlaySessionsByBookingGroupId,
+  listOpenPlaySessionsByHostUserId,
+  getOpenPlaySessionByBookingGroupAndCourt,
 } from "@/lib/data/courtly-db";
 import type { CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
   const user = await readSessionUser();
   const { searchParams } = new URL(req.url);
+  const bookingGroupId = searchParams.get("booking_group_id")?.trim();
+  const hostedByMe = searchParams.get("hosted_by_me") === "true";
   const status = searchParams.get("status");
   const limit = Number(searchParams.get("limit")) || undefined;
   const sport = searchParams.get("sport") as CourtSport | null;
+
+  if (bookingGroupId) {
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const segments = await listBookingsFiltered({ bookingGroupId });
+    const owns = segments.some(
+      (segment) =>
+        segment.user_id === user.id ||
+        segment.player_email?.trim().toLowerCase() === user.email.trim().toLowerCase(),
+    );
+    if (!owns) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const groupSessions = await listOpenPlaySessionsByBookingGroupId(bookingGroupId);
+    return NextResponse.json(groupSessions);
+  }
+
+  if (hostedByMe) {
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    let list = await listOpenPlaySessionsByHostUserId(user.id);
+    if (sport) {
+      list = list.filter((session) => session.sport === sport);
+    }
+    if (status) list = list.filter((session) => session.status === status);
+    list.sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time));
+    if (limit) list = list.slice(0, limit);
+    return NextResponse.json(list);
+  }
 
   let list = await listOpenPlay();
   if (sport) {
@@ -46,6 +81,7 @@ export async function GET(req: Request) {
 
 type CreateOpenPlayPayload = {
   booking_group_id?: string;
+  court_ids?: string[];
   title?: string;
   max_players?: number;
   price_per_player?: number;
@@ -123,14 +159,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const existing = await getOpenPlayByBookingGroupId(bookingGroupId);
-  if (existing) {
-    return NextResponse.json(
-      { error: "Open play already exists for this booking group" },
-      { status: 409 },
-    );
-  }
-
   const segments = (await listBookingsFiltered({ bookingGroupId })).sort((a, b) =>
     a.start_time.localeCompare(b.start_time),
   );
@@ -152,37 +180,71 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const first = segments[0];
-  const last = segments[segments.length - 1];
-  const court = await getCourtById(first.court_id);
+  const distinctCourtIds = [...new Set(segments.map((s) => s.court_id))];
+  const requestedCourtIds =
+    Array.isArray(body.court_ids) && body.court_ids.length > 0
+      ? [...new Set(body.court_ids.map((id) => id.trim()).filter(Boolean))]
+      : distinctCourtIds;
 
-  const created = await insertRow("open_play_sessions", {
-    sport: first.sport ?? "pickleball",
-    title,
-    date: first.date,
-    start_time: first.start_time,
-    end_time: last.end_time,
-    skill_level: "all_levels",
-    location: court?.location ?? first.establishment_name ?? "TBD",
-    court_id: first.court_id,
-    max_players: maxPlayers,
-    current_players: 0,
-    host_user_id: user.id,
-    host_name: user.full_name,
-    host_email: user.email,
-    description: body.description?.trim() || null,
-    fee: pricePerPlayer,
-    price_per_player: pricePerPlayer,
-    dupr_min: duprMin,
-    dupr_max: duprMax,
-    booking_group_id: bookingGroupId,
-    accepts_gcash: acceptsGcash,
-    gcash_account_name: acceptsGcash ? gcashAccountName : null,
-    gcash_account_number: acceptsGcash ? gcashAccountNumber : null,
-    accepts_maya: acceptsMaya,
-    maya_account_name: acceptsMaya ? mayaAccountName : null,
-    maya_account_number: acceptsMaya ? mayaAccountNumber : null,
-    status: "open",
-  });
-  return NextResponse.json(created, { status: 201 });
+  for (const courtId of requestedCourtIds) {
+    if (!distinctCourtIds.includes(courtId)) {
+      return NextResponse.json(
+        { error: "court_ids must match courts in this booking" },
+        { status: 400 },
+      );
+    }
+  }
+
+  for (const courtId of requestedCourtIds) {
+    const existing = await getOpenPlaySessionByBookingGroupAndCourt(bookingGroupId, courtId);
+    if (existing) {
+      return NextResponse.json(
+        { error: "Open play already exists for one of the selected courts" },
+        { status: 409 },
+      );
+    }
+  }
+
+  const createdSessions: Awaited<ReturnType<typeof insertRow>>[] = [];
+
+  for (const courtId of requestedCourtIds) {
+    const courtSegments = segments
+      .filter((s) => s.court_id === courtId)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const first = courtSegments[0]!;
+    const last = courtSegments[courtSegments.length - 1]!;
+    const court = await getCourtById(courtId);
+
+    const row = await insertRow("open_play_sessions", {
+      sport: first.sport ?? "pickleball",
+      title,
+      date: first.date,
+      start_time: first.start_time,
+      end_time: last.end_time,
+      skill_level: "all_levels",
+      location: court?.location ?? first.establishment_name ?? "TBD",
+      court_id: courtId,
+      max_players: maxPlayers,
+      current_players: 0,
+      host_user_id: user.id,
+      host_name: user.full_name,
+      host_email: user.email,
+      description: body.description?.trim() || null,
+      fee: pricePerPlayer,
+      price_per_player: pricePerPlayer,
+      dupr_min: duprMin,
+      dupr_max: duprMax,
+      booking_group_id: bookingGroupId,
+      accepts_gcash: acceptsGcash,
+      gcash_account_name: acceptsGcash ? gcashAccountName : null,
+      gcash_account_number: acceptsGcash ? gcashAccountNumber : null,
+      accepts_maya: acceptsMaya,
+      maya_account_name: acceptsMaya ? mayaAccountName : null,
+      maya_account_number: acceptsMaya ? mayaAccountNumber : null,
+      status: "open",
+    });
+    createdSessions.push(row);
+  }
+
+  return NextResponse.json({ sessions: createdSessions }, { status: 201 });
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -19,19 +19,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import {
+  aggregateSessionStatus,
+  sessionStatusLabel,
+} from "@/lib/bookings/session-display-status";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import type { Booking } from "@/lib/types/courtly";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
-import { formatBookingStatusLabel } from "@/lib/utils";
-
 const bookingStatusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   pending_confirmation: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
+  __session_mixed__: "bg-sky-500/10 text-sky-900 border-sky-500/25 dark:text-sky-100",
 };
 
 const quickActions = [
@@ -68,6 +71,11 @@ const quickActions = [
 export default function DashboardPage() {
   const { user } = useAuth();
   const selectedSport = useSelectedSport((state) => state.sport);
+  const [dashNowMs, setDashNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setDashNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
   const { data: overview, isLoading: loadingTodayBookings } = useQuery({
@@ -221,6 +229,10 @@ export default function DashboardPage() {
                   0,
                 );
                 const multi = items.length > 1;
+                const { statusKey: sessionStatusKey } = aggregateSessionStatus(
+                  items,
+                  dashNowMs,
+                );
                 return (
                   <Card
                     key={detailId}
@@ -235,10 +247,10 @@ export default function DashboardPage() {
                           <Badge
                             variant="outline"
                             className={
-                              bookingStatusStyles[first.status] ?? ""
+                              bookingStatusStyles[sessionStatusKey] ?? ""
                             }
                           >
-                            {formatBookingStatusLabel(first.status)}
+                            {sessionStatusLabel(sessionStatusKey)}
                           </Badge>
                         </div>
                         {multi ? (

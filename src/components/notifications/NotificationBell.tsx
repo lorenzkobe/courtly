@@ -91,7 +91,7 @@ export default function NotificationBell() {
   const queryClient = useQueryClient();
   const realtimeOk = isSupabasePublicConfigured();
   const [open, setOpen] = useState(false);
-  const { realtimeConnected } = useNotificationRealtime(user?.id ?? null);
+  useNotificationRealtime(user?.id ?? null);
 
   const {
     data,
@@ -116,8 +116,8 @@ export default function NotificationBell() {
       // the badge count immediately, even before the popover is opened.
       enabled: Boolean(user),
       staleTime: 15_000,
-      // Realtime first; poll as fallback when channel isn't connected.
-      refetchInterval: realtimeOk && realtimeConnected ? false : 10_000,
+      // Realtime invalidates on insert; poll as backup (especially if channel misses an event).
+      refetchInterval: realtimeOk ? 30_000 : 10_000,
     });
 
   const markRead = useMutation({

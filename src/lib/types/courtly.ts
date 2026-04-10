@@ -366,6 +366,8 @@ export type OpenPlayComment = {
 
 export type OpenPlayDetailResponse = {
   session: OpenPlaySession;
+  /** Full court row when `session.court_id` is set (venue card, map, contact). */
+  court?: Court | null;
   my_request?: OpenPlayJoinRequest | null;
   pending_requests?: OpenPlayJoinRequest[];
   comments: OpenPlayComment[];
@@ -375,6 +377,10 @@ export type OpenPlayDetailResponse = {
     payment_locked: number;
     waitlisted: number;
   };
+};
+
+export type OpenPlayCreateResponse = {
+  sessions: OpenPlaySession[];
 };
 
 export type SessionUser = {
@@ -478,6 +484,8 @@ export type BookingDetailGroupResponse = {
 export type BookingDetailContextResponse = BookingDetailGroupResponse & {
   court?: Court;
   reviews?: CourtReview[];
+  /** Server timestamp used by UI for deterministic time-window checks. */
+  server_now?: string;
 };
 
 export type VenueDetailResponse = {

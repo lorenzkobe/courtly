@@ -4,6 +4,7 @@ import {
   createWaitlistJoinRequest,
   getOpenPlayById,
 } from "@/lib/data/courtly-db";
+import { isOpenPlayJoinableBySchedule } from "@/lib/open-play/schedule";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,6 +21,9 @@ export async function POST(req: Request, ctx: Ctx) {
   }
   if (session.status === "cancelled" || session.status === "completed") {
     return NextResponse.json({ error: "Open play is closed" }, { status: 409 });
+  }
+  if (!isOpenPlayJoinableBySchedule(session, Date.now())) {
+    return NextResponse.json({ error: "Open play has ended" }, { status: 409 });
   }
   if (session.host_user_id === user.id) {
     return NextResponse.json({ error: "Host cannot join own open play" }, { status: 400 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
   countOpenPlayJoinRequestsBySession,
+  getCourtById,
   getOpenPlayById,
   getOpenPlayJoinRequestByUser,
   listOpenPlayCommentsBySession,
@@ -22,17 +23,19 @@ export async function GET(_req: Request, ctx: Ctx) {
   const existing = await getOpenPlayById(id);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [myRequest, requests, comments, counts] = await Promise.all([
+  const [myRequest, requests, comments, counts, court] = await Promise.all([
     getOpenPlayJoinRequestByUser(id, user.id),
     existing.host_user_id === user.id
       ? listOpenPlayJoinRequestsBySession(id)
       : Promise.resolve([]),
     listOpenPlayCommentsBySession(id),
     countOpenPlayJoinRequestsBySession(id),
+    existing.court_id ? getCourtById(existing.court_id) : Promise.resolve(null),
   ]);
 
   return NextResponse.json({
     session: existing,
+    court: court ?? null,
     my_request: myRequest,
     pending_requests: requests.filter((request) =>
       ["pending_approval", "payment_locked", "waitlisted"].includes(request.status),
