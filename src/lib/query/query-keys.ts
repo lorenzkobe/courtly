@@ -128,7 +128,13 @@ export const queryKeys = {
   },
   openPlay: {
     all: () => ["open-play"] as const,
-    list: (params?: { status?: string; limit?: number; sport?: string }) =>
+    list: (params?: {
+      status?: string;
+      limit?: number;
+      sport?: string;
+      booking_group_id?: string;
+      hosted_by_me?: boolean;
+    }) =>
       [
         "open-play",
         "list",
@@ -136,8 +142,12 @@ export const queryKeys = {
           status: normalized(params?.status),
           limit: params?.limit ?? null,
           sport: normalized(params?.sport),
+          booking_group_id: normalized(params?.booking_group_id),
+          hosted_by_me: params?.hosted_by_me ?? null,
         },
       ] as const,
+    detail: (sessionId: NullableString) =>
+      ["open-play", "detail", normalized(sessionId)] as const,
   },
   registrations: {
     all: () => ["registrations"] as const,

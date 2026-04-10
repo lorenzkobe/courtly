@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -33,6 +33,12 @@ import {
 } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
+import { segmentStatusForDisplay } from "@/lib/bookings/booking-time-display";
+import {
+  aggregateSessionStatus,
+  sessionFullyCompletedForReview,
+  sessionStatusLabel,
+} from "@/lib/bookings/session-display-status";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
@@ -43,6 +49,7 @@ const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
+  __session_mixed__: "bg-sky-500/10 text-sky-900 border-sky-500/25 dark:text-sky-100",
 };
 
 /** Remount when `myReview` appears/changes so draft state stays in sync without an effect. */
@@ -50,15 +57,30 @@ function BookingReviewSection({
   bookingId,
   court,
   myReview,
+  serverNowMs,
 }: {
   bookingId: string;
   court: Court;
   myReview: CourtReview | undefined;
+  serverNowMs: number | null;
 }) {
   const queryClient = useQueryClient();
   const [ratingDraft, setRatingDraft] = useState(myReview?.rating ?? 0);
   const [commentDraft, setCommentDraft] = useState(myReview?.comment ?? "");
   const [confirmDeleteReviewOpen, setConfirmDeleteReviewOpen] = useState(false);
+  const canModifyExistingReview = useMemo(() => {
+    if (!myReview) return true;
+    if (serverNowMs == null) return true;
+    const createdAtMs = Date.parse(myReview.created_at);
+    if (Number.isNaN(createdAtMs)) return false;
+    return serverNowMs - createdAtMs <= 24 * 60 * 60 * 1000;
+  }, [myReview, serverNowMs]);
+  const reviewEditDeadlineLabel = useMemo(() => {
+    if (!myReview) return null;
+    const createdAtMs = Date.parse(myReview.created_at);
+    if (Number.isNaN(createdAtMs)) return null;
+    return format(new Date(createdAtMs + 24 * 60 * 60 * 1000), "PPp");
+  }, [myReview]);
 
   const invalidateReviews = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -129,14 +151,26 @@ function BookingReviewSection({
       />
       <Card className="border-border/50">
         <CardContent className="space-y-4 p-6">
-          <h2 className="font-heading text-lg font-semibold text-foreground">
-            {myReview ? "Your review" : "Rate this court"}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {myReview
-              ? "Update your star rating or note, or remove your review."
-              : "Share a 1–5 star rating after your visit. A short note is optional."}
-          </p>
+          <div>
+            <h2 className="font-heading text-lg font-semibold text-foreground pb-2">
+              {myReview ? "Your review" : "Rate this court"}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {myReview
+                ? "Update your star rating or note, or remove your review."
+                : "Share a 1–5 star rating after your visit. A short note is optional."}
+            </p>
+            {myReview ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                You can edit or delete your review within 24 hours of posting.
+                {!canModifyExistingReview
+                  ? reviewEditDeadlineLabel
+                    ? ` Editing window ended on ${reviewEditDeadlineLabel}.`
+                    : " Editing window has ended."
+                  : ""}
+              </p>
+            ) : null}
+          </div>
           <div className="space-y-2">
             <Label>Stars</Label>
             <div className="flex gap-1">
@@ -178,7 +212,8 @@ function BookingReviewSection({
                   disabled={
                     ratingDraft < 1 ||
                     ratingDraft > 5 ||
-                    updateReviewMut.isPending
+                    updateReviewMut.isPending ||
+                    !canModifyExistingReview
                   }
                   onClick={() => updateReviewMut.mutate()}
                 >
@@ -188,7 +223,7 @@ function BookingReviewSection({
                   type="button"
                   variant="outline"
                   className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                  disabled={deleteReviewMut.isPending}
+                  disabled={deleteReviewMut.isPending || !canModifyExistingReview}
                   onClick={() => setConfirmDeleteReviewOpen(true)}
                 >
                   <Trash2 className="mr-1.5 h-4 w-4" />
@@ -218,6 +253,7 @@ function BookingReviewSection({
 export default function BookingDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const bookingId = params.id;
   const bookingRealtimeKeys = useMemo(
@@ -242,6 +278,18 @@ export default function BookingDetailPage() {
   const booking = bookingPayload?.booking;
   const groupMembers = bookingPayload?.group_segments;
   const court = bookingPayload?.court;
+  const serverNowMs = useMemo(() => {
+    const raw = bookingPayload?.server_now;
+    if (!raw) return null;
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? null : parsed;
+  }, [bookingPayload?.server_now]);
+  const [clientNowMs, setClientNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setClientNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const statusNowMs = serverNowMs ?? clientNowMs;
 
   const segments = useMemo((): Booking[] => {
     if (!booking) return [];
@@ -250,6 +298,22 @@ export default function BookingDetailPage() {
     }
     return [booking];
   }, [booking, groupMembers]);
+
+  /** Distinct courts in this checkout (order follows first segment appearance). */
+  const sessionCourts = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const s of segments) {
+      if (!byId.has(s.court_id)) {
+        const label = (s.court_name ?? "").trim() || "Court";
+        byId.set(s.court_id, label);
+      }
+    }
+    const labelsInOrder = [...byId.values()];
+    return {
+      labelsInOrder,
+      multiple: labelsInOrder.length > 1,
+    };
+  }, [segments]);
 
   const combinedNote = useMemo(() => {
     const texts = new Set<string>();
@@ -269,7 +333,57 @@ export default function BookingDetailPage() {
     user &&
     booking &&
     booking.player_email?.toLowerCase() === user.email.toLowerCase();
-  const visitCompleted = booking?.status === "completed";
+
+  const bookingGroupIdForOpenPlay = booking?.booking_group_id ?? booking?.id;
+  const openPlayFromBookingEligible =
+    Boolean(isMyBooking) &&
+    segments.length > 0 &&
+    segments.every((s) => s.status === "confirmed");
+
+  const { data: groupOpenPlaySessions = [] } = useQuery({
+    queryKey: queryKeys.openPlay.list({
+      booking_group_id: bookingGroupIdForOpenPlay,
+    }),
+    queryFn: async () => {
+      const { data } = await courtlyApi.openPlay.list({
+        booking_group_id: bookingGroupIdForOpenPlay!,
+      });
+      return data;
+    },
+    enabled: Boolean(bookingGroupIdForOpenPlay && openPlayFromBookingEligible),
+  });
+
+  const distinctCourtsForOpenPlay = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of segments) {
+      if (!m.has(s.court_id)) {
+        m.set(s.court_id, (s.court_name ?? "").trim() || "Court");
+      }
+    }
+    return [...m.entries()].map(([id, name]) => ({ id, name }));
+  }, [segments]);
+
+  const openPlaySelectableCourts = useMemo(() => {
+    const existing = new Set(
+      groupOpenPlaySessions
+        .map((s) => s.court_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    return distinctCourtsForOpenPlay.filter((c) => !existing.has(c.id));
+  }, [distinctCourtsForOpenPlay, groupOpenPlaySessions]);
+
+  const [optOutCourtIds, setOptOutCourtIds] = useState<string[]>([]);
+
+  const selectedOpenPlayCourtIds = useMemo(() => {
+    const opt = new Set(
+      optOutCourtIds.filter((id) =>
+        openPlaySelectableCourts.some((c) => c.id === id),
+      ),
+    );
+    return openPlaySelectableCourts.filter((c) => !opt.has(c.id)).map((c) => c.id);
+  }, [openPlaySelectableCourts, optOutCourtIds]);
+
+  const visitCompleted = sessionFullyCompletedForReview(segments, statusNowMs);
   const shouldFetchReviews =
     Boolean(isMyBooking) && Boolean(visitCompleted) && Boolean(court?.venue_id);
 
@@ -279,14 +393,55 @@ export default function BookingDetailPage() {
   );
   const loadingReviews = loadingBooking && shouldFetchReviews;
 
-  const myReview = useMemo(() => {
-    if (!reviews || !bookingId) return undefined;
-    return reviews.find(
-      (review) => review.booking_id === bookingId,
-    );
-  }, [reviews, bookingId]);
+  const myReview = !reviews || !user?.id
+    ? undefined
+    : reviews.find((review) => review.user_id === user.id);
 
   const loading = loadingBooking;
+  const [openPlayTitle, setOpenPlayTitle] = useState("");
+  const [openPlaySlots, setOpenPlaySlots] = useState(8);
+  const [openPlayPrice, setOpenPlayPrice] = useState(0);
+  const [openPlayDuprMin, setOpenPlayDuprMin] = useState(0);
+  const [openPlayDuprMax, setOpenPlayDuprMax] = useState(8);
+  const [openPlayDescription, setOpenPlayDescription] = useState("");
+
+  const createOpenPlayMutation = useMutation({
+    mutationFn: async () => {
+      if (!booking) throw new Error("Booking missing");
+      const bookingGroupId = booking.booking_group_id ?? booking.id;
+      return courtlyApi.openPlay.create({
+        booking_group_id: bookingGroupId,
+        court_ids:
+          selectedOpenPlayCourtIds.length > 0 ? selectedOpenPlayCourtIds : undefined,
+        title: openPlayTitle.trim(),
+        max_players: Number(openPlaySlots),
+        price_per_player: Number(openPlayPrice),
+        dupr_min: Number(openPlayDuprMin),
+        dupr_max: Number(openPlayDuprMax),
+        description: openPlayDescription.trim() || undefined,
+        accepts_gcash: Boolean(court?.accepts_gcash),
+        gcash_account_name: court?.gcash_account_name ?? undefined,
+        gcash_account_number: court?.gcash_account_number ?? undefined,
+        accepts_maya: Boolean(court?.accepts_maya),
+        maya_account_name: court?.maya_account_name ?? undefined,
+        maya_account_number: court?.maya_account_number ?? undefined,
+      });
+    },
+    onSuccess: ({ data }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
+      const created = data.sessions ?? [];
+      if (created.length === 1) {
+        toast.success("Open play created.");
+        router.push(`/open-play/${created[0]!.id}`);
+        return;
+      }
+      toast.success(`Created ${created.length} open play sessions.`);
+      router.push("/open-play");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not create open play"));
+    },
+  });
 
   const hasMapPin =
     court &&
@@ -323,6 +478,10 @@ export default function BookingDetailPage() {
   }
 
   const multi = segments.length > 1;
+  const { statusKey: sessionStatusKey } = aggregateSessionStatus(
+    segments,
+    statusNowMs,
+  );
 
   const canReviewBooking = Boolean(isMyBooking) && Boolean(visitCompleted);
   const canRate =
@@ -337,6 +496,11 @@ export default function BookingDetailPage() {
     user &&
     myReview.user_id === user.id,
   );
+  const canCreateOpenPlay =
+    openPlayFromBookingEligible &&
+    distinctCourtsForOpenPlay.some(
+      (c) => !groupOpenPlaySessions.some((sess) => sess.court_id === c.id),
+    );
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
@@ -352,7 +516,7 @@ export default function BookingDetailPage() {
         title="Booking details"
         subtitle={
           multi
-            ? `${booking.court_name ?? "Court"} — one checkout, ${segments.length} reserved times`
+            ? `${sessionCourts.labelsInOrder.join(", ")} — one checkout, ${segments.length} reserved time${segments.length === 1 ? "" : "s"}`
             : (booking.court_name ?? "Court reservation")
         }
       />
@@ -364,8 +528,14 @@ export default function BookingDetailPage() {
               Summary
             </h2>
             <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr] sm:gap-x-6">
-              <dt className="text-muted-foreground">Court</dt>
-              <dd className="font-medium">{booking.court_name ?? "—"}</dd>
+              <dt className="text-muted-foreground">
+                Court{sessionCourts.multiple ? "s" : ""}
+              </dt>
+              <dd className="font-medium">
+                {sessionCourts.labelsInOrder.length > 0
+                  ? sessionCourts.labelsInOrder.join(", ")
+                  : (booking.court_name ?? "—")}
+              </dd>
               <dt className="text-muted-foreground">Booking #</dt>
               <dd className="font-mono text-xs">{booking.booking_number ?? "—"}</dd>
               <dt className="text-muted-foreground">Date</dt>
@@ -379,9 +549,9 @@ export default function BookingDetailPage() {
               <dd>
                 <Badge
                   variant="outline"
-                  className={statusStyles[booking.status] ?? ""}
+                  className={statusStyles[sessionStatusKey] ?? ""}
                 >
-                  {formatBookingStatusLabel(booking.status)}
+                  {sessionStatusLabel(sessionStatusKey)}
                 </Badge>
               </dd>
             </dl>
@@ -393,22 +563,45 @@ export default function BookingDetailPage() {
               <ul className="space-y-3">
                 {segments.map((segment) => {
                   const hours = bookingDurationHours(segment);
+                  const segmentCourtLabel =
+                    (segment.court_name ?? "").trim() || "Court";
+                  const displayStatus = segmentStatusForDisplay(
+                    segment,
+                    statusNowMs,
+                  );
                   return (
                     <li
                       key={segment.id}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 p-3"
                     >
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
-                        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        {formatTimeShort(segment.start_time)} –{" "}
-                        {formatTimeShort(segment.end_time)}
-                        <span className="text-muted-foreground">
-                          ({hours} {hours === 1 ? "hr" : "hrs"})
-                        </span>
+                      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 flex-col gap-1">
+                          {sessionCourts.multiple ? (
+                            <span className="text-sm font-medium text-foreground">
+                              {segmentCourtLabel}
+                            </span>
+                          ) : null}
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
+                            <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {formatTimeShort(segment.start_time)} –{" "}
+                            {formatTimeShort(segment.end_time)}
+                            <span className="text-muted-foreground">
+                              ({hours} {hours === 1 ? "hr" : "hrs"})
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                          <Badge
+                            variant="outline"
+                            className={statusStyles[displayStatus] ?? ""}
+                          >
+                            {formatBookingStatusLabel(displayStatus)}
+                          </Badge>
+                          <span className="text-sm font-semibold text-foreground tabular-nums">
+                            {formatPhp(segment.total_cost ?? 0)}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-sm font-semibold text-foreground tabular-nums">
-                        {formatPhp(segment.total_cost ?? 0)}
-                      </span>
                     </li>
                   );
                 })}
@@ -421,17 +614,19 @@ export default function BookingDetailPage() {
                 {formatPhp(sessionTotal)}
               </span>
             </div>
-            {booking.status === "pending_payment" ? (
+            {segments.some((s) => s.status === "pending_payment") ? (
               <div className="border-t border-border/60 pt-4">
                 <p className="text-sm text-muted-foreground">
-                  Payment is still pending. Open the booking page again to submit proof before the timer expires.
+                  Payment is still pending for at least one reservation. Open this page
+                  again to submit proof before the timer expires.
                 </p>
               </div>
             ) : null}
-            {booking.status === "pending_confirmation" ? (
+            {segments.some((s) => s.status === "pending_confirmation") ? (
               <div className="border-t border-border/60 pt-4">
                 <p className="text-sm text-muted-foreground">
-                  Payment proof submitted. Waiting for venue confirmation.
+                  Payment proof submitted for at least one reservation. Waiting for venue
+                  confirmation.
                 </p>
               </div>
             ) : null}
@@ -447,6 +642,158 @@ export default function BookingDetailPage() {
           </CardContent>
         </Card>
 
+        {canCreateOpenPlay ? (
+          <Card className="border-border/50">
+            <CardContent className="space-y-4 p-6">
+              <h2 className="font-heading text-lg font-semibold text-foreground">
+                Create open play from this booking
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Turn this confirmed booking into open play lobbies. Each court you select
+                becomes its own session (same title, price, and settings).
+              </p>
+              {distinctCourtsForOpenPlay.length > 1 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Courts for open play
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {distinctCourtsForOpenPlay.map((c) => {
+                      const already = groupOpenPlaySessions.some(
+                        (sess) => sess.court_id === c.id,
+                      );
+                      const isSelected = selectedOpenPlayCourtIds.includes(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          disabled={already}
+                          aria-pressed={already ? undefined : isSelected}
+                          aria-label={
+                            already
+                              ? `${c.name}, open play already created`
+                              : isSelected
+                                ? `${c.name}, selected for open play`
+                                : `${c.name}, not selected`
+                          }
+                          onClick={() => {
+                            if (already) return;
+                            setOptOutCourtIds((prev) =>
+                              isSelected
+                                ? prev.includes(c.id)
+                                  ? prev
+                                  : [...prev, c.id]
+                                : prev.filter((x) => x !== c.id),
+                            );
+                          }}
+                          className={cn(
+                            "min-h-10 min-w-[8.5rem] max-w-full rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors",
+                            already &&
+                              "cursor-not-allowed border-border bg-muted text-muted-foreground/80",
+                            !already &&
+                              isSelected &&
+                              "border-primary bg-primary text-primary-foreground shadow-sm",
+                            !already &&
+                              !isSelected &&
+                              "border-border bg-background hover:border-primary/40 hover:bg-primary/5",
+                          )}
+                        >
+                          <span className="block truncate">{c.name}</span>
+                          <span
+                            className={cn(
+                              "mt-0.5 block text-[11px] font-normal leading-tight",
+                              already && "text-muted-foreground/90",
+                              !already && isSelected && "text-primary-foreground/90",
+                              !already && !isSelected && "text-muted-foreground",
+                            )}
+                          >
+                            {already
+                              ? "Created"
+                              : isSelected
+                                ? "Selected"
+                                : "Tap to add"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Tap courts like booking slots—selected courts each get their own open
+                    play with the same details below.
+                  </p>
+                </div>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-title">Lobby name</Label>
+                  <Textarea
+                    id="open-play-title"
+                    rows={1}
+                    value={openPlayTitle}
+                    onChange={(event) => setOpenPlayTitle(event.target.value)}
+                    placeholder="Friday Evening Games"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-slots">Slots</Label>
+                  <Textarea
+                    id="open-play-slots"
+                    rows={1}
+                    value={String(openPlaySlots)}
+                    onChange={(event) => setOpenPlaySlots(Number(event.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="open-play-price">Price per player (PHP)</Label>
+                  <Textarea
+                    id="open-play-price"
+                    rows={1}
+                    value={String(openPlayPrice)}
+                    onChange={(event) => setOpenPlayPrice(Number(event.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>DUPR range</Label>
+                  <div className="flex gap-2">
+                    <Textarea
+                      rows={1}
+                      value={String(openPlayDuprMin)}
+                      onChange={(event) => setOpenPlayDuprMin(Number(event.target.value) || 0)}
+                    />
+                    <Textarea
+                      rows={1}
+                      value={String(openPlayDuprMax)}
+                      onChange={(event) => setOpenPlayDuprMax(Number(event.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="open-play-description">Description</Label>
+                <Textarea
+                  id="open-play-description"
+                  rows={3}
+                  value={openPlayDescription}
+                  onChange={(event) => setOpenPlayDescription(event.target.value)}
+                  placeholder="Optional notes for players"
+                />
+              </div>
+              <Button
+                onClick={() => createOpenPlayMutation.mutate()}
+                disabled={
+                  createOpenPlayMutation.isPending ||
+                  !openPlayTitle.trim() ||
+                  openPlaySlots < 2 ||
+                  openPlayDuprMin > openPlayDuprMax ||
+                  selectedOpenPlayCourtIds.length === 0
+                }
+              >
+                {createOpenPlayMutation.isPending ? "Creating..." : "Create Open Play"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {canRate || canEditReview ? (
           court ? (
             <BookingReviewSection
@@ -454,6 +801,7 @@ export default function BookingDetailPage() {
               bookingId={bookingId}
               court={court}
               myReview={myReview}
+              serverNowMs={serverNowMs}
             />
           ) : null
         ) : null}
@@ -468,7 +816,6 @@ export default function BookingDetailPage() {
                 <p className="text-base font-semibold text-foreground">
                   {court.establishment_name ?? booking.establishment_name ?? "—"}
                 </p>
-                <p className="mt-0.5 text-sm text-muted-foreground">{court.name}</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">

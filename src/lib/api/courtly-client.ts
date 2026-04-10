@@ -14,6 +14,10 @@ import type {
   CourtReview,
   DashboardOverviewResponse,
   ManagedUser,
+  OpenPlayComment,
+  OpenPlayCreateResponse,
+  OpenPlayDetailResponse,
+  OpenPlayJoinRequest,
   OpenPlaySession,
   MyBookingsOverviewResponse,
   RevenueSummaryResponse,
@@ -254,8 +258,62 @@ export const courtlyApi = {
   },
 
   openPlay: {
-    list: (params?: { status?: string; limit?: number; sport?: string }) =>
-      http.get<OpenPlaySession[]>("/api/open-play", { params }),
+    list: (params?: {
+      status?: string;
+      limit?: number;
+      sport?: string;
+      booking_group_id?: string;
+      hosted_by_me?: boolean;
+    }) => http.get<OpenPlaySession[]>("/api/open-play", { params }),
+    create: (body: {
+      booking_group_id: string;
+      court_ids?: string[];
+      title: string;
+      max_players: number;
+      price_per_player: number;
+      dupr_min: number;
+      dupr_max: number;
+      description?: string;
+      accepts_gcash: boolean;
+      gcash_account_name?: string;
+      gcash_account_number?: string;
+      accepts_maya: boolean;
+      maya_account_name?: string;
+      maya_account_number?: string;
+    }) => http.post<OpenPlayCreateResponse>("/api/open-play", body),
+    get: (id: string) => http.get<OpenPlayDetailResponse>(`/api/open-play/${id}`),
+    join: (id: string, body?: { join_note?: string }) =>
+      http.post<{ request: OpenPlayJoinRequest }>(`/api/open-play/${id}/join`, body ?? {}),
+    acquirePaymentLock: (id: string) =>
+      http.post<{
+        result: "locked" | "full" | "already_active" | "not_found";
+        request: OpenPlayJoinRequest | null;
+      }>(`/api/open-play/${id}/acquire-payment-lock`),
+    submitProof: (
+      id: string,
+      body: {
+        payment_method: "gcash" | "maya";
+        payment_proof_data_url: string;
+        payment_proof_mime_type: "image/jpeg";
+        payment_proof_bytes: number;
+        payment_proof_width: number;
+        payment_proof_height: number;
+        join_note?: string;
+      },
+    ) =>
+      http.post<{ request: OpenPlayJoinRequest }>(`/api/open-play/${id}/submit-proof`, body),
+    approveRequest: (id: string, requestId: string, body?: { organizer_note?: string }) =>
+      http.post<{ request: OpenPlayJoinRequest }>(
+        `/api/open-play/${id}/requests/${requestId}/approve`,
+        body ?? {},
+      ),
+    denyRequest: (id: string, requestId: string, body?: { organizer_note?: string }) =>
+      http.post<{ request: OpenPlayJoinRequest }>(
+        `/api/open-play/${id}/requests/${requestId}/deny`,
+        body ?? {},
+      ),
+    addComment: (id: string, body: { comment: string }) =>
+      http.post<{ comment: OpenPlayComment }>(`/api/open-play/${id}/comments`, body),
     update: (id: string, data: Partial<OpenPlaySession>) =>
       http.patch<OpenPlaySession>(`/api/open-play/${id}`, data),
   },

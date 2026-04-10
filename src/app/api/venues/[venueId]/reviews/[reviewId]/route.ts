@@ -6,6 +6,13 @@ import { emitReviewFlagCleared } from "@/lib/notifications/emit-from-server";
 import type { CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
+const REVIEW_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isWithinReviewEditWindow(review: CourtReview, nowMs = Date.now()): boolean {
+  const createdAtMs = Date.parse(review.created_at);
+  if (Number.isNaN(createdAtMs)) return false;
+  return nowMs - createdAtMs <= REVIEW_EDIT_WINDOW_MS;
+}
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
@@ -46,6 +53,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   if (review.user_id !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!isWithinReviewEditWindow(review)) {
+    return NextResponse.json(
+      { error: "You can only edit your review within 24 hours of posting." },
+      { status: 403 },
+    );
   }
 
   const rating =
@@ -90,6 +103,12 @@ export async function DELETE(_req: Request, ctx: Ctx) {
 
   if (!isAuthor && !isPlatform) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (isAuthor && !isWithinReviewEditWindow(review)) {
+    return NextResponse.json(
+      { error: "You can only delete your review within 24 hours of posting." },
+      { status: 403 },
+    );
   }
 
   await deleteRow("court_reviews", reviewId);

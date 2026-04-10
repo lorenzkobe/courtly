@@ -2,30 +2,32 @@
 
 import {
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
 import {
+  addDays,
+  addMonths,
   format,
+  isAfter,
   isBefore,
-  isSameDay,
   startOfDay,
-  startOfMonth,
 } from "date-fns";
 import {
   ArrowLeft,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock,
   ExternalLink,
   Heart,
   Loader2,
   MapPin,
   Star,
+  Trash2,
   Upload,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -55,14 +57,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
-import {
-  hourlyRateForHourStart,
-  segmentTotalCost,
-  segmentsTotalCost,
-} from "@/lib/court-pricing";
+import { segmentsTotalCost } from "@/lib/court-pricing";
 import {
   splitBookingAmounts,
 } from "@/lib/platform-fee";
@@ -72,7 +71,6 @@ import {
   availableSegmentsInRange,
   exclusiveEndAfterLastIncludedHour,
   formatBookableHourSlotRange,
-  formatHourToken,
   formatSegmentLine,
   formatTimeShort,
   groupIntoContiguousHourRuns,
@@ -80,8 +78,6 @@ import {
   isBookableHourStartInPast,
   occupiedHourStarts,
   occupiedHourStartsFromClosures,
-  totalBillableHours,
-  type BookingSegment,
 } from "@/lib/booking-range";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -101,42 +97,8 @@ import { optimizePaymentProofImage } from "@/lib/payments/optimize-payment-proof
 import {
   PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES,
 } from "@/lib/payments/payment-proof-constraints";
-
-function buildBookingPayloads(
-  segments: BookingSegment[],
-  court: Court,
-  ctx: {
-    date: string;
-    playerName: string;
-    playerEmail: string;
-    notes: string;
-    bookingGroupId: string;
-  },
-): Partial<Booking>[] {
-  return segments.map((seg) => {
-    const court_subtotal = segmentTotalCost(court, seg);
-    const { booking_fee, total_cost } = splitBookingAmounts(
-      court_subtotal,
-      undefined,
-    );
-    return {
-      court_id: court.id,
-      court_name: court.name,
-      sport: court.sport,
-      booking_group_id: ctx.bookingGroupId,
-      date: ctx.date,
-      start_time: seg.start_time,
-      end_time: seg.end_time,
-      player_name: ctx.playerName,
-      player_email: ctx.playerEmail,
-      court_subtotal,
-      booking_fee,
-      total_cost,
-      notes: ctx.notes || undefined,
-      status: "confirmed" as const,
-    };
-  });
-}
+import { buildBookingPayloads } from "@/lib/bookings/booking-payloads";
+import { useBookingCart } from "@/lib/stores/booking-cart";
 
 function courtGalleryUrls(court: Court): string[] {
   const g = court.gallery_urls?.filter(Boolean);
@@ -154,6 +116,25 @@ function courtNumberLabel(court: Court): string {
     return rawName.slice(prefix.length).trim();
   }
   return rawName;
+}
+
+function cartLineLabel(slots: string[]): string {
+  const runs = groupIntoContiguousHourRuns(slots);
+  return runs
+    .map((run) => {
+      const start = run[0]!;
+      const endExclusive = exclusiveEndAfterLastIncludedHour(run[run.length - 1]!);
+      return formatSegmentLine({
+        start_time: start,
+        end_time: endExclusive,
+        hours: run.length,
+      });
+    })
+    .join(" and ");
+}
+
+function formatMatrixTimeLabel(time: string): string {
+  return formatBookableHourSlotRange(time).replace(/\s*[-–]\s*/g, " - ");
 }
 
 const EMPTY_BOOKINGS: Booking[] = [];
@@ -279,12 +260,14 @@ export default function BookCourtPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toggleFavorite, isFavorite } = useFavoriteVenueIds();
+  const addOrMergeCartItem = useBookingCart((state) => state.addOrMergeItem);
+  const removeCartItem = useBookingCart((state) => state.removeItem);
+  const clearCart = useBookingCart((state) => state.clearCart);
+  const cartItems = useBookingCart((state) => state.items);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
-  const [blockedWarningOpen, setBlockedWarningOpen] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [cartCheckoutReviewOpen, setCartCheckoutReviewOpen] = useState(false);
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
@@ -300,14 +283,15 @@ export default function BookCourtPage() {
   const proofFileInputRef = useRef<HTMLInputElement>(null);
   const [proofOptimizing, setProofOptimizing] = useState(false);
   const [proofDragActive, setProofDragActive] = useState(false);
-
-  const selectedSet = useMemo(() => new Set(selectedSlots), [selectedSlots]);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   useEffect(() => {
     setActiveCourtId(paramCourtId);
   }, [paramCourtId]);
 
   const dateIso = format(selectedDate, "yyyy-MM-dd");
+  const todayStart = useMemo(() => startOfDay(new Date()), []);
+  const maxSelectableDate = useMemo(() => addMonths(todayStart, 4), [todayStart]);
   const bookingSurfaceKey = queryKeys.bookingSurface.courtDay(activeCourtId, dateIso);
   const myDayBookingsQueryKey = useMemo(
     () =>
@@ -363,40 +347,48 @@ export default function BookCourtPage() {
     enabled: !!user?.email && !!activeCourtId,
   });
   const court = bookingSurface?.court;
-  const establishmentCourts = bookingSurface?.sibling_courts ?? [];
-  const existingBookings = bookingSurface?.availability.bookings ?? EMPTY_BOOKINGS;
-  const dayClosures = bookingSurface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
-  const venueDayClosures =
-    bookingSurface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
-  const isHoursLoading = isLoadingBookingSurface;
+  const establishmentCourts = useMemo(
+    () => bookingSurface?.sibling_courts ?? [],
+    [bookingSurface?.sibling_courts],
+  );
+  const matrixCourts = useMemo(() => {
+    const unique = new Map<string, Court>();
+    if (court) unique.set(court.id, court);
+    for (const sibling of establishmentCourts) unique.set(sibling.id, sibling);
+    return Array.from(unique.values());
+  }, [court, establishmentCourts]);
+  const matrixSurfaceQueries = useQueries({
+    queries: matrixCourts.map((matrixCourt) => ({
+      queryKey: queryKeys.bookingSurface.courtDay(matrixCourt.id, dateIso),
+      queryFn: async () => {
+        const { data } = await courtlyApi.courts.bookingSurface(matrixCourt.id, {
+          date: dateIso,
+        });
+        return data;
+      },
+      staleTime: 15_000,
+      enabled: !!matrixCourt.id,
+    })),
+  });
+  const cartSurfaceQueries = useQueries({
+    queries: cartItems.map((item) => ({
+      queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
+      queryFn: async () => {
+        const { data } = await courtlyApi.courts.bookingSurface(item.courtId, {
+          date: item.date,
+        });
+        return data;
+      },
+      staleTime: 15_000,
+      enabled: !!item.courtId,
+    })),
+  });
   const isLoading = isLoadingBookingSurface;
 
-  const bookingOccupied = useMemo(
-    () => occupiedHourStarts(existingBookings),
-    [existingBookings],
+  const courtReviews = useMemo(
+    () => bookingSurface?.reviews ?? [],
+    [bookingSurface?.reviews],
   );
-  const closureOccupied = useMemo(() => {
-    const merged = occupiedHourStartsFromClosures(dayClosures, dateIso);
-    for (const token of occupiedHourStartsFromClosures(venueDayClosures, dateIso)) {
-      merged.add(token);
-    }
-    return merged;
-  }, [dayClosures, venueDayClosures, dateIso]);
-  const occupied = useMemo(() => {
-    const merged = new Set<string>();
-    for (const t of bookingOccupied) merged.add(t);
-    for (const t of closureOccupied) merged.add(t);
-    return merged;
-  }, [bookingOccupied, closureOccupied]);
-
-  useEffect(() => {
-    setSelectedSlots((prev) => {
-      const next = prev.filter((t) => !occupied.has(t));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [occupied]);
-
-  const courtReviews = bookingSurface?.reviews ?? [];
   const isLoadingReviews = isLoadingBookingSurface;
 
   const reviewsNewestFirst = useMemo(
@@ -431,72 +423,81 @@ export default function BookCourtPage() {
     [court],
   );
 
-  const segments = useMemo(() => {
-    if (selectedSlots.length === 0) return [];
-    const runs = groupIntoContiguousHourRuns(selectedSlots);
-    const out: BookingSegment[] = [];
-    for (const run of runs) {
-      const a = run[0]!;
-      const b = run[run.length - 1]!;
-      const exclEnd = exclusiveEndAfterLastIncludedHour(b);
-      out.push(...availableSegmentsInRange(a, exclEnd, occupied));
-    }
+  const matrixOccupiedByCourtId = useMemo(() => {
+    const out = new Map<string, Set<string>>();
+    matrixCourts.forEach((matrixCourt, idx) => {
+      const surface = matrixSurfaceQueries[idx]?.data;
+      const bookings = surface?.availability.bookings ?? EMPTY_BOOKINGS;
+      const courtClosures = surface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
+      const venueClosures = surface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
+      const occupiedForCourt = occupiedHourStarts(bookings);
+      for (const token of occupiedHourStartsFromClosures(courtClosures, dateIso)) {
+        occupiedForCourt.add(token);
+      }
+      for (const token of occupiedHourStartsFromClosures(venueClosures, dateIso)) {
+        occupiedForCourt.add(token);
+      }
+      out.set(matrixCourt.id, occupiedForCourt);
+    });
     return out;
-  }, [selectedSlots, occupied]);
+  }, [dateIso, matrixCourts, matrixSurfaceQueries]);
 
-  const billableHours = totalBillableHours(segments);
-  const requestedHours = selectedSlots.length;
-  const blockedInRange = useMemo(() => {
-    return selectedSlots
-      .filter((t) => occupied.has(t))
-      .sort((a, b) => hourFromTime(a) - hourFromTime(b));
-  }, [selectedSlots, occupied]);
-
-  const bookableRangesLabel = useMemo(() => {
-    if (selectedSlots.length === 0) return null;
-    const runs = groupIntoContiguousHourRuns(selectedSlots);
-    return runs
-      .map((run) => {
+  const cartLines = useMemo(() => {
+    return cartItems.map((item, index) => {
+      const surface = cartSurfaceQueries[index]?.data;
+      const lineCourt = (surface?.court ?? null) as Court | null;
+      const bookings = surface?.availability.bookings ?? EMPTY_BOOKINGS;
+      const courtClosures = surface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
+      const venueClosures = surface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
+      const occupiedForLine = occupiedHourStarts(bookings);
+      for (const token of occupiedHourStartsFromClosures(courtClosures, item.date)) {
+        occupiedForLine.add(token);
+      }
+      for (const token of occupiedHourStartsFromClosures(venueClosures, item.date)) {
+        occupiedForLine.add(token);
+      }
+      const runs = groupIntoContiguousHourRuns(item.slots);
+      const lineSegments = runs.flatMap((run) => {
         const a = run[0]!;
         const b = run[run.length - 1]!;
-        const excl = exclusiveEndAfterLastIncludedHour(b);
-        return formatSegmentLine({
-          start_time: a,
-          end_time: excl,
-          hours: run.length,
-        });
-      })
-      .join(" and ");
-  }, [selectedSlots]);
-  const selectedRateLines = useMemo(() => {
-    if (!court || segments.length === 0) return [];
-
-    const hourSlices: Array<{ start: string; end: string; rate: number }> = [];
-    for (const segment of segments) {
-      const startHour = hourFromTime(segment.start_time);
-      const endHour = hourFromTime(segment.end_time);
-      for (let hour = startHour; hour < endHour; hour++) {
-        const start = formatHourToken(hour);
-        const end = formatHourToken(hour + 1);
-        hourSlices.push({
-          start,
-          end,
-          rate: hourlyRateForHourStart(court, start),
-        });
-      }
+        return availableSegmentsInRange(
+          a,
+          exclusiveEndAfterLastIncludedHour(b),
+          occupiedForLine,
+        );
+      });
+      const unavailableSlots = item.slots.filter((slot) => occupiedForLine.has(slot));
+      const subtotal = lineCourt ? segmentsTotalCost(lineCourt, lineSegments) : 0;
+      return {
+        item,
+        court: lineCourt,
+        segments: lineSegments,
+        unavailableSlots,
+        totals: splitBookingAmounts(subtotal, undefined),
+      };
+    });
+  }, [cartItems, cartSurfaceQueries]);
+  const groupedCartLines = useMemo(() => {
+    const byDate = new Map<string, typeof cartLines>();
+    for (const line of cartLines) {
+      const existing = byDate.get(line.item.date) ?? [];
+      existing.push(line);
+      byDate.set(line.item.date, existing);
     }
-
-    const merged: Array<{ start: string; end: string; rate: number }> = [];
-    for (const slice of hourSlices) {
-      const prev = merged[merged.length - 1];
-      if (prev && prev.rate === slice.rate && prev.end === slice.start) {
-        prev.end = slice.end;
-      } else {
-        merged.push({ ...slice });
-      }
-    }
-    return merged;
-  }, [court, segments]);
+    return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [cartLines]);
+  const cartHasConflicts = useMemo(
+    () =>
+      cartLines.some(
+        (line) =>
+          !line.court || line.unavailableSlots.length > 0 || line.segments.length === 0,
+      ),
+    [cartLines],
+  );
+  const cartGrandTotal = useMemo(
+    () => cartLines.reduce((sum, line) => sum + line.totals.total_cost, 0),
+    [cartLines],
+  );
 
   const [flagReviewId, setFlagReviewId] = useState<string | null>(null);
   const [flagNote, setFlagNote] = useState("");
@@ -552,9 +553,13 @@ export default function BookCourtPage() {
       void queryClient.invalidateQueries({
         queryKey: bookingSurfaceKey,
       });
-      setBlockedWarningOpen(false);
-      setSummaryOpen(false);
-      setSelectedSlots([]);
+      for (const item of cartItems) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
+        });
+      }
+      setCartCheckoutReviewOpen(false);
+      clearCart();
       setPaymentOverlay(checkout);
       setSelectedPaymentMethod(checkout.payment_methods[0]?.method ?? null);
       setOptimizedProof(null);
@@ -704,70 +709,100 @@ export default function BookCourtPage() {
     if (proofFileInputRef.current) proofFileInputRef.current.value = "";
   };
 
-  const toggleSlotSelection = (time: string) => {
-    if (isBookableHourStartInPast(time, selectedDate)) return;
-    if (occupied.has(time)) return;
-    setSelectedSlots((prev) => {
-      const next = new Set(prev);
-      if (next.has(time)) {
-        next.delete(time);
-      } else {
-        next.add(time);
-      }
-      return Array.from(next).sort((a, b) => hourFromTime(a) - hourFromTime(b));
-    });
-  };
-
-  const courtSubtotal =
-    court && segments.length > 0
-      ? segmentsTotalCost(court, segments)
-      : 0;
-  const bookingTotals =
-    court && courtSubtotal > 0
-      ? splitBookingAmounts(courtSubtotal, undefined)
-      : null;
-
-  const runBooking = (toBook: BookingSegment[]) => {
-    if (!user || !court) return;
-    const displayName = user.full_name?.trim() || user.email;
+  const performCartCheckout = () => {
+    if (!user) {
+      toast.error("You need to be signed in to checkout.");
+      return;
+    }
+    if (cartLines.length === 0) {
+      toast.error("Select at least one timeslot to continue.");
+      return;
+    }
+    if (cartHasConflicts) {
+      toast.error("Some selected lines are unavailable. Fix highlighted lines first.");
+      return;
+    }
     const bookingGroupId =
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : `grp-${Date.now()}`;
-    const payloads = buildBookingPayloads(toBook, court, {
-      date: format(selectedDate, "yyyy-MM-dd"),
-      playerName: displayName,
-      playerEmail: user.email,
-      notes,
-      bookingGroupId,
-    });
+    const displayName = user.full_name?.trim() || user.email;
+    const payloads = cartLines.flatMap((line) =>
+      buildBookingPayloads(line.segments, line.court!, {
+        date: line.item.date,
+        playerName: displayName,
+        playerEmail: user.email,
+        notes: line.item.notes ?? "",
+        bookingGroupId,
+      }),
+    );
     createBookings.mutate(payloads);
   };
 
-  /** Opens blocked-times warning first when needed, otherwise the booking summary. */
-  const openBookingReview = () => {
+  const openCartCheckoutReview = () => {
+    if (!user) {
+      toast.error("You need to be signed in to checkout.");
+      return;
+    }
+    if (cartLines.length === 0) {
+      toast.error("Select at least one timeslot to continue.");
+      return;
+    }
+    if (cartHasConflicts) {
+      toast.error("Some selected lines are unavailable. Fix highlighted lines first.");
+      return;
+    }
+    setCartCheckoutReviewOpen(true);
+  };
+
+  const shiftSelectedDate = (days: number) => {
+    const next = addDays(selectedDate, days);
+    const normalizedNext = startOfDay(next);
+    if (isBefore(normalizedNext, todayStart)) return;
+    if (isAfter(normalizedNext, maxSelectableDate)) return;
+    setSelectedDate(next);
+  };
+
+  const toggleMatrixSlotForCourt = (matrixCourt: Court, time: string) => {
     if (!user) {
       toast.error("You need to be signed in to book.");
       return;
     }
-    if (selectedSlots.length === 0 || !court) {
-      toast.error("Choose a date and at least one hour.");
-      return;
-    }
-    if (segments.length === 0) {
-      toast.error("No available hours in that range — try a different time.");
-      return;
-    }
-    if (blockedInRange.length > 0) {
-      setBlockedWarningOpen(true);
-      return;
-    }
-    setSummaryOpen(true);
-  };
+    if (isBookableHourStartInPast(time, selectedDate)) return;
+    const occupiedForCourt = matrixOccupiedByCourtId.get(matrixCourt.id) ?? new Set<string>();
+    if (occupiedForCourt.has(time)) return;
 
-  const proceedToSummaryAfterBlockedWarning = () => {
-    setBlockedWarningOpen(false);
-    setSummaryOpen(true);
+    const existingLine =
+      cartItems.find((item) => item.courtId === matrixCourt.id && item.date === dateIso) ??
+      null;
+    const nextSlots = new Set(existingLine?.slots ?? []);
+    if (nextSlots.has(time)) {
+      nextSlots.delete(time);
+    } else {
+      nextSlots.add(time);
+    }
+    const normalizedSlots = Array.from(nextSlots).sort(
+      (a, b) => hourFromTime(a) - hourFromTime(b),
+    );
+
+    if (normalizedSlots.length === 0) {
+      if (existingLine) removeCartItem(existingLine.id);
+      return;
+    }
+
+    const outcome = addOrMergeCartItem({
+      venueId: matrixCourt.venue_id,
+      venueName: matrixCourt.establishment_name ?? "Selected venue",
+      courtId: matrixCourt.id,
+      courtName: matrixCourt.name,
+      sport: matrixCourt.sport,
+      date: dateIso,
+      slots: normalizedSlots,
+      notes: existingLine?.notes ?? notes,
+    });
+    if (!outcome.ok) {
+      toast.error(outcome.reason);
+    }
   };
 
   if (isLoading) {
@@ -827,40 +862,99 @@ export default function BookCourtPage() {
           setConfirmDeleteReviewId(null);
         }}
       />
-      <Dialog open={blockedWarningOpen} onOpenChange={setBlockedWarningOpen}>
-        <DialogContent className="sm:max-w-md" linkDescription>
-          <DialogHeader>
-            <DialogTitle className="font-heading">
-              Unavailable hours in your range
+      <Dialog
+        open={cartCheckoutReviewOpen}
+        onOpenChange={setCartCheckoutReviewOpen}
+      >
+        <DialogContent
+          className="flex max-h-[min(90dvh,36rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+          linkDescription
+        >
+          <DialogHeader className="space-y-2 border-b border-border/60 px-6 py-4">
+            <DialogTitle className="font-heading text-lg">
+              Review bookings
             </DialogTitle>
             <DialogDescription>
-              Some of the times you selected are already booked. You can still
-              continue — the next step shows exactly what will be reserved and
-              what you&apos;ll pay, only for open hours.
+              Confirm courts, dates, and times before we create your payment hold.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-left text-sm">
-            <p className="text-muted-foreground">
-              Not available:{" "}
-              <span className="font-medium text-foreground">
-                {blockedInRange.map(formatBookableHourSlotRange).join(", ")}
-              </span>
-            </p>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <div className="space-y-5">
+              {groupedCartLines.map(([date, lines]) => (
+                <div key={date} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {format(new Date(`${date}T12:00:00`), "EEE, MMM d, yyyy")}
+                  </p>
+                  <ul className="space-y-2">
+                    {lines.map((line) => (
+                      <li
+                        key={line.item.id}
+                        className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2.5"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-heading text-sm font-semibold text-foreground">
+                              {line.item.courtName}
+                            </p>
+                            <p className="text-sm text-foreground/75">
+                              {cartLineLabel(line.item.slots)}
+                            </p>
+                            {line.item.notes?.trim() ? (
+                              <p className="text-xs text-muted-foreground">
+                                Note: {line.item.notes.trim()}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="font-heading text-sm font-bold tabular-nums text-primary">
+                              {formatPhp(line.totals.total_cost)}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {formatPhp(line.totals.court_subtotal)} +{" "}
+                              {formatPhp(line.totals.booking_fee)} fee
+                            </p>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <div className="flex items-center justify-between border-t border-border/60 px-6 py-3">
+            <span className="text-sm font-medium text-muted-foreground">
+              Total
+            </span>
+            <span className="font-heading text-lg font-bold text-primary tabular-nums">
+              {formatPhp(cartGrandTotal)}
+            </span>
+          </div>
+          {cartHasConflicts ? (
+            <p className="border-t border-amber-500/30 bg-amber-500/8 px-6 py-2 text-xs text-amber-900 dark:text-amber-200">
+              Some lines are no longer available. Close this dialog and update your
+              selections.
+            </p>
+          ) : null}
+          <DialogFooter className="gap-2 border-t border-border/60 px-6 py-4 sm:gap-0">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setBlockedWarningOpen(false)}
+              onClick={() => setCartCheckoutReviewOpen(false)}
             >
-              Go back
+              Back
             </Button>
             <Button
               type="button"
               className="font-heading font-semibold"
-              onClick={proceedToSummaryAfterBlockedWarning}
+              onClick={() => performCartCheckout()}
+              disabled={
+                createBookings.isPending ||
+                cartHasConflicts ||
+                cartLines.length === 0
+              }
             >
-              Continue to summary
+              {createBookings.isPending ? "Booking…" : "Confirm all bookings"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -922,145 +1016,6 @@ export default function BookCourtPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
-        <DialogContent className="max-h-[min(90dvh,36rem)] sm:max-w-md" linkDescription>
-          <DialogHeader>
-            <DialogTitle className="font-heading">Booking summary</DialogTitle>
-            <DialogDescription>
-              Review your reservation, then confirm to complete booking.
-            </DialogDescription>
-          </DialogHeader>
-          <dl className="space-y-0 text-sm">
-            <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 first:pt-0 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-              <dt className="text-muted-foreground">Court</dt>
-              <dd className="font-medium leading-snug sm:text-right">
-                {court.name}
-              </dd>
-            </div>
-            <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-              <dt className="text-muted-foreground">Date</dt>
-              <dd className="font-medium sm:text-right">
-                {format(selectedDate, "MMM d, yyyy")}
-              </dd>
-            </div>
-            {selectedSlots.length > 0 ? (
-              <>
-                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
-                  <dt className="pt-0.5 text-muted-foreground">
-                    Selected time/s
-                  </dt>
-                  <dd className="space-y-1 leading-snug sm:text-right">
-                    <span className="block font-medium leading-relaxed">
-                      {bookableRangesLabel}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {requestedHours} h in your selection
-                    </span>
-                  </dd>
-                </div>
-                {blockedInRange.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
-                    <dt className="text-muted-foreground">
-                      Not booked
-                      <span className="mt-0.5 block text-[10px] font-normal leading-tight text-muted-foreground/90">
-                        (already taken)
-                      </span>
-                    </dt>
-                    <dd className="text-sm font-medium leading-snug sm:text-right">
-                      {blockedInRange.map(formatBookableHourSlotRange).join(", ")}
-                    </dd>
-                  </div>
-                ) : null}
-                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                  <dt className="text-muted-foreground">Duration</dt>
-                  <dd className="font-medium sm:text-right">
-                    {billableHours} billable{" "}
-                    {billableHours === 1 ? "hour" : "hours"}
-                    {billableHours !== requestedHours ? (
-                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground sm:mt-0 sm:ml-1 sm:inline">
-                        of {requestedHours} h selected
-                      </span>
-                    ) : null}
-                  </dd>
-                </div>
-                <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
-                  <dt className="text-muted-foreground">Rate</dt>
-                  <dd className="space-y-1 text-right font-medium">
-                    <span className="inline-flex items-center justify-end">
-                      {selectedRateLines.length === 1
-                        ? `${formatPhpCompact(selectedRateLines[0]!.rate)}/hr`
-                        : selectedRateLines.length > 1
-                          ? "Multiple rates"
-                          : "—"}
-                    </span>
-                    {selectedRateLines.length > 0 ? (
-                      <ul className="ml-auto max-w-48 list-inside list-disc text-xs font-normal text-muted-foreground">
-                        {selectedRateLines.map((line) => (
-                          <li
-                            key={`${line.start}-${line.end}-${line.rate}`}
-                          >
-                            {formatTimeShort(line.start)}–
-                            {formatTimeShort(line.end)}:{" "}
-                            {formatPhpCompact(line.rate)}/hr
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </dd>
-                </div>
-                {notes.trim() ? (
-                  <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-start sm:gap-x-6">
-                    <dt className="text-muted-foreground">Notes</dt>
-                    <dd className="whitespace-pre-wrap text-right text-sm leading-snug">
-                      {notes.trim()}
-                    </dd>
-                  </div>
-                ) : null}
-                {bookingTotals ? (
-                  <>
-                    <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                      <dt className="text-muted-foreground">Court subtotal</dt>
-                      <dd className="font-medium sm:text-right">
-                        {formatPhp(bookingTotals.court_subtotal)}
-                      </dd>
-                    </div>
-                    <div className="grid grid-cols-1 gap-1 border-b border-border/50 py-2 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                      <dt className="text-muted-foreground">Booking fee</dt>
-                      <dd className="font-medium sm:text-right">
-                        {formatPhp(bookingTotals.booking_fee)}
-                      </dd>
-                    </div>
-                  </>
-                ) : null}
-                <div className="grid grid-cols-1 gap-2 pt-4 sm:grid-cols-[minmax(5.5rem,auto)_1fr] sm:items-baseline sm:gap-x-6">
-                  <dt className="font-heading text-base font-bold">You pay</dt>
-                  <dd className="font-heading text-xl font-bold text-primary sm:text-right">
-                    {formatPhp(bookingTotals?.total_cost ?? 0)}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-          </dl>
-          <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setSummaryOpen(false)}
-            >
-              Back
-            </Button>
-            <Button
-              type="button"
-              className="font-heading font-semibold"
-              onClick={() => runBooking(segments)}
-              disabled={createBookings.isPending}
-            >
-              {createBookings.isPending ? "Booking…" : "Confirm booking"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Button
         variant="ghost"
         onClick={() => router.push("/courts")}
@@ -1069,8 +1024,8 @@ export default function BookCourtPage() {
         <ArrowLeft className="mr-2 h-4 w-4" /> Back to Courts
       </Button>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
-        <div className="order-2 space-y-6 lg:order-1 lg:pr-4">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start">
+        <div className="order-2 min-w-0 space-y-6 lg:order-2">
           <CourtGalleryCarousel
             key={galleryUrls.join("|")}
             urls={galleryUrls}
@@ -1348,297 +1303,146 @@ export default function BookCourtPage() {
           </Card>
         </div>
 
-        <div className="order-1 space-y-6 lg:order-2">
-        {establishmentCourts.length > 0 ? (
-          <Card className="border-border/60">
-            <CardContent className="p-4">
-              <div className="space-y-2">
-                <Label>Select court number</Label>
-                <Select
-                  value={activeCourtId}
-                  onValueChange={(nextCourtId) => {
-                    if (nextCourtId !== activeCourtId) {
-                      setActiveCourtId(nextCourtId);
-                      setSelectedSlots([]);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose court" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {establishmentCourts.map((establishmentCourt) => (
-                      <SelectItem key={establishmentCourt.id} value={establishmentCourt.id}>
-                        {courtNumberLabel(establishmentCourt)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {establishmentCourts.length > 1
-                    ? "This establishment has multiple courts. Choose which court number you want to book."
-                    : "Choose which court you want to book at this venue."}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        <div className="order-1 min-w-0 space-y-6 lg:order-1">
         <Card className="border-border/50">
-          <CardHeader className="pb-2 pt-6">
+          <CardHeader className="pb-2">
             <CardTitle className="font-heading text-lg">
-              Select Date & Time
+              Venue schedule matrix
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-5 px-6 pb-6 pt-0">
-            <div>
-              <Label className="mb-2 block text-sm font-medium text-foreground">
-                Date
-              </Label>
-              <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  startMonth={startOfMonth(new Date())}
-                  onSelect={(d) => {
-                    if (!d) return;
-                    setSelectedDate(d);
-                    setSelectedSlots([]);
-                  }}
-                  disabled={(date) =>
-                    isBefore(startOfDay(date), startOfDay(new Date()))
-                  }
-                  className="w-full min-w-0"
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-2.5 shrink-0 rounded-md bg-accent/70 ring-1 ring-border"
-                    aria-hidden
-                  />
-                  Today
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-2.5 shrink-0 rounded-md bg-primary ring-1 ring-primary/30"
-                    aria-hidden
-                  />
-                  Selected
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-2.5 shrink-0 rounded-md bg-muted ring-1 border border-dashed border-destructive/40"
-                    aria-hidden
-                  />
-                  Booked
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="size-2.5 shrink-0 rounded-md bg-amber-500/25 ring-1 border border-dashed border-amber-600/50"
-                    aria-hidden
-                  />
-                  Blocked (maintenance / event)
-                </span>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
-              <div className="border-b border-border/60 bg-muted/30 px-4 py-3 sm:px-5">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background shadow-sm ring-1 ring-border/80">
-                    <Clock className="size-4 text-primary" aria-hidden />
-                  </span>
-                  <div className="min-w-0">
-                    <h3
-                      id="time-slots-heading"
-                      className="text-sm font-semibold text-foreground"
-                    >
-                      Time slots
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {format(selectedDate, "EEEE, MMM d")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
-                {selectedSlots.length > 0 ? (
-                  <div
-                    className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/6 px-3.5 py-3 dark:bg-primary/10"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                        Selection
-                      </p>
-                      <p className="font-heading text-base font-bold leading-snug tracking-tight text-foreground">
-                        {bookableRangesLabel}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {requestedHours}{" "}
-                        {requestedHours === 1 ? "hour" : "hours"} selected
-                        {billableHours !== requestedHours
-                          ? ` · ${billableHours} billable`
-                          : null}
-                      </p>
-                    </div>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Previous day"
+                onClick={() => shiftSelectedDate(-1)}
+                disabled={isBefore(startOfDay(addDays(selectedDate, -1)), todayStart)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-foreground">
+                  {format(selectedDate, "EEE, MMM d")}
+                </p>
+                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                  <PopoverTrigger asChild>
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="icon"
-                      className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => setSelectedSlots([])}
-                      aria-label="Clear time selection"
+                      aria-label="Open date picker"
+                      className="h-8 w-8"
                     >
-                      <X className="size-4" />
+                      <CalendarDays className="h-4 w-4" />
                     </Button>
-                  </div>
-                ) : null}
-
-                <details className="group rounded-xl border border-border/60 bg-muted/20 [&_summary::-webkit-details-marker]:hidden">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium text-foreground hover:bg-muted/40 sm:px-3.5">
-                    <span>Pricing, blocked hours &amp; past times</span>
-                    <ChevronRight
-                      className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-90"
-                      aria-hidden
+                  </PopoverTrigger>
+                  <PopoverContent align="center" className="w-auto p-2">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setSelectedDate(date);
+                        setDatePickerOpen(false);
+                      }}
+                      disabled={(date) =>
+                        isBefore(startOfDay(date), todayStart) ||
+                        isAfter(startOfDay(date), maxSelectableDate)
+                      }
+                      defaultMonth={selectedDate}
                     />
-                  </summary>
-                  <div className="space-y-2 border-t border-border/50 px-3 py-3 text-xs leading-relaxed text-muted-foreground sm:px-3.5">
-                    <p>
-                      Tap a tile to select that hour; tap again to deselect.
-                      Booked, blocked, or past hours can&apos;t be toggled.
-                      Separate stretches of hours become separate bookings when
-                      needed. You only pay for open hours—we&apos;ll confirm before
-                      you pay.
-                    </p>
-                    {isSameDay(startOfDay(selectedDate), startOfDay(new Date())) ? (
-                      <p>Hours that have already started today cannot be selected.</p>
-                    ) : null}
-                  </div>
-                </details>
-
-                {isHoursLoading ? (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground">
-                      Loading hours…
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {Array.from({ length: 8 }, (_, i) => (
-                        <Skeleton key={i} className="h-18 rounded-xl" />
-                      ))}
-                    </div>
-                  </div>
-                ) : timeSlots.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No bookable hours are configured for this venue yet.
-                  </p>
-                ) : null}
-
-                {!isHoursLoading && timeSlots.length > 0 ? (
-                  <div>
-                    <div
-                      className="max-h-[min(50vh,24rem)] overflow-y-auto overflow-x-hidden rounded-xl px-2 pb-2 pt-1 [scrollbar-gutter:stable] sm:px-3 sm:pb-3"
-                      aria-labelledby="time-slots-heading"
-                      role="group"
-                    >
-                      <div className="grid grid-cols-2 gap-3 py-1">
-                        {timeSlots.map((time) => {
-                          const isUnavailable = occupied.has(time);
-                          const isPastHour = isBookableHourStartInPast(
-                            time,
-                            selectedDate,
-                          );
-                          const hourlyRate = hourlyRateForHourStart(court, time);
-                          const fromClosureOnly =
-                            closureOccupied.has(time) &&
-                            !bookingOccupied.has(time);
-                          const isSelected = selectedSet.has(time);
-                          const disabled = isPastHour || isUnavailable;
-                          return (
-                            <Button
-                              key={time}
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Next day"
+                onClick={() => shiftSelectedDate(1)}
+                disabled={isAfter(startOfDay(addDays(selectedDate, 1)), maxSelectableDate)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="max-h-[min(46vh,22rem)] overflow-auto rounded-xl border border-border/60">
+              <table className="min-w-full text-xs">
+                <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
+                  <tr>
+                    <th className="w-44 px-4 py-2 text-left font-semibold text-muted-foreground">
+                      Time
+                    </th>
+                    {matrixCourts.map((matrixCourt) => (
+                      <th
+                        key={matrixCourt.id}
+                        className="min-w-28 px-2 py-2 text-center font-semibold text-foreground"
+                      >
+                        {courtNumberLabel(matrixCourt)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeSlots.map((time) => (
+                    <tr key={time} className="border-t border-border/40">
+                      <td className="w-44 whitespace-nowrap px-4 py-2.5 font-medium tracking-[0.01em] text-foreground/90">
+                        {formatMatrixTimeLabel(time)}
+                      </td>
+                      {matrixCourts.map((matrixCourt) => {
+                        const occupiedForCourt =
+                          matrixOccupiedByCourtId.get(matrixCourt.id) ?? new Set<string>();
+                        const isUnavailable = occupiedForCourt.has(time);
+                        const isPastHour = isBookableHourStartInPast(time, selectedDate);
+                        const line =
+                          cartItems.find(
+                            (item) =>
+                              item.courtId === matrixCourt.id && item.date === dateIso,
+                          ) ?? null;
+                        const isSelected = Boolean(line?.slots.includes(time));
+                        return (
+                          <td key={`${matrixCourt.id}-${time}`} className="p-1.5">
+                            <button
                               type="button"
-                              variant="outline"
-                              disabled={disabled}
-                              aria-pressed={isSelected && !isUnavailable}
-                              onClick={() => toggleSlotSelection(time)}
+                              onClick={() => toggleMatrixSlotForCourt(matrixCourt, time)}
+                              disabled={isUnavailable || isPastHour}
                               className={cn(
-                                "h-auto min-h-18 w-full flex-col items-stretch justify-center gap-1.5 rounded-xl border-2 px-3 py-2.5 text-left shadow-none transition-colors",
-                                "focus-visible:ring-2 focus-visible:ring-emerald-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                                isPastHour &&
-                                  "cursor-not-allowed border-dashed border-muted-foreground/30 bg-muted/40 text-muted-foreground opacity-60",
-                                isUnavailable &&
-                                  fromClosureOnly &&
-                                  "border-amber-600/50 bg-amber-500/12 text-amber-950 line-through decoration-amber-800/60 dark:text-amber-100 dark:decoration-amber-200/50",
-                                isUnavailable &&
-                                  !fromClosureOnly &&
-                                  "border-destructive/45 bg-destructive/8 text-destructive line-through",
+                                "h-10 w-full rounded-md border text-[11px] font-medium transition-colors",
                                 isSelected &&
+                                  "border-primary bg-primary text-primary-foreground",
+                                !isSelected &&
                                   !isUnavailable &&
-                                  "border-emerald-600 bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/90 ring-offset-2 ring-offset-background hover:border-emerald-700 hover:bg-emerald-700 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:border-emerald-600 dark:hover:bg-emerald-700",
-                                !disabled &&
-                                  !isSelected &&
-                                  "hover:border-emerald-500/55 hover:bg-emerald-50/95 dark:hover:border-emerald-600/50 dark:hover:bg-emerald-950/45",
+                                  !isPastHour &&
+                                  "border-border bg-background hover:border-primary/40 hover:bg-primary/5",
+                                isUnavailable &&
+                                  "cursor-not-allowed border-border bg-muted text-muted-foreground/70",
+                                isPastHour &&
+                                  "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
                               )}
                             >
-                              <span
-                                className={cn(
-                                  "min-w-0 text-sm font-semibold leading-tight tracking-tight",
-                                  isSelected &&
-                                    !isUnavailable &&
-                                    "text-white",
-                                )}
-                              >
-                                {formatBookableHourSlotRange(time)}
-                              </span>
-                              <span
-                                className={cn(
-                                  "text-xs font-medium tabular-nums",
-                                  isSelected && !isUnavailable
-                                    ? "text-emerald-50"
-                                    : "text-muted-foreground",
-                                )}
-                              >
-                                {hourlyRate > 0
-                                  ? `${formatPhpCompact(hourlyRate)}/hr`
-                                  : "—"}
-                              </span>
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="size-2.5 shrink-0 rounded-md bg-muted ring-1 border border-dashed border-destructive/40"
-                          aria-hidden
-                        />
-                        Booked
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="size-2.5 shrink-0 rounded-md bg-amber-500/25 ring-1 border border-dashed border-amber-600/50"
-                          aria-hidden
-                        />
-                        Blocked
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="size-2.5 shrink-0 rounded-md bg-emerald-600 ring-1 ring-emerald-500/50"
-                          aria-hidden
-                        />
-                        Selected
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+                              {isSelected
+                                ? "Selected"
+                                : isUnavailable
+                                  ? "Booked"
+                                  : isPastHour
+                                    ? "Past"
+                                    : "Open"}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Tap cells to build your booking across courts. Selected cells are added
+              to the inline summary below.
+            </p>
           </CardContent>
         </Card>
-
           <Card className="border-border/50">
             <CardHeader className="pb-3">
               <CardTitle className="font-heading text-lg">Notes</CardTitle>
@@ -1669,20 +1473,103 @@ export default function BookCourtPage() {
             </CardContent>
           </Card>
 
-          <Button
-            className="w-full font-heading font-semibold shadow-lg shadow-primary/20"
-            size="lg"
-            onClick={openBookingReview}
-            disabled={
-              !user ||
-              selectedSlots.length === 0 ||
-              segments.length === 0 ||
-              createBookings.isPending ||
-              !!paymentOverlay
-            }
-          >
-            Review booking
-          </Button>
+          <Card className="sticky top-4 border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="font-heading text-lg">
+                Booking summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {groupedCartLines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No selections yet. Use the venue matrix to pick courts and times.
+                </p>
+              ) : (
+                <div className="max-h-[min(36vh,18rem)] space-y-3 overflow-auto pr-1">
+                  {groupedCartLines.map(([date, lines]) => (
+                    <div key={date} className="space-y-2 rounded-lg border border-border/60 p-2.5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {format(new Date(`${date}T12:00:00`), "EEE, MMM d")}
+                      </p>
+                      {lines.map((line) => (
+                        <div
+                          key={line.item.id}
+                          className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2.5 transition-colors hover:border-border hover:bg-muted/20"
+                        >
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-heading text-sm font-semibold tracking-tight text-foreground">
+                                {line.item.courtName}
+                              </p>
+                              <p className="mt-0.5 truncate text-sm text-foreground/70">
+                                {cartLineLabel(line.item.slots)}
+                              </p>
+                            </div>
+                            <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-2.5">
+                              <span className="font-heading text-base font-bold tabular-nums text-primary">
+                                {formatPhp(line.totals.total_cost)}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+                                aria-label={`Remove ${line.item.courtName} from summary`}
+                                onClick={() => removeCartItem(line.item.id)}
+                              >
+                                <Trash2 className="h-4 w-4" aria-hidden />
+                              </Button>
+                            </div>
+                          </div>
+                          {line.unavailableSlots.length > 0 ? (
+                            <p className="mt-2 border-t border-border/40 pt-2 text-[11px] leading-snug text-destructive">
+                              Unavailable:{" "}
+                              {line.unavailableSlots
+                                .map(formatBookableHourSlotRange)
+                                .join(", ")}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {cartHasConflicts ? (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-900 dark:text-amber-200">
+                  Some lines are no longer available. Update those lines before checkout.
+                </p>
+              ) : null}
+              <div className="flex items-center justify-between border-t border-border/60 pt-3">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="font-heading text-lg font-bold text-primary">
+                  {formatPhp(cartGrandTotal)}
+                </span>
+              </div>
+              <Button
+                className="w-full font-heading font-semibold shadow-lg shadow-primary/20"
+                size="lg"
+                onClick={openCartCheckoutReview}
+                disabled={
+                  !user ||
+                  cartLines.length === 0 ||
+                  cartHasConflicts ||
+                  createBookings.isPending ||
+                  !!paymentOverlay
+                }
+              >
+                {createBookings.isPending ? "Processing…" : "Review & confirm"}
+              </Button>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={clearCart}
+                disabled={cartLines.length === 0}
+              >
+                Clear selections
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
       {paymentOverlay ? (

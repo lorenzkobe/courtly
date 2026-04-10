@@ -62,7 +62,9 @@ export async function optimizePaymentProofImage(file: File): Promise<OptimizedPa
   const shortEdge = Math.min(sourceWidth, sourceHeight);
   const longEdge = Math.max(sourceWidth, sourceHeight);
   if (shortEdge < PAYMENT_PROOF_MIN_SHORT_EDGE_PX || longEdge > PAYMENT_PROOF_MAX_LONG_EDGE_PX) {
-    throw new Error("Image dimensions must be between 720px and 3000px.");
+    throw new Error(
+      `Image is too small or too large. The shorter side must be at least ${PAYMENT_PROOF_MIN_SHORT_EDGE_PX}px and the longer side at most ${PAYMENT_PROOF_MAX_LONG_EDGE_PX}px (your image is ${sourceWidth}×${sourceHeight}px).`,
+    );
   }
 
   const { width, height } = scaleSize(sourceWidth, sourceHeight);

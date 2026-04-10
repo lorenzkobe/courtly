@@ -3,27 +3,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
+  ArrowRight,
   Calendar,
   Clock,
   MapPin,
-  UserPlus,
+  Settings2,
+  Trophy,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
-import SkillBadge from "@/components/shared/SkillBadge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -34,18 +29,35 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { queryKeys } from "@/lib/query/query-keys";
+import { formatTimeShort } from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
+import { useAuth } from "@/lib/auth/auth-context";
+import {
+  openPlaySchedulePhase,
+  openPlaySchedulePhaseLabel,
+} from "@/lib/open-play/schedule";
+import { queryKeys } from "@/lib/query/query-keys";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { OpenPlaySession } from "@/lib/types/courtly";
+import { cn } from "@/lib/utils";
+
+const scheduleBadgeStyles: Record<string, string> = {
+  upcoming: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+  in_progress: "border-primary/25 bg-primary/10 text-primary",
+  ended: "bg-muted text-muted-foreground border-border",
+  cancelled: "border-destructive/30 bg-destructive/10 text-destructive",
+};
 
 export default function OpenPlayPage() {
   const [skillFilter, setSkillFilter] = useState("all");
-  const [joinSession, setJoinSession] = useState<OpenPlaySession | null>(null);
-  const [playerName, setPlayerName] = useState("");
-  const [playerEmail, setPlayerEmail] = useState("");
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const selectedSport = useSelectedSport((state) => state.sport);
+  const [listNowMs, setListNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setListNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: queryKeys.openPlay.list({ sport: selectedSport }),
@@ -55,31 +67,41 @@ export default function OpenPlayPage() {
     },
   });
 
-  const joinMutation = useMutation({
-    mutationFn: async (session: OpenPlaySession) => {
-      const next = (session.current_players || 0) + 1;
-      const max = session.max_players || 0;
-      await courtlyApi.openPlay.update(session.id, {
-        current_players: next,
-        status: next >= max ? "full" : "open",
+  const { data: hostedSessions = [], isLoading: loadingHosted } = useQuery({
+    queryKey: queryKeys.openPlay.list({
+      hosted_by_me: true,
+      sport: selectedSport,
+    }),
+    queryFn: async () => {
+      const { data } = await courtlyApi.openPlay.list({
+        hosted_by_me: true,
+        sport: selectedSport,
       });
+      return data;
+    },
+    enabled: Boolean(user),
+  });
+
+  const joinWaitlistMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await courtlyApi.openPlay.join(sessionId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
-      toast.success("You're in! See you on the court.");
-      setJoinSession(null);
-      setPlayerName("");
-      setPlayerEmail("");
+      toast.success("You are on the waitlist.");
     },
+    onError: () => toast.error("Could not join waitlist."),
   });
 
-  const handleJoin = () => {
-    if (!playerName || !playerEmail) {
-      toast.error("Please fill in your name and email");
-      return;
-    }
-    if (joinSession) joinMutation.mutate(joinSession);
-  };
+  function ctaLabel(session: OpenPlaySession): string {
+    const userStatus = session.current_user_request_status;
+    if (userStatus === "approved") return "Approved";
+    if (userStatus === "pending_approval") return "Pending Approval";
+    if (userStatus === "payment_locked") return "Proceed to Payment";
+    if (userStatus === "waitlisted") return "Waitlisted";
+    if (session.status === "full") return "Full";
+    return "Join Waitlist";
+  }
 
   const filtered =
     skillFilter === "all"
@@ -105,6 +127,65 @@ export default function OpenPlayPage() {
           </SelectContent>
         </Select>
       </PageHeader>
+
+      {user ? (
+        <Card className="mb-8 border-border/50">
+          <CardContent className="space-y-4 p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Settings2 className="h-5 w-5 text-muted-foreground" />
+              <h2 className="font-heading text-lg font-semibold text-foreground">
+                Manage open plays
+              </h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Sessions you created from your bookings. Open a card to approve join
+              requests and view comments.
+            </p>
+            {loadingHosted ? (
+              <Skeleton className="h-20 w-full rounded-lg" />
+            ) : hostedSessions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                You do not have any open play sessions yet. Create one from a confirmed
+                booking on{" "}
+                <Link href="/my-bookings" className="text-primary underline-offset-4 hover:underline">
+                  My bookings
+                </Link>
+                .
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {hostedSessions.map((session) => {
+                  const phase = openPlaySchedulePhase(session, listNowMs);
+                  return (
+                    <li key={session.id}>
+                      <Link
+                        href={`/open-play/${session.id}`}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 px-4 py-3 text-sm transition-colors hover:bg-muted/30"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="font-medium text-foreground">{session.title}</p>
+                          <p className="text-muted-foreground">
+                            {format(new Date(`${session.date}T12:00:00`), "EEE, MMM d")} ·{" "}
+                            {formatTimeShort(session.start_time)} –{" "}
+                            {formatTimeShort(session.end_time)}
+                            {session.court_name ? ` · ${session.court_name}` : ""}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn("shrink-0", scheduleBadgeStyles[phase] ?? "")}
+                        >
+                          {openPlaySchedulePhaseLabel(phase)}
+                        </Badge>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -138,7 +219,10 @@ export default function OpenPlayPage() {
                     <h3 className="font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
                       {session.title}
                     </h3>
-                    <SkillBadge level={session.skill_level} />
+                    <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      DUPR {session.dupr_min?.toFixed(2) ?? "0.00"} -{" "}
+                      {session.dupr_max?.toFixed(2) ?? "8.00"}
+                    </span>
                   </div>
 
                   <div className="mb-4 space-y-2 text-sm text-muted-foreground">
@@ -155,8 +239,12 @@ export default function OpenPlayPage() {
                       {session.location}
                     </div>
                     <div className="flex items-center gap-2">
-                      <UserPlus className="h-4 w-4" />
+                      <Trophy className="h-4 w-4" />
                       Hosted by {session.host_name}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      {session.venue_name ?? "Venue"} / {session.court_name ?? "Court"}
                     </div>
                   </div>
 
@@ -169,7 +257,8 @@ export default function OpenPlayPage() {
                   <div className="mb-4">
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">
-                        {session.current_players}/{session.max_players} players
+                        {(session.registered_players_count ?? session.current_players)}/
+                        {session.max_players} registered
                       </span>
                       <span
                         className={`font-medium ${spotsLeft <= 2 ? "text-destructive" : "text-primary"}`}
@@ -182,16 +271,37 @@ export default function OpenPlayPage() {
 
                   <div className="flex items-center justify-between">
                     <span className="font-heading font-bold text-primary">
-                      {session.fee > 0 ? formatPhpCompact(session.fee) : "Free"}
+                      {session.price_per_player > 0
+                        ? `${formatPhpCompact(session.price_per_player)}/player`
+                        : "Free"}
                     </span>
-                    <Button
-                      size="sm"
-                      disabled={isFull}
-                      onClick={() => setJoinSession(session)}
-                      className="font-heading font-semibold"
-                    >
-                      {isFull ? "Full" : "Join Session"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/open-play/${session.id}`}>
+                          Details <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={
+                          joinWaitlistMutation.isPending ||
+                          isFull ||
+                          session.current_user_request_status === "approved" ||
+                          session.current_user_request_status === "pending_approval" ||
+                          session.current_user_request_status === "waitlisted"
+                        }
+                        onClick={() => {
+                          if (session.current_user_request_status === "payment_locked") {
+                            window.location.href = `/open-play/${session.id}`;
+                            return;
+                          }
+                          joinWaitlistMutation.mutate(session.id);
+                        }}
+                        className="font-heading font-semibold"
+                      >
+                        {ctaLabel(session)}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -199,45 +309,6 @@ export default function OpenPlayPage() {
           })}
         </div>
       )}
-
-      <Dialog
-        open={!!joinSession}
-        onOpenChange={(o) => !o && setJoinSession(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-heading">
-              Join {joinSession?.title}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-2 space-y-4">
-            <div>
-              <Label>Full Name *</Label>
-              <Input
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Your name"
-              />
-            </div>
-            <div>
-              <Label>Email *</Label>
-              <Input
-                type="email"
-                value={playerEmail}
-                onChange={(e) => setPlayerEmail(e.target.value)}
-                placeholder="your@email.com"
-              />
-            </div>
-            <Button
-              className="w-full font-heading font-semibold"
-              onClick={handleJoin}
-              disabled={joinMutation.isPending}
-            >
-              {joinMutation.isPending ? "Joining..." : "Confirm"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

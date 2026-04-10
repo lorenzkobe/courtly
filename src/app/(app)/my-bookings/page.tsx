@@ -31,6 +31,7 @@ import {
   bookingDurationHours,
   formatTimeShort,
 } from "@/lib/booking-range";
+import { segmentStatusForDisplay } from "@/lib/bookings/booking-time-display";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
@@ -320,6 +321,10 @@ export default function MyBookingsPage() {
                     <ul className="divide-y divide-border/60 border-t border-border/60">
                       {group.items.map((booking) => {
                         const hours = bookingDurationHours(booking);
+                        const displayStatus = segmentStatusForDisplay(
+                          booking,
+                          countdownNow,
+                        );
                         return (
                           <li
                             key={booking.id}
@@ -339,9 +344,9 @@ export default function MyBookingsPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge
                                   variant="outline"
-                                  className={statusStyles[booking.status] ?? ""}
+                                  className={statusStyles[displayStatus] ?? ""}
                                 >
-                                  {formatBookingStatusLabel(booking.status)}
+                                  {formatBookingStatusLabel(displayStatus)}
                                 </Badge>
                                 {booking.status === "pending_payment" ? (
                                   <span className="text-xs text-muted-foreground">
