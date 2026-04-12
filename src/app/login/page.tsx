@@ -99,6 +99,17 @@ function LoginContent() {
     isConfirmPasswordValid;
   const selectedBirthdate = parseIsoToLocalDate(birthdate);
 
+  const resetAuthFields = () => {
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setFirstName("");
+    setLastName("");
+    setBirthdate("");
+    setMobileNumber("");
+    setBirthdateOpen(false);
+  };
+
   useEffect(() => {
     if (!isLoading && user) {
       router.replace(nextPath ?? homePathForRole(user.role));
@@ -137,6 +148,8 @@ function LoginContent() {
       toast.success(
         `We sent a verification email to ${normalizedEmail}. Check your inbox to confirm your account.`,
       );
+      resetAuthFields();
+      setAuthMode("signin");
     } catch (err) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {
         setError(err.response.data.error);
