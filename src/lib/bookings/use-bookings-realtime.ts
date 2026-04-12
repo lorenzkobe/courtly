@@ -134,10 +134,10 @@ export function useBookingsRealtime({
     };
 
     const handlePayload = (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
-      const newRow = payload.new ?? {};
-      const oldRow = payload.old ?? {};
-      const rowCourtId = String((newRow.court_id ?? oldRow.court_id ?? ""));
-      const rowDate = String((newRow.date ?? oldRow.date ?? "")).slice(0, 10);
+      const newRow = (payload.new ?? {}) as Record<string, unknown>;
+      const oldRow = (payload.old ?? {}) as Record<string, unknown>;
+      const rowCourtId = String(newRow["court_id"] ?? oldRow["court_id"] ?? "");
+      const rowDate = String(newRow["date"] ?? oldRow["date"] ?? "").slice(0, 10);
       for (const queryKey of queryKeysToInvalidate) {
         const expected = expectedFromKey(queryKey);
         if (expected.courtId && rowCourtId && expected.courtId !== rowCourtId) continue;
