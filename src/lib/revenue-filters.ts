@@ -1,5 +1,3 @@
-import type { Booking } from "@/lib/types/courtly";
-
 /** Validate YYYY-MM-DD for booking.date comparisons. */
 export function parseIsoDateParam(dateParam: string | null): string | null {
   if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return null;
@@ -16,25 +14,4 @@ export function normalizeDateRange(
     return { from: to, to: from };
   }
   return { from, to };
-}
-
-export function bookingInDateRange(
-  bookingDate: string,
-  from: string | null,
-  to: string | null,
-): boolean {
-  if (!from && !to) return true;
-  if (from && bookingDate < from) return false;
-  if (to && bookingDate > to) return false;
-  return true;
-}
-
-export function filterBookingsByDateRange(
-  bookings: Booking[],
-  from: string | null,
-  to: string | null,
-): Booking[] {
-  return bookings.filter((booking) =>
-    bookingInDateRange(booking.date, from, to),
-  );
 }

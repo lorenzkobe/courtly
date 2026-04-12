@@ -12,7 +12,7 @@ export function bookingSegmentStartMs(
 }
 
 /** Local wall-clock end of the booking segment (`date` + `end_time`). */
-export function bookingSegmentEndMs(
+function bookingSegmentEndMs(
   segment: Pick<Booking, "date" | "end_time">,
 ): number {
   const t =

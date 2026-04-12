@@ -1,4 +1,4 @@
-export type SocialPlatform = "facebook" | "instagram";
+type SocialPlatform = "facebook" | "instagram";
 
 const SOCIAL_HOSTS: Record<SocialPlatform, string> = {
   facebook: "facebook.com",

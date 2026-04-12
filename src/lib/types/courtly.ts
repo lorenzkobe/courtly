@@ -183,7 +183,7 @@ export type Booking = {
     | "cancelled"
     | "completed";
   hold_expires_at?: string | null;
-  payment_provider?: "paymongo" | "manual" | null;
+  payment_provider?: "manual" | null;
   payment_link_id?: string | null;
   payment_link_url?: string | null;
   payment_link_created_at?: string | null;

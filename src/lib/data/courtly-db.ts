@@ -164,12 +164,7 @@ function mapBookingRow(row: unknown): Booking {
     total_cost: Number(record.total_cost ?? 0),
     status: record.status,
     hold_expires_at: record.hold_expires_at ?? null,
-    payment_provider:
-      record.payment_provider === "paymongo"
-        ? "paymongo"
-        : record.payment_provider === "manual"
-          ? "manual"
-          : null,
+    payment_provider: record.payment_provider === "manual" ? "manual" : null,
     payment_link_id: record.payment_link_id ?? null,
     payment_link_url: record.payment_link_url ?? null,
     payment_link_created_at: record.payment_link_created_at ?? null,
@@ -646,17 +641,6 @@ export async function listCourtsByIds(courtIds: string[]): Promise<Court[]> {
     .in("id", courtIds);
   if (error) throw error;
   return (data ?? []).map(mapCourtRow);
-}
-
-export async function listBookings(): Promise<Booking[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      "*, courts(id,name,venue_id,venues(id,name,sport))",
-    );
-  if (error) throw error;
-  return (data ?? []).map(mapBookingRow);
 }
 
 type ListBookingsFilteredParams = {
@@ -1191,17 +1175,6 @@ export async function hasConfirmedBookingsForVenue(venueId: string): Promise<boo
   return (count ?? 0) > 0;
 }
 
-export async function listVenueClosures(): Promise<VenueClosure[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("venue_closures").select("*");
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as VenueClosure),
-    date: toDateString((row as { date: string | null }).date),
-    created_at: toIsoString((row as { created_at: string | null }).created_at),
-  }));
-}
-
 export async function listVenueClosuresByVenue(
   venueId: string,
   date?: string,
@@ -1238,17 +1211,6 @@ export async function getVenueClosureById(
     date: toDateString((data as { date: string | null }).date),
     created_at: toIsoString((data as { created_at: string | null }).created_at),
   };
-}
-
-export async function listCourtClosures(): Promise<CourtClosure[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("court_closures").select("*");
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as CourtClosure),
-    date: toDateString((row as { date: string | null }).date),
-    created_at: toIsoString((row as { created_at: string | null }).created_at),
-  }));
 }
 
 export async function listCourtClosuresByCourt(

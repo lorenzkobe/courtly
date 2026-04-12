@@ -221,12 +221,6 @@ export const courtlyApi = {
         `/api/bookings/${id}/submit-proof`,
         body,
       ),
-    retryPayment: (id: string) =>
-      http.post<BookingCheckoutResponse>(`/api/bookings/${id}/retry-payment`),
-    reconcilePayment: (id: string) =>
-      http.post<{ ok: boolean; status: string; reconciled?: boolean; refund_required?: boolean }>(
-        `/api/bookings/${id}/reconcile-payment`,
-      ),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (

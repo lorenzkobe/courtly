@@ -26,18 +26,3 @@ export function decodeOffsetCursor(cursor: string | null | undefined): number {
     return 0;
   }
 }
-
-export function paginateArray<T>(items: T[], limit: number, offset: number): {
-  items: T[];
-  hasMore: boolean;
-  nextOffset: number | null;
-} {
-  const sliced = items.slice(offset, offset + limit + 1);
-  const hasMore = sliced.length > limit;
-  const pageItems = hasMore ? sliced.slice(0, limit) : sliced;
-  return {
-    items: pageItems,
-    hasMore,
-    nextOffset: hasMore ? offset + pageItems.length : null,
-  };
-}

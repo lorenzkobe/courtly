@@ -1,8 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SessionUser } from "@/lib/types/courtly";
 
-export const SESSION_COOKIE = "courtly-session";
-
 type AuthUserLike = {
   id: string;
   email?: string | null;
