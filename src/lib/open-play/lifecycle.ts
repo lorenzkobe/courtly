@@ -113,16 +113,6 @@ export function assertCanJoinOpenPlayAsNewParticipant(
   return { ok: true };
 }
 
-export function assertOpenPlayAllowsPaymentFlow(
-  session: Pick<
-    OpenPlaySession,
-    "date" | "start_time" | "end_time" | "status"
-  >,
-  nowMs: number,
-): { ok: true } | { ok: false; message: string } {
-  return assertCanJoinOpenPlayAsNewParticipant(session, nowMs);
-}
-
 /** Submit proof: allow until session end if not terminally closed (players may finish payment after slot starts). */
 export function assertOpenPlayAllowsSubmitProof(
   session: Pick<

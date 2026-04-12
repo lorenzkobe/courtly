@@ -649,6 +649,7 @@ type ListBookingsFilteredParams = {
   date?: string;
   playerEmail?: string;
   bookingGroupId?: string;
+  statuses?: Booking["status"][];
 };
 
 type PaginationParams = {
@@ -687,6 +688,9 @@ export async function listBookingsFiltered(
   if (params.bookingGroupId) {
     query = query.eq("booking_group_id", params.bookingGroupId);
   }
+  if (params.statuses && params.statuses.length > 0) {
+    query = query.in("status", params.statuses);
+  }
   if (params.courtIds && params.courtIds.length > 0) {
     query = query.in("court_id", params.courtIds);
   }
@@ -723,6 +727,9 @@ export async function listBookingsFilteredPage(
   if (params.bookingGroupId) {
     query = query.eq("booking_group_id", params.bookingGroupId);
   }
+  if (params.statuses && params.statuses.length > 0) {
+    query = query.in("status", params.statuses);
+  }
   if (params.courtIds && params.courtIds.length > 0) {
     query = query.in("court_id", params.courtIds);
   }
@@ -740,6 +747,31 @@ export async function listBookingsFilteredPage(
     items: hasMore ? list.slice(0, params.limit) : list,
     hasMore,
   };
+}
+
+export async function deleteExpiredPendingPaymentBookings(params?: {
+  playerEmail?: string;
+  bookingGroupId?: string;
+  bookingId?: string;
+}): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("bookings")
+    .delete()
+    .eq("status", "pending_payment")
+    .lte("hold_expires_at", new Date().toISOString());
+  if (params?.playerEmail) {
+    query = query.eq("player_email", params.playerEmail);
+  }
+  if (params?.bookingGroupId) {
+    query = query.eq("booking_group_id", params.bookingGroupId);
+  }
+  if (params?.bookingId) {
+    query = query.eq("id", params.bookingId);
+  }
+  const { data, error } = await query.select("id");
+  if (error) throw error;
+  return (data ?? []).length;
 }
 
 type ListRevenueBookingsParams = {
@@ -1673,6 +1705,14 @@ export async function getOpenPlayJoinRequestByUser(
   userId: string,
 ): Promise<OpenPlayJoinRequest | null> {
   const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  await supabase
+    .from("open_play_join_requests")
+    .delete()
+    .eq("open_play_session_id", sessionId)
+    .eq("user_id", userId)
+    .eq("status", "payment_locked")
+    .lte("payment_lock_expires_at", nowIso);
   const { data, error } = await supabase
     .from("open_play_join_requests")
     .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
@@ -1701,33 +1741,6 @@ export async function listOpenPlayJoinRequestsByUser(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map(mapOpenPlayJoinRequestRow);
-}
-
-export async function createWaitlistJoinRequest(params: {
-  sessionId: string;
-  userId: string;
-  joinNote?: string;
-}): Promise<OpenPlayJoinRequest> {
-  const supabase = createSupabaseAdminClient();
-  const existing = await getOpenPlayJoinRequestByUser(params.sessionId, params.userId);
-  if (
-    existing &&
-    ["waitlisted", "payment_locked", "pending_approval", "approved"].includes(existing.status)
-  ) {
-    return existing;
-  }
-  const { data, error } = await supabase
-    .from("open_play_join_requests")
-    .insert({
-      open_play_session_id: params.sessionId,
-      user_id: params.userId,
-      status: "waitlisted",
-      join_note: params.joinNote ?? null,
-    } as never)
-    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
-    .single();
-  if (error) throw error;
-  return mapOpenPlayJoinRequestRow(data);
 }
 
 export async function acquireOpenPlayPaymentLock(params: {
@@ -1810,7 +1823,7 @@ export async function listOpenPlayJoinRequestsBySession(
   const nowIso = new Date().toISOString();
   await supabase
     .from("open_play_join_requests")
-    .update({ status: "expired", payment_lock_expires_at: null } as never)
+    .delete()
     .eq("open_play_session_id", sessionId)
     .eq("status", "payment_locked")
     .lte("payment_lock_expires_at", nowIso);
@@ -1862,7 +1875,7 @@ export async function setOpenPlayJoinRequestDecision(params: {
     } as never)
     .eq("id", params.requestId)
     .eq("open_play_session_id", params.sessionId)
-    .in("status", ["pending_approval", "payment_locked"])
+    .eq("status", "pending_approval")
     .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .maybeSingle();
   if (error) throw error;

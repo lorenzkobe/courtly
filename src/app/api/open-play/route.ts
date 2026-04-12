@@ -123,27 +123,33 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  if (!Number.isFinite(maxPlayers) || maxPlayers < 2) {
-    return NextResponse.json({ error: "max_players must be at least 2" }, { status: 400 });
+  if (!Number.isInteger(maxPlayers) || maxPlayers < 2) {
+    return NextResponse.json(
+      { error: "max_players must be a whole number (minimum 2)" },
+      { status: 400 },
+    );
   }
-  if (!Number.isFinite(pricePerPlayer) || pricePerPlayer < 0) {
-    return NextResponse.json({ error: "price_per_player must be >= 0" }, { status: 400 });
+  if (!Number.isInteger(pricePerPlayer) || pricePerPlayer < 0) {
+    return NextResponse.json(
+      { error: "price_per_player must be a whole number (0 or higher)" },
+      { status: 400 },
+    );
   }
   if (
-    !Number.isFinite(duprMin) ||
-    !Number.isFinite(duprMax) ||
+    !Number.isInteger(duprMin) ||
+    !Number.isInteger(duprMax) ||
     duprMin < 0 ||
     duprMax > 8 ||
     duprMin > duprMax
   ) {
     return NextResponse.json(
-      { error: "DUPR range must be valid and between 0.00 and 8.00" },
+      { error: "DUPR range must use whole numbers between 0 and 8" },
       { status: 400 },
     );
   }
-  if (!acceptsGcash && !acceptsMaya) {
+  if (pricePerPlayer > 0 && !acceptsGcash && !acceptsMaya) {
     return NextResponse.json(
-      { error: "At least one payment method is required" },
+      { error: "At least one payment method is required when price is above 0" },
       { status: 400 },
     );
   }

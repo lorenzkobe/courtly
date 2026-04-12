@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
-  createWaitlistJoinRequest,
+  acquireOpenPlayPaymentLock,
   getOpenPlayById,
 } from "@/lib/data/courtly-db";
 import { assertCanJoinOpenPlayAsNewParticipant } from "@/lib/open-play/lifecycle";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(req: Request, ctx: Ctx) {
+export async function POST(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,11 +27,11 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Host cannot join own open play" }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { join_note?: string };
-  const request = await createWaitlistJoinRequest({
+  // Join now goes straight to a payment lock window.
+  const payload = await acquireOpenPlayPaymentLock({
     sessionId: id,
     userId: user.id,
-    joinNote: body.join_note?.trim() || undefined,
+    lockMinutes: 5,
   });
-  return NextResponse.json({ request }, { status: 201 });
+  return NextResponse.json(payload);
 }

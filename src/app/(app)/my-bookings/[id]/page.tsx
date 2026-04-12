@@ -21,10 +21,12 @@ import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
+import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatPhp } from "@/lib/format-currency";
@@ -272,6 +274,8 @@ export default function BookingDetailPage() {
   const {
     data: bookingPayload,
     isLoading: loadingBooking,
+    isError: isBookingError,
+    error: bookingError,
     isFetching: fetchingBooking,
     refetch,
   } = useQuery({
@@ -298,6 +302,18 @@ export default function BookingDetailPage() {
     return () => window.clearInterval(id);
   }, []);
   const statusNowMs = serverNowMs ?? clientNowMs;
+  const bookingMissing =
+    !loadingBooking &&
+    !bookingPayload &&
+    (!isBookingError || httpStatusOf(bookingError) === 404);
+  const bookingFallbackPath =
+    user?.role === "admin" || user?.role === "superadmin"
+      ? "/admin/bookings"
+      : "/my-bookings";
+  useEffect(() => {
+    if (!bookingMissing) return;
+    router.replace(bookingFallbackPath);
+  }, [bookingFallbackPath, bookingMissing, router]);
 
   const segments = useMemo((): Booking[] => {
     if (!booking) return [];
@@ -426,32 +442,69 @@ export default function BookingDetailPage() {
 
   const loading = loadingBooking;
   const [openPlayTitle, setOpenPlayTitle] = useState("");
-  const [openPlaySlots, setOpenPlaySlots] = useState(8);
-  const [openPlayPrice, setOpenPlayPrice] = useState(0);
-  const [openPlayDuprMin, setOpenPlayDuprMin] = useState(0);
-  const [openPlayDuprMax, setOpenPlayDuprMax] = useState(8);
+  const [openPlaySlots, setOpenPlaySlots] = useState("");
+  const [openPlayPrice, setOpenPlayPrice] = useState("");
+  const [openPlayDuprMin, setOpenPlayDuprMin] = useState("");
+  const [openPlayDuprMax, setOpenPlayDuprMax] = useState("");
   const [openPlayDescription, setOpenPlayDescription] = useState("");
+  const [openPlayAcceptsGcash, setOpenPlayAcceptsGcash] = useState(false);
+  const [openPlayGcashAccountName, setOpenPlayGcashAccountName] = useState("");
+  const [openPlayGcashAccountNumber, setOpenPlayGcashAccountNumber] = useState("");
+  const [openPlayAcceptsMaya, setOpenPlayAcceptsMaya] = useState(false);
+  const [openPlayMayaAccountName, setOpenPlayMayaAccountName] = useState("");
+  const [openPlayMayaAccountNumber, setOpenPlayMayaAccountNumber] = useState("");
 
   const createOpenPlayMutation = useMutation({
     mutationFn: async () => {
       if (!booking) throw new Error("Booking missing");
+      const parsedSlots = Number.parseInt(openPlaySlots.trim(), 10);
+      const parsedPrice = Number.parseInt(openPlayPrice.trim(), 10);
+      const parsedDuprMin = Number.parseInt(openPlayDuprMin.trim(), 10);
+      const parsedDuprMax = Number.parseInt(openPlayDuprMax.trim(), 10);
+      if (!Number.isInteger(parsedSlots) || parsedSlots < 2) {
+        throw new Error("Slots must be a whole number (minimum 2).");
+      }
+      if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
+        throw new Error("Price per player must be a whole number (0 or higher).");
+      }
+      if (!Number.isInteger(parsedDuprMin) || !Number.isInteger(parsedDuprMax)) {
+        throw new Error("DUPR range must use whole numbers.");
+      }
+      if (parsedDuprMin < 0 || parsedDuprMax > 8 || parsedDuprMin > parsedDuprMax) {
+        throw new Error("DUPR range must be between 0 and 8.");
+      }
+      if (
+        parsedPrice > 0 &&
+        !openPlayAcceptsGcash &&
+        !openPlayAcceptsMaya
+      ) {
+        throw new Error("Select at least one payment method for paid open play.");
+      }
       const bookingGroupId = booking.booking_group_id ?? booking.id;
       return courtlyApi.openPlay.create({
         booking_group_id: bookingGroupId,
         court_ids:
           selectedOpenPlayCourtIds.length > 0 ? selectedOpenPlayCourtIds : undefined,
         title: openPlayTitle.trim(),
-        max_players: Number(openPlaySlots),
-        price_per_player: Number(openPlayPrice),
-        dupr_min: Number(openPlayDuprMin),
-        dupr_max: Number(openPlayDuprMax),
+        max_players: parsedSlots,
+        price_per_player: parsedPrice,
+        dupr_min: parsedDuprMin,
+        dupr_max: parsedDuprMax,
         description: openPlayDescription.trim() || undefined,
-        accepts_gcash: Boolean(court?.accepts_gcash),
-        gcash_account_name: court?.gcash_account_name ?? undefined,
-        gcash_account_number: court?.gcash_account_number ?? undefined,
-        accepts_maya: Boolean(court?.accepts_maya),
-        maya_account_name: court?.maya_account_name ?? undefined,
-        maya_account_number: court?.maya_account_number ?? undefined,
+        accepts_gcash: openPlayAcceptsGcash,
+        gcash_account_name: openPlayAcceptsGcash
+          ? openPlayGcashAccountName.trim() || undefined
+          : undefined,
+        gcash_account_number: openPlayAcceptsGcash
+          ? openPlayGcashAccountNumber.trim() || undefined
+          : undefined,
+        accepts_maya: openPlayAcceptsMaya,
+        maya_account_name: openPlayAcceptsMaya
+          ? openPlayMayaAccountName.trim() || undefined
+          : undefined,
+        maya_account_number: openPlayAcceptsMaya
+          ? openPlayMayaAccountNumber.trim() || undefined
+          : undefined,
       });
     },
     onSuccess: ({ data }) => {
@@ -791,44 +844,62 @@ export default function BookingDetailPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label htmlFor="open-play-title">Lobby name</Label>
-                  <Textarea
+                  <Input
                     id="open-play-title"
-                    rows={1}
                     value={openPlayTitle}
                     onChange={(event) => setOpenPlayTitle(event.target.value)}
                     placeholder="Friday Evening Games"
+                    required
                   />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="open-play-slots">Slots</Label>
-                  <Textarea
+                  <Input
                     id="open-play-slots"
-                    rows={1}
-                    value={String(openPlaySlots)}
-                    onChange={(event) => setOpenPlaySlots(Number(event.target.value) || 0)}
+                    type="number"
+                    min={2}
+                    step={1}
+                    value={openPlaySlots}
+                    onChange={(event) => setOpenPlaySlots(event.target.value)}
+                    placeholder="e.g. 8"
+                    required
                   />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="open-play-price">Price per player (PHP)</Label>
-                  <Textarea
+                  <Input
                     id="open-play-price"
-                    rows={1}
-                    value={String(openPlayPrice)}
-                    onChange={(event) => setOpenPlayPrice(Number(event.target.value) || 0)}
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={openPlayPrice}
+                    onChange={(event) => setOpenPlayPrice(event.target.value)}
+                    placeholder="e.g. 100"
+                    required
                   />
                 </div>
                 <div className="space-y-1">
                   <Label>DUPR range</Label>
                   <div className="flex gap-2">
-                    <Textarea
-                      rows={1}
-                      value={String(openPlayDuprMin)}
-                      onChange={(event) => setOpenPlayDuprMin(Number(event.target.value) || 0)}
+                    <Input
+                      type="number"
+                      min={0}
+                      max={8}
+                      step={1}
+                      value={openPlayDuprMin}
+                      onChange={(event) => setOpenPlayDuprMin(event.target.value)}
+                      placeholder="Min"
+                      required
                     />
-                    <Textarea
-                      rows={1}
-                      value={String(openPlayDuprMax)}
-                      onChange={(event) => setOpenPlayDuprMax(Number(event.target.value) || 0)}
+                    <Input
+                      type="number"
+                      min={0}
+                      max={8}
+                      step={1}
+                      value={openPlayDuprMax}
+                      onChange={(event) => setOpenPlayDuprMax(event.target.value)}
+                      placeholder="Max"
+                      required
                     />
                   </div>
                 </div>
@@ -843,13 +914,89 @@ export default function BookingDetailPage() {
                   placeholder="Optional notes for players"
                 />
               </div>
+              <div className="space-y-3 rounded-xl border border-border/60 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  Organizer payment methods
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Players pay you directly for this open play.
+                </p>
+                <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={openPlayAcceptsGcash}
+                      onChange={(event) => setOpenPlayAcceptsGcash(event.target.checked)}
+                    />
+                    Accept GCash
+                  </label>
+                  {openPlayAcceptsGcash ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={openPlayGcashAccountName}
+                        onChange={(event) => setOpenPlayGcashAccountName(event.target.value)}
+                        placeholder="GCash account name"
+                      />
+                      <Input
+                        value={openPlayGcashAccountNumber}
+                        onChange={(event) => setOpenPlayGcashAccountNumber(event.target.value)}
+                        placeholder="GCash account number"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={openPlayAcceptsMaya}
+                      onChange={(event) => setOpenPlayAcceptsMaya(event.target.checked)}
+                    />
+                    Accept Maya
+                  </label>
+                  {openPlayAcceptsMaya ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={openPlayMayaAccountName}
+                        onChange={(event) => setOpenPlayMayaAccountName(event.target.value)}
+                        placeholder="Maya account name"
+                      />
+                      <Input
+                        value={openPlayMayaAccountNumber}
+                        onChange={(event) => setOpenPlayMayaAccountNumber(event.target.value)}
+                        placeholder="Maya account number"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               <Button
                 onClick={() => createOpenPlayMutation.mutate()}
                 disabled={
                   createOpenPlayMutation.isPending ||
                   !openPlayTitle.trim() ||
-                  openPlaySlots < 2 ||
-                  openPlayDuprMin > openPlayDuprMax ||
+                  !openPlaySlots.trim() ||
+                  !openPlayPrice.trim() ||
+                  !openPlayDuprMin.trim() ||
+                  !openPlayDuprMax.trim() ||
+                  (Number.parseInt(openPlaySlots.trim(), 10) || 0) < 2 ||
+                  (Number.parseInt(openPlayPrice.trim(), 10) || 0) < 0 ||
+                  !Number.isInteger(Number.parseInt(openPlaySlots.trim(), 10)) ||
+                  !Number.isInteger(Number.parseInt(openPlayPrice.trim(), 10)) ||
+                  !Number.isInteger(Number.parseInt(openPlayDuprMin.trim(), 10)) ||
+                  !Number.isInteger(Number.parseInt(openPlayDuprMax.trim(), 10)) ||
+                  (Number.parseInt(openPlayDuprMin.trim(), 10) || 0) >
+                    (Number.parseInt(openPlayDuprMax.trim(), 10) || 0) ||
+                  (Number.parseInt(openPlayDuprMin.trim(), 10) || 0) < 0 ||
+                  (Number.parseInt(openPlayDuprMax.trim(), 10) || 0) > 8 ||
+                  ((Number.parseInt(openPlayPrice.trim(), 10) || 0) > 0 &&
+                    !openPlayAcceptsGcash &&
+                    !openPlayAcceptsMaya) ||
+                  (openPlayAcceptsGcash &&
+                    (!openPlayGcashAccountName.trim() ||
+                      !openPlayGcashAccountNumber.trim())) ||
+                  (openPlayAcceptsMaya &&
+                    (!openPlayMayaAccountName.trim() || !openPlayMayaAccountNumber.trim())) ||
                   selectedOpenPlayCourtIds.length === 0
                 }
               >

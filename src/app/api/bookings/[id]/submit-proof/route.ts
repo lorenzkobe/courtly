@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
   createPaymentTransactionAudit,
+  deleteExpiredPendingPaymentBookings,
   getBookingById,
   listBookingsByGroupIdAdmin,
 } from "@/lib/data/courtly-db";
+import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   PAYMENT_PROOF_CANONICAL_MIME_TYPE,
@@ -104,6 +106,10 @@ export async function POST(req: Request, ctx: Ctx) {
     return new Date(row.hold_expires_at).getTime() <= now;
   });
   if (hasExpired) {
+    await deleteExpiredPendingPaymentBookings({
+      bookingGroupId: booking.booking_group_id ?? undefined,
+      bookingId: booking.booking_group_id ? undefined : booking.id,
+    });
     return NextResponse.json(
       { error: "Payment hold has expired. Please book again." },
       { status: 409 },
@@ -143,6 +149,37 @@ export async function POST(req: Request, ctx: Ctx) {
     event_type: "manual.proof_submitted",
     source_type: body.payment_method,
   });
+
+  const notifyByVenue = new Map<
+    string,
+    { venueName: string; courtNames: Set<string>; bookingId: string }
+  >();
+  for (const row of groupRows) {
+    if (!row.venue_id) continue;
+    const current = notifyByVenue.get(row.venue_id);
+    if (current) {
+      current.courtNames.add(row.court_name ?? "Court");
+      continue;
+    }
+    notifyByVenue.set(row.venue_id, {
+      venueName: row.establishment_name ?? "Venue",
+      courtNames: new Set([row.court_name ?? "Court"]),
+      bookingId: row.id,
+    });
+  }
+  for (const [venueId, group] of notifyByVenue.entries()) {
+    const names = [...group.courtNames];
+    const bookingLabel =
+      names.length <= 1 ? names[0] ?? "Court" : `${names.length} slots`;
+    void emitBookingCreatedToVenueAdmins({
+      venueId,
+      venueName: group.venueName,
+      courtName: bookingLabel,
+      bookingId: group.bookingId,
+      bookerLabel: user.full_name?.trim() || user.email,
+      bookerUserId: user.id,
+    });
+  }
 
   return NextResponse.json({ ok: true, status: "pending_confirmation" });
 }

@@ -277,12 +277,10 @@ export const courtlyApi = {
     }) => http.post<OpenPlayCreateResponse>("/api/open-play", body),
     get: (id: string) => http.get<OpenPlayDetailResponse>(`/api/open-play/${id}`),
     join: (id: string, body?: { join_note?: string }) =>
-      http.post<{ request: OpenPlayJoinRequest }>(`/api/open-play/${id}/join`, body ?? {}),
-    acquirePaymentLock: (id: string) =>
       http.post<{
         result: "locked" | "full" | "already_active" | "not_found";
         request: OpenPlayJoinRequest | null;
-      }>(`/api/open-play/${id}/acquire-payment-lock`),
+      }>(`/api/open-play/${id}/join`, body ?? {}),
     submitProof: (
       id: string,
       body: {

@@ -1,4 +1,5 @@
 import {
+  deleteExpiredPendingPaymentBookings,
   listBookingsByIdsAdmin,
   listConfirmedBookingsByGroupIds,
   listConfirmedBookingsForAutoCompletion,
@@ -82,6 +83,7 @@ function pickEntityBatch(
 export async function runCompleteBookingsJob(): Promise<{
   now_manila_date: string;
   now_manila_time: string;
+  expired_pending_deleted: number;
   seed_count: number;
   candidate_entities: number;
   selected_entities: number;
@@ -92,6 +94,7 @@ export async function runCompleteBookingsJob(): Promise<{
   duration_ms: number;
 }> {
   const startedAt = Date.now();
+  const expiredPendingDeleted = await deleteExpiredPendingPaymentBookings();
   const { date: nowDate, time: nowTime } = readManilaNowParts();
   const batchLimit = Math.min(
     Math.max(
@@ -205,6 +208,7 @@ export async function runCompleteBookingsJob(): Promise<{
   const body = {
     now_manila_date: nowDate,
     now_manila_time: nowTime,
+    expired_pending_deleted: expiredPendingDeleted,
     seed_count: seedRows.length,
     candidate_entities: entities.length,
     selected_entities: selected.length,

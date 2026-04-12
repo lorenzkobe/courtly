@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Calendar, ListFilter, Loader2, Search, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -31,6 +31,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
+import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
@@ -409,7 +410,11 @@ export default function AdminBookingsPage() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [bookings]);
 
-  const { data: detailPayload } = useQuery({
+  const {
+    data: detailPayload,
+    isError: isDetailError,
+    error: detailError,
+  } = useQuery({
     queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.getWithGroup(activeDetailId!);
@@ -418,6 +423,26 @@ export default function AdminBookingsPage() {
     enabled: !!activeDetailId,
     staleTime: 15_000,
   });
+  const missingAdminDetail =
+    Boolean(activeDetailId) &&
+    !detailPayload &&
+    isDetailError &&
+    httpStatusOf(detailError) === 404;
+  useEffect(() => {
+    if (!missingAdminDetail) return;
+    dismissPaymentProofPreview();
+    setBookingAuditOpen(false);
+    setDetailId(null);
+    if (detailIdFromQuery) {
+      router.replace(pathname, { scroll: false });
+    }
+  }, [
+    detailIdFromQuery,
+    dismissPaymentProofPreview,
+    missingAdminDetail,
+    pathname,
+    router,
+  ]);
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;
 
@@ -518,6 +543,56 @@ export default function AdminBookingsPage() {
       });
   }, [detailBooking, detailSegments]);
 
+  const applyBookingUpdateToCaches = useCallback(
+    (updated: Booking) => {
+      queryClient.setQueriesData({ queryKey: ["admin-bookings"] }, (old) => {
+        if (!old || typeof old !== "object") return old;
+        const data = old as {
+          pages?: Array<{ items?: Booking[] }>;
+          pageParams?: unknown[];
+        };
+        if (!Array.isArray(data.pages)) return old;
+        let changed = false;
+        const pages = data.pages.map((page) => {
+          if (!Array.isArray(page.items)) return page;
+          let pageChanged = false;
+          const items = page.items.map((booking) => {
+            if (booking.id !== updated.id) return booking;
+            pageChanged = true;
+            return { ...booking, ...updated };
+          });
+          if (!pageChanged) return page;
+          changed = true;
+          return { ...page, items };
+        });
+        if (!changed) return old;
+        return { ...data, pages };
+      });
+
+      queryClient.setQueriesData({ queryKey: ["admin-booking-detail"] }, (old) => {
+        if (!old || typeof old !== "object") return old;
+        const payload = old as {
+          booking?: Booking;
+          group_segments?: Booking[];
+        };
+        const nextBooking =
+          payload.booking?.id === updated.id
+            ? { ...payload.booking, ...updated }
+            : payload.booking;
+        const nextSegments = Array.isArray(payload.group_segments)
+          ? payload.group_segments.map((segment) =>
+              segment.id === updated.id ? { ...segment, ...updated } : segment,
+            )
+          : payload.group_segments;
+        if (nextBooking === payload.booking && nextSegments === payload.group_segments) {
+          return old;
+        }
+        return { ...payload, booking: nextBooking, group_segments: nextSegments };
+      });
+    },
+    [queryClient],
+  );
+
   const updateStatus = useMutation({
     mutationFn: async ({
       id,
@@ -526,14 +601,16 @@ export default function AdminBookingsPage() {
       id: string;
       status: string;
     }) => {
-      await courtlyApi.bookings.update(id, {
+      const { data } = await courtlyApi.bookings.update(id, {
         status: status as Booking["status"],
       });
+      return data;
     },
     onMutate: ({ id, status }) => {
       setPendingStatusUpdate({ id, status: status as Booking["status"] });
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      applyBookingUpdateToCaches(updated);
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["me", "bookings-overview"] });

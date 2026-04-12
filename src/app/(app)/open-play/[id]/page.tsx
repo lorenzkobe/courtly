@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { formatDistanceToNowStrict } from "date-fns";
 import {
   ArrowLeft,
   Calendar,
@@ -20,11 +19,20 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -35,6 +43,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
+import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatTimeShort } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -47,7 +56,11 @@ import {
 } from "@/lib/open-play/lifecycle";
 import { useOpenPlayDetailRealtime } from "@/lib/open-play/use-open-play-detail-realtime";
 import { isOpenPlayJoinableBySchedule } from "@/lib/open-play/schedule";
-import { PAYMENT_PROOF_CANONICAL_MIME_TYPE } from "@/lib/payments/payment-proof-constraints";
+import { optimizePaymentProofImage } from "@/lib/payments/optimize-payment-proof";
+import {
+  PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES,
+  PAYMENT_PROOF_CANONICAL_MIME_TYPE,
+} from "@/lib/payments/payment-proof-constraints";
 import { queryKeys } from "@/lib/query/query-keys";
 import type { Court } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
@@ -82,6 +95,13 @@ function courtMapHref(court: Court | null | undefined): string {
     )}`;
   }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
+}
+
+function isEmbedSafePaymentProofUrl(url: string): boolean {
+  const u = url.trim();
+  if (u.startsWith("data:image/jpeg;base64,")) return true;
+  if (u.startsWith("https://")) return true;
+  return false;
 }
 
 function joinRequestStatusLabel(
@@ -123,23 +143,46 @@ export default function OpenPlayDetailPage() {
   useOpenPlayDetailRealtime(sessionId, user?.id ?? null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [hostOptionsOpen, setHostOptionsOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"gcash" | "maya">("gcash");
   const [joinNote, setJoinNote] = useState("");
   const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
   const [proofBytes, setProofBytes] = useState(0);
   const [proofWidth, setProofWidth] = useState(0);
   const [proofHeight, setProofHeight] = useState(0);
+  const [proofOptimizing, setProofOptimizing] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [organizerNote, setOrganizerNote] = useState("");
+  const [hostAcceptsGcash, setHostAcceptsGcash] = useState(false);
+  const [hostGcashAccountName, setHostGcashAccountName] = useState("");
+  const [hostGcashAccountNumber, setHostGcashAccountNumber] = useState("");
+  const [hostAcceptsMaya, setHostAcceptsMaya] = useState(false);
+  const [hostMayaAccountName, setHostMayaAccountName] = useState("");
+  const [hostMayaAccountNumber, setHostMayaAccountNumber] = useState("");
+  const [paymentProofPreviewUrl, setPaymentProofPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [paymentProofZoom, setPaymentProofZoom] = useState(1);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editMaxPlayers, setEditMaxPlayers] = useState("");
+  const [editPricePerPlayer, setEditPricePerPlayer] = useState("");
+  const [editDuprMin, setEditDuprMin] = useState("");
+  const [editDuprMax, setEditDuprMax] = useState("");
   const [clientNowMs, setClientNowMs] = useState(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setClientNowMs(Date.now()), 15_000);
+    const id = window.setInterval(() => setClientNowMs(Date.now()), 1_000);
     return () => window.clearInterval(id);
   }, []);
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError: isDetailError,
+    error: detailError,
+  } = useQuery({
     queryKey: queryKeys.openPlay.detail(sessionId),
     queryFn: async () => {
       const { data } = await courtlyApi.openPlay.get(sessionId);
@@ -147,6 +190,41 @@ export default function OpenPlayDetailPage() {
     },
     enabled: !!sessionId,
   });
+  const openPlayMissing =
+    !isLoading &&
+    !data &&
+    (!isDetailError || httpStatusOf(detailError) === 404);
+  useEffect(() => {
+    if (!openPlayMissing) return;
+    router.replace("/open-play");
+  }, [openPlayMissing, router]);
+  useEffect(() => {
+    const session = data?.session;
+    if (!session) return;
+    const available: Array<"gcash" | "maya"> = [];
+    if (session.accepts_gcash) available.push("gcash");
+    if (session.accepts_maya) available.push("maya");
+    if (available.length === 0) return;
+    setPaymentMethod((current) =>
+      available.includes(current) ? current : available[0]!,
+    );
+  }, [data?.session?.accepts_gcash, data?.session?.accepts_maya]);
+  useEffect(() => {
+    const session = data?.session;
+    if (!session) return;
+    setHostAcceptsGcash(Boolean(session.accepts_gcash));
+    setHostGcashAccountName(session.gcash_account_name ?? "");
+    setHostGcashAccountNumber(session.gcash_account_number ?? "");
+    setHostAcceptsMaya(Boolean(session.accepts_maya));
+    setHostMayaAccountName(session.maya_account_name ?? "");
+    setHostMayaAccountNumber(session.maya_account_number ?? "");
+    setEditTitle(session.title ?? "");
+    setEditDescription(session.description ?? "");
+    setEditMaxPlayers(String(session.max_players ?? ""));
+    setEditPricePerPlayer(String(session.price_per_player ?? 0));
+    setEditDuprMin(String(session.dupr_min ?? 0));
+    setEditDuprMax(String(session.dupr_max ?? 8));
+  }, [data?.session]);
 
   const venueId = data?.court?.venue_id;
   const { data: venueReviewBundle, isLoading: loadingVenueReviews } = useQuery({
@@ -179,18 +257,39 @@ export default function OpenPlayDetailPage() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
   };
 
+  const processProofFile = async (file: File) => {
+    const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
+    if (!allowed.includes(file.type)) {
+      toast.error("Please use a JPG, PNG, or WebP photo.");
+      return;
+    }
+    setProofOptimizing(true);
+    setProofDataUrl(null);
+    try {
+      const optimized = await optimizePaymentProofImage(file);
+      setProofDataUrl(optimized.dataUrl);
+      setProofBytes(optimized.bytes);
+      setProofWidth(optimized.width);
+      setProofHeight(optimized.height);
+      toast.success("Photo uploaded");
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Could not use that image. Try another photo."));
+      setProofDataUrl(null);
+    } finally {
+      setProofOptimizing(false);
+    }
+  };
+
+  const clearProofSelection = () => {
+    setProofDataUrl(null);
+    setProofBytes(0);
+    setProofWidth(0);
+    setProofHeight(0);
+  };
+
   const joinMutation = useMutation({
     mutationFn: async () =>
       courtlyApi.openPlay.join(sessionId, { join_note: joinNote.trim() || undefined }),
-    onSuccess: () => {
-      toast.success("Added to waitlist.");
-      refresh();
-    },
-    onError: () => toast.error("Could not join waitlist."),
-  });
-
-  const lockMutation = useMutation({
-    mutationFn: async () => courtlyApi.openPlay.acquirePaymentLock(sessionId),
     onSuccess: ({ data: payload }) => {
       if (payload.result === "full") {
         toast.error("Slots are currently full.");
@@ -198,10 +297,15 @@ export default function OpenPlayDetailPage() {
         toast.success("Slot locked. Submit payment proof before it expires.");
       } else if (payload.result === "already_active") {
         toast.message("You already have an active payment step.");
+      } else if (payload.result === "not_found") {
+        toast.error("Open play not found.");
+      } else {
+        toast.error("Could not start join payment.");
       }
       refresh();
     },
-    onError: () => toast.error("Could not continue to payment."),
+    onError: (err: unknown) =>
+      toast.error(apiErrorMessage(err, "Could not start join payment.")),
   });
 
   const submitProofMutation = useMutation({
@@ -281,13 +385,45 @@ export default function OpenPlayDetailPage() {
     },
     onError: () => toast.error("Could not delete open play."),
   });
+  const updateOpenPlayMutation = useMutation({
+    mutationFn: async () =>
+      courtlyApi.openPlay.update(sessionId, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+        max_players: Number.parseInt(editMaxPlayers.trim(), 10),
+        price_per_player: Number.parseInt(editPricePerPlayer.trim(), 10),
+        dupr_min: Number.parseInt(editDuprMin.trim(), 10),
+        dupr_max: Number.parseInt(editDuprMax.trim(), 10),
+        accepts_gcash: hostAcceptsGcash,
+        gcash_account_name: hostAcceptsGcash ? hostGcashAccountName.trim() : null,
+        gcash_account_number: hostAcceptsGcash ? hostGcashAccountNumber.trim() : null,
+        accepts_maya: hostAcceptsMaya,
+        maya_account_name: hostAcceptsMaya ? hostMayaAccountName.trim() : null,
+        maya_account_number: hostAcceptsMaya ? hostMayaAccountNumber.trim() : null,
+      }),
+    onSuccess: () => {
+      toast.success("Open play updated.");
+      setEditOpen(false);
+      refresh();
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Could not update open play.")),
+  });
 
   const myRequest = data?.my_request;
-  const lockTimeLabel = myRequest?.payment_lock_expires_at
-    ? formatDistanceToNowStrict(new Date(myRequest.payment_lock_expires_at), {
-        addSuffix: true,
-      })
-    : null;
+  const canPayNow = myRequest?.status === "payment_locked";
+  const paymentLockRemainingSeconds =
+    canPayNow && myRequest?.payment_lock_expires_at
+      ? Math.max(
+          0,
+          Math.ceil((new Date(myRequest.payment_lock_expires_at).getTime() - clientNowMs) / 1000),
+        )
+      : 0;
+  useEffect(() => {
+    if (!canPayNow) return;
+    if (paymentLockRemainingSeconds > 0) return;
+    window.location.reload();
+  }, [canPayNow, paymentLockRemainingSeconds]);
 
   if (isLoading || !data) {
     return (
@@ -308,18 +444,38 @@ export default function OpenPlayDetailPage() {
   const joinableByTime = isOpenPlayJoinableBySchedule(session, clientNowMs);
 
   const isHost = Boolean(user?.id && session.host_user_id === user.id);
-  const canPayNow = myRequest?.status === "payment_locked";
-  const onWaitlist =
+  const canRestartJoin =
+    !myRequest ||
     myRequest?.status === "waitlisted" ||
     myRequest?.status === "expired" ||
-    myRequest?.status === "denied";
+    myRequest?.status === "denied" ||
+    myRequest?.status === "cancelled";
 
   const canAttemptNewJoin =
     joinableByTime &&
     lifecycleDisplay === "open" &&
     session.status !== "cancelled" &&
     session.status !== "full";
-
+  const hostEditInvalid =
+    !editTitle.trim() ||
+    !editMaxPlayers.trim() ||
+    !editPricePerPlayer.trim() ||
+    !editDuprMin.trim() ||
+    !editDuprMax.trim() ||
+    !Number.isInteger(Number.parseInt(editMaxPlayers.trim(), 10)) ||
+    Number.parseInt(editMaxPlayers.trim(), 10) < 2 ||
+    !Number.isInteger(Number.parseInt(editPricePerPlayer.trim(), 10)) ||
+    Number.parseInt(editPricePerPlayer.trim(), 10) < 0 ||
+    !Number.isInteger(Number.parseInt(editDuprMin.trim(), 10)) ||
+    !Number.isInteger(Number.parseInt(editDuprMax.trim(), 10)) ||
+    Number.parseInt(editDuprMin.trim(), 10) < 0 ||
+    Number.parseInt(editDuprMax.trim(), 10) > 8 ||
+    Number.parseInt(editDuprMin.trim(), 10) > Number.parseInt(editDuprMax.trim(), 10) ||
+    ((Number.parseInt(editPricePerPlayer.trim(), 10) || 0) > 0 &&
+      !hostAcceptsGcash &&
+      !hostAcceptsMaya) ||
+    (hostAcceptsGcash && (!hostGcashAccountName.trim() || !hostGcashAccountNumber.trim())) ||
+    (hostAcceptsMaya && (!hostMayaAccountName.trim() || !hostMayaAccountNumber.trim()));
   const mapOpenHref = courtMapHref(court);
   const hasMapPin = Boolean(
     court &&
@@ -342,6 +498,237 @@ export default function OpenPlayDetailPage() {
           deleteMutation.mutate();
         }}
       />
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit open play</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="edit-open-play-title">Lobby name</Label>
+              <Input
+                id="edit-open-play-title"
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
+                placeholder="Friday Evening Games"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-open-play-slots">Slots</Label>
+              <Input
+                id="edit-open-play-slots"
+                type="number"
+                min={2}
+                step={1}
+                value={editMaxPlayers}
+                onChange={(event) => setEditMaxPlayers(event.target.value)}
+                placeholder="e.g. 8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-open-play-price">Price per player (PHP)</Label>
+              <Input
+                id="edit-open-play-price"
+                type="number"
+                min={0}
+                step={1}
+                value={editPricePerPlayer}
+                onChange={(event) => setEditPricePerPlayer(event.target.value)}
+                placeholder="e.g. 100"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>DUPR range</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={editDuprMin}
+                  onChange={(event) => setEditDuprMin(event.target.value)}
+                  placeholder="Min"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={editDuprMax}
+                  onChange={(event) => setEditDuprMax(event.target.value)}
+                  placeholder="Max"
+                />
+              </div>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="edit-open-play-description">Description</Label>
+              <Textarea
+                id="edit-open-play-description"
+                rows={3}
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="Optional notes for players"
+              />
+            </div>
+          </div>
+          <div className="space-y-3 rounded-xl border border-border/60 p-4">
+            <p className="text-sm font-medium text-foreground">Organizer payment methods</p>
+            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={hostAcceptsGcash}
+                  onChange={(event) => setHostAcceptsGcash(event.target.checked)}
+                />
+                Accept GCash
+              </label>
+              {hostAcceptsGcash ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input
+                    value={hostGcashAccountName}
+                    onChange={(event) => setHostGcashAccountName(event.target.value)}
+                    placeholder="GCash account name"
+                  />
+                  <Input
+                    value={hostGcashAccountNumber}
+                    onChange={(event) => setHostGcashAccountNumber(event.target.value)}
+                    placeholder="GCash account number"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={hostAcceptsMaya}
+                  onChange={(event) => setHostAcceptsMaya(event.target.checked)}
+                />
+                Accept Maya
+              </label>
+              {hostAcceptsMaya ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input
+                    value={hostMayaAccountName}
+                    onChange={(event) => setHostMayaAccountName(event.target.value)}
+                    placeholder="Maya account name"
+                  />
+                  <Input
+                    value={hostMayaAccountNumber}
+                    onChange={(event) => setHostMayaAccountNumber(event.target.value)}
+                    placeholder="Maya account number"
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={updateOpenPlayMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => updateOpenPlayMutation.mutate()}
+              disabled={updateOpenPlayMutation.isPending || hostEditInvalid}
+            >
+              {updateOpenPlayMutation.isPending ? "Saving..." : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!paymentProofPreviewUrl}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPaymentProofPreviewUrl(null);
+            setPaymentProofZoom(1);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[min(92dvh,44rem)] sm:max-w-5xl">
+          <DialogHeader className="pr-8 text-left">
+            <DialogTitle className="font-heading">Payment proof</DialogTitle>
+            <DialogDescription>
+              Screenshot submitted by the player.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Zoom: {Math.round(paymentProofZoom * 100)}%
+            </p>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() =>
+                  setPaymentProofZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))
+                }
+                disabled={paymentProofZoom <= 0.5}
+                aria-label="Zoom out"
+              >
+                -
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => setPaymentProofZoom(1)}
+                disabled={paymentProofZoom === 1}
+              >
+                Reset
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() =>
+                  setPaymentProofZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))
+                }
+                disabled={paymentProofZoom >= 3}
+                aria-label="Zoom in"
+              >
+                +
+              </Button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/20 p-2">
+            {paymentProofPreviewUrl && isEmbedSafePaymentProofUrl(paymentProofPreviewUrl) ? (
+              <div className="inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL or HTTPS proof URL */}
+                <img
+                  src={paymentProofPreviewUrl}
+                  alt="Payment proof submitted for this open play request"
+                  className="block h-auto max-h-none max-w-none"
+                  style={{
+                    width: `${paymentProofZoom * 100}%`,
+                  }}
+                />
+              </div>
+            ) : paymentProofPreviewUrl ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                This proof link cannot be previewed here.{" "}
+                <a
+                  href={paymentProofPreviewUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Open in new tab
+                </a>
+              </p>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Button
         variant="ghost"
         className="mb-2 -ml-2 text-muted-foreground"
@@ -371,6 +758,17 @@ export default function OpenPlayDetailPage() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-52 p-1" align="end" sideOffset={8}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setHostOptionsOpen(false);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4 shrink-0" />
+                Edit open play
+              </button>
               <button
                 type="button"
                 className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring"
@@ -432,147 +830,32 @@ export default function OpenPlayDetailPage() {
           ) : null}
         </CardContent>
       </Card>
-
-      {!isHost ? (
+      {data.approved_players && data.approved_players.length > 0 ? (
         <Card className="border-border/50">
           <CardContent className="space-y-4 p-6">
-            <h2 className="font-heading text-lg font-semibold">Join</h2>
-            {session.status === "cancelled" ||
-            (!myRequest &&
-              (!joinableByTime ||
-                lifecycleDisplay === "closed" ||
-                lifecycleDisplay === "cancelled")) ? (
-              <p className="text-sm text-muted-foreground">
-                This session is no longer accepting joins.
-              </p>
-            ) : (
-              <>
-                <div className="space-y-1 text-sm">
-                  <p className="text-muted-foreground">
-                    Your status:{" "}
-                    <span className="font-medium text-foreground">
-                      {joinRequestStatusLabel(myRequest?.status)}
-                    </span>
+            <h2 className="font-heading text-lg font-semibold">Players</h2>
+            <div className="space-y-2">
+              {data.approved_players.map((player) => (
+                <div
+                  key={player.id}
+                  className="flex items-center justify-between rounded-md border border-border/70 p-3"
+                >
+                  <p className="text-sm font-medium">{player.user_name ?? player.user_id}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {typeof player.user_dupr_rating === "number"
+                      ? `DUPR ${player.user_dupr_rating.toFixed(2)}`
+                      : "DUPR -"}
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="join-note">Note to organizer</Label>
-                  <Textarea
-                    id="join-note"
-                    value={joinNote}
-                    onChange={(event) => setJoinNote(event.target.value)}
-                    placeholder="Optional note for the host"
-                    rows={3}
-                    disabled={
-                      myRequest != null &&
-                      !(
-                        myRequest.status === "waitlisted" ||
-                        myRequest.status === "expired" ||
-                        myRequest.status === "denied" ||
-                        myRequest.status === "payment_locked"
-                      )
-                    }
-                  />
-                </div>
-
-                {!myRequest ? (
-                  <Button
-                    onClick={() => joinMutation.mutate()}
-                    disabled={
-                      joinMutation.isPending ||
-                      session.status === "full" ||
-                      !canAttemptNewJoin
-                    }
-                  >
-                    {joinMutation.isPending ? "Joining…" : "Join waitlist"}
-                  </Button>
-                ) : null}
-
-                {onWaitlist && !canPayNow ? (
-                  <Button
-                    onClick={() => lockMutation.mutate()}
-                    disabled={
-                      lockMutation.isPending ||
-                      session.status === "full" ||
-                      !joinableByTime
-                    }
-                  >
-                    {lockMutation.isPending ? "Please wait…" : "Continue to payment"}
-                  </Button>
-                ) : null}
-
-                {myRequest?.status === "pending_approval" ? (
-                  <p className="text-sm text-muted-foreground">
-                    Your payment proof is with the host. You will see updates here.
-                  </p>
-                ) : null}
-
-                {myRequest?.status === "approved" ? (
-                  <p className="text-sm text-muted-foreground">
-                    You are approved for this open play. See you on court.
-                  </p>
-                ) : null}
-
-                {canPayNow ? (
-                  <div className="space-y-3 rounded-md border border-border/70 p-4">
-                    <p className="inline-flex items-center gap-2 text-sm text-amber-600">
-                      <Clock className="h-4 w-4" />
-                      Submit proof {lockTimeLabel ? `— lock expires ${lockTimeLabel}` : ""}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label>Payment method</Label>
-                        <select
-                          className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                          value={paymentMethod}
-                          onChange={(event) =>
-                            setPaymentMethod(event.target.value as "gcash" | "maya")
-                          }
-                        >
-                          {session.accepts_gcash ? <option value="gcash">GCash</option> : null}
-                          {session.accepts_maya ? <option value="maya">Maya</option> : null}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Payment proof (JPEG)</Label>
-                        <Input
-                          type="file"
-                          accept="image/jpeg"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                              const src = String(reader.result ?? "");
-                              const image = new Image();
-                              image.onload = () => {
-                                setProofDataUrl(src);
-                                setProofBytes(file.size);
-                                setProofWidth(image.width);
-                                setProofHeight(image.height);
-                              };
-                              image.src = src;
-                            };
-                            reader.readAsDataURL(file);
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => submitProofMutation.mutate()}
-                      disabled={submitProofMutation.isPending || !proofDataUrl}
-                    >
-                      Submit payment proof
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            )}
+              ))}
+            </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : null}
+
+      {isHost ? (
         <Card className="border-border/50">
-          <CardContent className="space-y-2 p-6">
+          <CardContent className="space-y-4 p-6">
             <h2 className="font-heading text-lg font-semibold">Hosting</h2>
             <p className="text-sm text-muted-foreground">
               You created this open play. Manage join requests below and from{" "}
@@ -583,7 +866,7 @@ export default function OpenPlayDetailPage() {
             </p>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       <Card className="border-border/50">
         <CardContent className="space-y-4 p-6">
@@ -696,7 +979,7 @@ export default function OpenPlayDetailPage() {
       {data.pending_requests && data.pending_requests.length > 0 ? (
         <Card className="border-border/50">
           <CardContent className="space-y-4 p-6">
-            <h2 className="font-heading text-lg font-semibold">Organizer approvals</h2>
+            <h2 className="font-heading text-lg font-semibold">Requests</h2>
             <div className="space-y-3">
               {data.pending_requests.map((request) => (
                 <div key={request.id} className="rounded-md border border-border/70 p-3">
@@ -711,6 +994,18 @@ export default function OpenPlayDetailPage() {
                     <p className="mt-1 text-sm text-muted-foreground">{request.join_note}</p>
                   ) : null}
                   <div className="mt-2 flex flex-wrap gap-2">
+                    {request.payment_proof_url ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setPaymentProofPreviewUrl(request.payment_proof_url ?? null);
+                          setPaymentProofZoom(1);
+                        }}
+                      >
+                        View payment proof
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       onClick={() => approveMutation.mutate(request.id)}
@@ -744,8 +1039,72 @@ export default function OpenPlayDetailPage() {
       ) : null}
         </div>
 
+        <aside className="min-w-0 space-y-6 lg:sticky lg:top-6 lg:self-start">
+          {!isHost ? (
+            <Card className="border-border/50">
+              <CardContent className="space-y-4 p-6">
+                <h2 className="font-heading text-lg font-semibold">Join</h2>
+                {session.status === "cancelled" ||
+                (!myRequest &&
+                  (!joinableByTime ||
+                    lifecycleDisplay === "closed" ||
+                    lifecycleDisplay === "cancelled")) ? (
+                  <p className="text-sm text-muted-foreground">
+                    This session is no longer accepting joins.
+                  </p>
+                ) : (
+                  <>
+                    <div className="space-y-1 text-sm">
+                      <p className="text-muted-foreground">
+                        Your status:{" "}
+                        <span className="font-medium text-foreground">
+                          {joinRequestStatusLabel(myRequest?.status)}
+                        </span>
+                      </p>
+                    </div>
+                    {!myRequest ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="join-note">Note to organizer</Label>
+                        <Textarea
+                          id="join-note"
+                          value={joinNote}
+                          onChange={(event) => setJoinNote(event.target.value)}
+                          placeholder="Optional note for the host"
+                          rows={3}
+                        />
+                      </div>
+                    ) : null}
+
+                    {canRestartJoin ? (
+                      <Button
+                        onClick={() => joinMutation.mutate()}
+                        disabled={
+                          joinMutation.isPending ||
+                          session.status === "full" ||
+                          !canAttemptNewJoin
+                        }
+                      >
+                        {joinMutation.isPending ? "Starting join…" : "Join now"}
+                      </Button>
+                    ) : null}
+
+                    {myRequest?.status === "pending_approval" ? (
+                      <p className="text-sm text-muted-foreground">
+                        Your payment proof is with the host. You will see updates here.
+                      </p>
+                    ) : null}
+
+                    {myRequest?.status === "approved" ? (
+                      <p className="text-sm text-muted-foreground">
+                        You are approved for this open play. See you on court.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         {court ? (
-          <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
             <Card className="border-border/50">
               <CardHeader className="pb-2">
                 <CardTitle className="font-heading text-lg">Court details</CardTitle>
@@ -896,9 +1255,47 @@ export default function OpenPlayDetailPage() {
                 </div>
               </CardContent>
             </Card>
-          </aside>
         ) : null}
+          </aside>
       </div>
+      {canPayNow ? (
+        <PaymentLockOverlay
+          description="Send payment to the selected account, then upload your proof."
+          remainingSeconds={paymentLockRemainingSeconds}
+          totalDue={session.price_per_player}
+          paymentMethods={[
+            ...(session.accepts_gcash
+              ? [
+                  {
+                    method: "gcash" as const,
+                    account_name: session.gcash_account_name ?? "",
+                    account_number: session.gcash_account_number ?? "",
+                    label: "GCash",
+                  },
+                ]
+              : []),
+            ...(session.accepts_maya
+              ? [
+                  {
+                    method: "maya" as const,
+                    account_name: session.maya_account_name ?? "",
+                    account_number: session.maya_account_number ?? "",
+                    label: "Maya",
+                  },
+                ]
+              : []),
+          ]}
+          selectedPaymentMethod={paymentMethod}
+          onPaymentMethodChange={(value) => setPaymentMethod(value)}
+          onPickProofFile={processProofFile}
+          proofPreviewUrl={proofDataUrl}
+          proofOptimizing={proofOptimizing}
+          onClearProof={clearProofSelection}
+          onSubmit={() => submitProofMutation.mutate()}
+          submitDisabled={submitProofMutation.isPending || proofOptimizing || !proofDataUrl}
+          submitPending={submitProofMutation.isPending}
+        />
+      ) : null}
     </div>
   );
 }

@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import { ArrowLeft, CalendarIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
+import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import {
   formatBookableHourSlotRange,
@@ -104,6 +105,7 @@ function normAmenity(s: string) {
 export default function AdminVenueCourtsPage() {
   const params = useParams<{ venueId: string }>();
   const venueId = params.venueId;
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Court | null>(null);
@@ -117,7 +119,12 @@ export default function AdminVenueCourtsPage() {
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
 
-  const { data: workspace, isLoading } = useQuery({
+  const {
+    data: workspace,
+    isLoading,
+    isError: isWorkspaceError,
+    error: workspaceError,
+  } = useQuery({
     queryKey: queryKeys.admin.venueWorkspace(venueId),
     queryFn: async () => {
       const { data } = await courtlyApi.adminVenues.workspace(venueId);
@@ -128,6 +135,14 @@ export default function AdminVenueCourtsPage() {
 
   const venueCourts = workspace?.courts ?? [];
   const venue = workspace?.venue;
+  const missingVenue =
+    !isLoading &&
+    !workspace &&
+    (!isWorkspaceError || httpStatusOf(workspaceError) === 404);
+  useEffect(() => {
+    if (!missingVenue) return;
+    router.replace("/admin/venues");
+  }, [missingVenue, router]);
   const venueName = venue?.name ?? venueCourts[0]?.establishment_name ?? "Venue";
   const showVenueWorkspaceSkeleton = isLoading && !venue;
 

@@ -379,6 +379,12 @@ export type OpenPlayDetailResponse = {
   court?: Court | null;
   my_request?: OpenPlayJoinRequest | null;
   pending_requests?: OpenPlayJoinRequest[];
+  approved_players?: Array<{
+    id: string;
+    user_id: string;
+    user_name?: string | null;
+    user_dupr_rating?: number | null;
+  }>;
   comments: OpenPlayComment[];
   counts: {
     approved: number;
@@ -534,6 +540,7 @@ export type BookingCheckoutResponse = {
   booking_id: string;
   booking_group_id: string;
   hold_expires_at: string;
+  total_due: number;
   payment_methods: VenuePaymentMethodDetails[];
 };
 

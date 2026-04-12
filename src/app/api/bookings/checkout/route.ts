@@ -9,7 +9,6 @@ import {
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
-import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 
@@ -39,6 +38,7 @@ export async function POST(req: Request) {
   let bookingNumber = generateBookingNumber(payloads[0]?.date ?? null);
   const rows: Array<Record<string, unknown>> = [];
   let checkoutPaymentMethods: BookingCheckoutResponse["payment_methods"] = [];
+  let totalDue = 0;
 
   for (const body of payloads) {
     const court = courts.find((row) => row.id === body.court_id);
@@ -120,6 +120,7 @@ export async function POST(req: Request) {
       payment_provider: "manual",
       payment_attempt_count: 1,
     });
+    totalDue += Number(itemTotal ?? 0);
   }
 
   const supabase = createSupabaseAdminClient();
@@ -148,55 +149,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to create booking hold." }, { status: 500 });
   }
 
-  const notifyByGroup = new Map<
-    string,
-    {
-      venueId: string;
-      venueName: string;
-      courtNames: Set<string>;
-      bookingId: string;
-    }
-  >();
-  for (const [index, insertedRow] of insertedRows.entries()) {
-    const row = rows[index] as { court_id?: string; booking_group_id?: string | null } | undefined;
-    const courtId = row?.court_id;
-    if (!courtId || typeof courtId !== "string") continue;
-    const court = courts.find((entry) => entry.id === courtId);
-    const venue = court ? venues.find((entry) => entry.id === court.venue_id) : null;
-    if (!court || !venue) continue;
-    const groupKey = `${row?.booking_group_id ?? insertedRow.id}:${venue.id}`;
-    const current = notifyByGroup.get(groupKey);
-    if (current) {
-      current.courtNames.add(court.name ?? "Court");
-      continue;
-    }
-    notifyByGroup.set(groupKey, {
-      venueId: venue.id,
-      venueName: venue.name,
-      courtNames: new Set([court.name ?? "Court"]),
-      bookingId: insertedRow.id,
-    });
-  }
-  for (const group of notifyByGroup.values()) {
-    const names = [...group.courtNames];
-    const bookingLabel =
-      names.length <= 1 ? names[0] ?? "Court" : `${names.length} slots`;
-    void emitBookingCreatedToVenueAdmins({
-      venueId: group.venueId,
-      venueName: group.venueName,
-      courtName: bookingLabel,
-      bookingId: group.bookingId,
-      bookerLabel: sessionUser.full_name?.trim() || sessionUser.email,
-      bookerUserId: sessionUser.id,
-    });
-  }
-
   const bookingId = (insertedRows[0] as { id: string }).id;
 
   const body: BookingCheckoutResponse = {
     booking_id: bookingId,
     booking_group_id: bookingGroupId,
     hold_expires_at: holdExpiresAt.toISOString(),
+    total_due: totalDue,
     payment_methods: checkoutPaymentMethods,
   };
 

@@ -1,22 +1,20 @@
 "use client";
 
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft,
-  CheckCircle2,
   Loader2,
   ShoppingCart,
   Trash2,
-  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ChangeEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -42,20 +40,15 @@ import {
 import { queryKeys } from "@/lib/query/query-keys";
 import { useBookingCart } from "@/lib/stores/booking-cart";
 import type { Booking, Court } from "@/lib/types/courtly";
+import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 import { segmentsTotalCost } from "@/lib/court-pricing";
 import { splitBookingAmounts } from "@/lib/platform-fee";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 type PaymentOverlayState = {
   booking_id: string;
   booking_group_id: string;
   hold_expires_at: string;
+  total_due: number;
   payment_methods: Array<{
     method: "gcash" | "maya";
     account_name: string;
@@ -88,6 +81,7 @@ export default function BookingCartPage() {
   const clearCart = useBookingCart((state) => state.clearCart);
 
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
     null,
   );
@@ -99,7 +93,44 @@ export default function BookingCartPage() {
     height: number;
   } | null>(null);
   const [proofOptimizing, setProofOptimizing] = useState(false);
-  const proofFileInputRef = useRef<HTMLInputElement>(null);
+  const { data: myPendingBookings = [] } = useQuery({
+    queryKey: queryKeys.bookings.list({
+      player_email: user?.email,
+    }),
+    queryFn: async () => {
+      if (!user?.email) return [] as Booking[];
+      const { data } = await courtlyApi.bookings.list({
+        player_email: user.email,
+      });
+      return data;
+    },
+    enabled: !!user?.email,
+  });
+  const activePendingBooking = useMemo(() => {
+    const now = Date.now();
+    const candidates = myPendingBookings
+      .filter(
+        (booking) =>
+          booking.status === "pending_payment" &&
+          booking.hold_expires_at &&
+          new Date(booking.hold_expires_at).getTime() > now &&
+          !booking.payment_failed_at,
+      )
+      .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""));
+    return candidates[0] ?? null;
+  }, [myPendingBookings]);
+  const pendingPaymentCourtId = activePendingBooking?.court_id ?? null;
+  const { data: pendingPaymentCourt } = useQuery({
+    queryKey: pendingPaymentCourtId
+      ? queryKeys.courts.detail(pendingPaymentCourtId)
+      : queryKeys.courts.detail(""),
+    queryFn: async () => {
+      if (!pendingPaymentCourtId) return null as Court | null;
+      const { data } = await courtlyApi.courts.get(pendingPaymentCourtId);
+      return data;
+    },
+    enabled: !!pendingPaymentCourtId,
+  });
 
   const itemSurfaces = useQueries({
     queries: cartItems.map((item) => ({
@@ -230,6 +261,55 @@ export default function BookingCartPage() {
     },
   });
 
+  useEffect(() => {
+    const id = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!activePendingBooking || !pendingPaymentCourt) return;
+    const paymentMethods = venuePaymentMethodsForCheckout(pendingPaymentCourt);
+    if (paymentMethods.length === 0) return;
+    const bookingGroupId =
+      activePendingBooking.booking_group_id ?? activePendingBooking.id;
+    const relatedPending = myPendingBookings.filter(
+      (booking) =>
+        (booking.booking_group_id === bookingGroupId ||
+          booking.id === activePendingBooking.id) &&
+        booking.status === "pending_payment",
+    );
+    const totalDue = relatedPending.reduce(
+      (sum, booking) => sum + Number(booking.total_cost ?? 0),
+      0,
+    );
+    setPaymentOverlay((current) =>
+      current && current.booking_id !== activePendingBooking.id
+        ? current
+        : {
+        booking_id: activePendingBooking.id,
+        booking_group_id: bookingGroupId,
+        hold_expires_at: activePendingBooking.hold_expires_at!,
+        total_due: totalDue,
+        payment_methods: paymentMethods,
+      },
+    );
+    setSelectedPaymentMethod((current) => {
+      if (current && paymentMethods.some((method) => method.method === current)) return current;
+      return paymentMethods[0]?.method ?? null;
+    });
+  }, [activePendingBooking, myPendingBookings, pendingPaymentCourt]);
+  const overlayRemainingSeconds = paymentOverlay
+    ? Math.max(
+        0,
+        Math.ceil((new Date(paymentOverlay.hold_expires_at).getTime() - countdownNow) / 1000),
+      )
+    : 0;
+  useEffect(() => {
+    if (!paymentOverlay) return;
+    if (overlayRemainingSeconds > 0) return;
+    window.location.reload();
+  }, [overlayRemainingSeconds, paymentOverlay]);
+
   const processProofFile = async (file: File) => {
     const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
     if (!allowed.includes(file.type)) {
@@ -250,13 +330,6 @@ export default function BookingCartPage() {
     } finally {
       setProofOptimizing(false);
     }
-  };
-
-  const onProofFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await processProofFile(file);
-    event.target.value = "";
   };
 
   const startCheckout = () => {
@@ -443,87 +516,26 @@ export default function BookingCartPage() {
       )}
 
       {paymentOverlay ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
-          <Card className="w-full max-w-md border-primary/25 shadow-2xl">
-            <CardContent className="space-y-5 p-6">
-              <div className="space-y-1.5 text-center">
-                <h2 className="font-heading text-xl font-semibold tracking-tight">
-                  Complete your payment
-                </h2>
-                <p className="text-sm text-muted-foreground leading-snug">
-                  Send the amount to the account below, then upload your proof.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="payment-method-select" className="text-sm font-medium">
-                  Pay with
-                </Label>
-                <Select
-                  value={selectedPaymentMethod ?? ""}
-                  onValueChange={(value) =>
-                    setSelectedPaymentMethod(value as "gcash" | "maya")
-                  }
-                >
-                  <SelectTrigger id="payment-method-select" className="h-11">
-                    <SelectValue placeholder="Choose GCash or Maya" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentOverlay.payment_methods.map((method) => (
-                      <SelectItem key={method.method} value={method.method}>
-                        {method.method.toUpperCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <input
-                  ref={proofFileInputRef}
-                  id="payment-proof-file"
-                  type="file"
-                  accept={PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES.join(",")}
-                  onChange={onProofFileChange}
-                  className="sr-only"
-                />
-                <label
-                  htmlFor="payment-proof-file"
-                  className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-muted-foreground/25 bg-muted/15 px-4 py-6 text-center hover:border-muted-foreground/40"
-                >
-                  {proofOptimizing ? (
-                    <>
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                      <span className="text-sm">Preparing photo...</span>
-                    </>
-                  ) : optimizedProof ? (
-                    <>
-                      <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-                      <span className="text-sm">Photo ready. Tap Submit.</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm">Tap to upload payment photo</span>
-                    </>
-                  )}
-                </label>
-              </div>
-              <Button
-                type="button"
-                size="lg"
-                className="w-full font-heading font-semibold"
-                onClick={() => submitPaymentProof.mutate()}
-                disabled={
-                  submitPaymentProof.isPending ||
-                  proofOptimizing ||
-                  !selectedPaymentMethod ||
-                  !optimizedProof
-                }
-              >
-                {submitPaymentProof.isPending ? "Submitting…" : "Submit for confirmation"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <PaymentLockOverlay
+          description="Send the amount to the account below, then upload your proof."
+          remainingSeconds={overlayRemainingSeconds}
+          totalDue={paymentOverlay.total_due}
+          paymentMethods={paymentOverlay.payment_methods}
+          selectedPaymentMethod={selectedPaymentMethod}
+          onPaymentMethodChange={(value) => setSelectedPaymentMethod(value)}
+          onPickProofFile={processProofFile}
+          proofPreviewUrl={optimizedProof?.dataUrl ?? null}
+          proofOptimizing={proofOptimizing}
+          onClearProof={() => setOptimizedProof(null)}
+          onSubmit={() => submitPaymentProof.mutate()}
+          submitDisabled={
+            submitPaymentProof.isPending ||
+            proofOptimizing ||
+            !selectedPaymentMethod ||
+            !optimizedProof
+          }
+          submitPending={submitPaymentProof.isPending}
+        />
       ) : null}
     </div>
   );

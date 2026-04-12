@@ -7,6 +7,7 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import {
+  deleteExpiredPendingPaymentBookings,
   listBookingsFiltered,
   listBookingsFilteredPage,
   listCourtIdsByVenueIds,
@@ -39,6 +40,7 @@ function toBookingPayloadList(body: unknown): Partial<Booking>[] {
 
 export async function GET(req: Request) {
   const startedAt = Date.now();
+  await deleteExpiredPendingPaymentBookings();
   const { searchParams } = new URL(req.url);
   const courtId = searchParams.get("court_id");
   const date = searchParams.get("date");
@@ -82,6 +84,9 @@ export async function GET(req: Request) {
       courtId: courtId ?? undefined,
       date: date ?? undefined,
       playerEmail: playerEmail ?? undefined,
+      statuses: manageable
+        ? ["pending_confirmation", "confirmed", "cancelled", "completed"]
+        : undefined,
       offset,
       limit,
     });
@@ -114,6 +119,9 @@ export async function GET(req: Request) {
     courtId: courtId ?? undefined,
     date: date ?? undefined,
     playerEmail: playerEmail ?? undefined,
+    statuses: manageable
+      ? ["pending_confirmation", "confirmed", "cancelled", "completed"]
+      : undefined,
   });
   if (sport) list = list.filter((booking) => bookingSport(booking) === sport);
   list.sort((a, b) =>
@@ -286,6 +294,8 @@ export async function POST(req: Request) {
     }
   >();
   for (const [index, inserted] of insertedRows.entries()) {
+    const createdBooking = bookings[index];
+    if (createdBooking?.status === "pending_payment") continue;
     const meta = bookingVenuePairs[index];
     if (!meta) continue;
     const row = rows[index] as { booking_group_id?: string | null } | undefined;

@@ -5,7 +5,6 @@ import {
   useQueries,
   useQuery,
   useQueryClient,
-  type QueryKey,
 } from "@tanstack/react-query";
 import {
   addDays,
@@ -18,7 +17,6 @@ import {
 import {
   ArrowLeft,
   CalendarDays,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -27,13 +25,13 @@ import {
   MapPin,
   Star,
   Trash2,
-  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
+import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
+import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { segmentsTotalCost } from "@/lib/court-pricing";
@@ -145,6 +144,7 @@ type PaymentOverlayState = {
   booking_id: string;
   booking_group_id: string;
   hold_expires_at: string;
+  total_due: number;
   payment_methods: Array<{
     method: "gcash" | "maya";
     account_name: string;
@@ -280,9 +280,7 @@ export default function BookCourtPage() {
     width: number;
     height: number;
   } | null>(null);
-  const proofFileInputRef = useRef<HTMLInputElement>(null);
   const [proofOptimizing, setProofOptimizing] = useState(false);
-  const [proofDragActive, setProofDragActive] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   useEffect(() => {
@@ -293,29 +291,25 @@ export default function BookCourtPage() {
   const todayStart = useMemo(() => startOfDay(new Date()), []);
   const maxSelectableDate = useMemo(() => addMonths(todayStart, 4), [todayStart]);
   const bookingSurfaceKey = queryKeys.bookingSurface.courtDay(activeCourtId, dateIso);
-  const myDayBookingsQueryKey = useMemo(
+  const myPendingBookingsQueryKey = useMemo(
     () =>
-      user?.email
-        ? queryKeys.bookings.list({
-            court_id: activeCourtId,
-            date: dateIso,
-            player_email: user.email,
-          })
-        : null,
-    [activeCourtId, dateIso, user?.email],
+      queryKeys.bookings.list({
+        player_email: user?.email,
+      }),
+    [user?.email],
   );
-  const bookingRealtimeKeys = useMemo((): QueryKey[] => {
-    const keys: QueryKey[] = [bookingSurfaceKey];
-    if (myDayBookingsQueryKey) keys.push(myDayBookingsQueryKey);
-    return keys;
-  }, [bookingSurfaceKey, myDayBookingsQueryKey]);
   useBookingsRealtime({
     filter: activeCourtId ? `court_id=eq.${activeCourtId}` : null,
     enabled: !!activeCourtId,
-    queryKeysToInvalidate: bookingRealtimeKeys,
+    queryKeysToInvalidate: [bookingSurfaceKey, myPendingBookingsQueryKey],
   });
 
-  const { data: bookingSurface, isLoading: isLoadingBookingSurface } = useQuery({
+  const {
+    data: bookingSurface,
+    isLoading: isLoadingBookingSurface,
+    isError: isBookingSurfaceError,
+    error: bookingSurfaceError,
+  } = useQuery({
     queryKey: bookingSurfaceKey,
     queryFn: async () => {
       const { data } = await courtlyApi.courts.bookingSurface(activeCourtId, {
@@ -327,26 +321,26 @@ export default function BookCourtPage() {
     staleTime: 15_000,
   });
 
-  const { data: myDayBookings = [] } = useQuery({
-    queryKey:
-      myDayBookingsQueryKey ??
-      queryKeys.bookings.list({
-        court_id: activeCourtId,
-        date: dateIso,
-        player_email: user?.email,
-      }),
+  const { data: myPendingBookings = [] } = useQuery({
+    queryKey: myPendingBookingsQueryKey,
     queryFn: async () => {
       if (!user?.email) return [] as Booking[];
       const { data } = await courtlyApi.bookings.list({
-        court_id: activeCourtId,
-        date: dateIso,
         player_email: user.email,
       });
       return data;
     },
-    enabled: !!user?.email && !!activeCourtId,
+    enabled: !!user?.email,
   });
   const court = bookingSurface?.court;
+  const missingCourt =
+    !isLoadingBookingSurface &&
+    !court &&
+    (!isBookingSurfaceError || httpStatusOf(bookingSurfaceError) === 404);
+  useEffect(() => {
+    if (!missingCourt) return;
+    router.replace("/courts");
+  }, [missingCourt, router]);
   const establishmentCourts = useMemo(
     () => bookingSurface?.sibling_courts ?? [],
     [bookingSurface?.sibling_courts],
@@ -615,7 +609,7 @@ export default function BookCourtPage() {
 
   const activePendingBooking = useMemo(() => {
     const now = countdownNow;
-    const candidates = myDayBookings
+    const candidates = myPendingBookings
       .filter(
         (booking) =>
           booking.status === "pending_payment" &&
@@ -625,29 +619,57 @@ export default function BookCourtPage() {
       )
       .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""));
     return candidates[0] ?? null;
-  }, [myDayBookings, countdownNow]);
+  }, [myPendingBookings, countdownNow]);
+  const pendingPaymentCourtId = activePendingBooking?.court_id ?? null;
+  const { data: pendingPaymentCourt } = useQuery({
+    queryKey: pendingPaymentCourtId
+      ? queryKeys.courts.detail(pendingPaymentCourtId)
+      : queryKeys.courts.detail(""),
+    queryFn: async () => {
+      if (!pendingPaymentCourtId) return null as Court | null;
+      const { data } = await courtlyApi.courts.get(pendingPaymentCourtId);
+      return data;
+    },
+    enabled: !!pendingPaymentCourtId,
+  });
 
   useEffect(() => {
     if (!activePendingBooking || !activePendingBooking.hold_expires_at) {
       return;
     }
     const holdExpiresAt = activePendingBooking.hold_expires_at;
-    const paymentMethods = venuePaymentMethodsForCheckout(court ?? {});
+    const paymentMethods = venuePaymentMethodsForCheckout(pendingPaymentCourt ?? court ?? {});
+    if (paymentMethods.length === 0) return;
+    const relatedPending = myPendingBookings.filter(
+      (booking) =>
+        (booking.booking_group_id ===
+          (activePendingBooking.booking_group_id ?? activePendingBooking.id) ||
+          booking.id === activePendingBooking.id) &&
+        booking.status === "pending_payment",
+    );
+    const totalDue = relatedPending.reduce(
+      (sum, booking) => sum + Number(booking.total_cost ?? 0),
+      0,
+    );
     setPaymentOverlay((current) => {
-      if (current?.booking_id === activePendingBooking.id) return current;
+      if (current && current.booking_id !== activePendingBooking.id) return current;
       return {
         booking_id: activePendingBooking.id,
         booking_group_id: activePendingBooking.booking_group_id ?? activePendingBooking.id,
         hold_expires_at: holdExpiresAt,
+        total_due: totalDue,
         payment_methods: paymentMethods,
       };
     });
-    setSelectedPaymentMethod((current) => current ?? paymentMethods[0]?.method ?? null);
-  }, [activePendingBooking, court]);
+    setSelectedPaymentMethod((current) => {
+      if (current && paymentMethods.some((method) => method.method === current)) return current;
+      return paymentMethods[0]?.method ?? null;
+    });
+  }, [activePendingBooking, court, myPendingBookings, pendingPaymentCourt]);
 
   useEffect(() => {
     if (!paymentOverlay) return;
-    const related = myDayBookings.filter(
+    const related = myPendingBookings.filter(
       (booking) =>
         booking.booking_group_id === paymentOverlay.booking_group_id ||
         booking.id === paymentOverlay.booking_id,
@@ -667,7 +689,7 @@ export default function BookCourtPage() {
     if (hasConfirmed || hasSubmitted || hasFailed || holdExpired) {
       setPaymentOverlay(null);
     }
-  }, [myDayBookings, paymentOverlay]);
+  }, [myPendingBookings, paymentOverlay]);
 
   const overlayRemainingSeconds = paymentOverlay
     ? Math.max(
@@ -675,11 +697,22 @@ export default function BookCourtPage() {
         Math.ceil((new Date(paymentOverlay.hold_expires_at).getTime() - countdownNow) / 1000),
       )
     : 0;
+  const overlayTotalDue = useMemo(() => {
+    if (!paymentOverlay) return 0;
+    const relatedPending = myPendingBookings.filter(
+      (booking) =>
+        (booking.booking_group_id === paymentOverlay.booking_group_id ||
+          booking.id === paymentOverlay.booking_id) &&
+        booking.status === "pending_payment",
+    );
+    if (relatedPending.length === 0) return Number(paymentOverlay.total_due ?? 0);
+    return relatedPending.reduce((sum, booking) => sum + Number(booking.total_cost ?? 0), 0);
+  }, [myPendingBookings, paymentOverlay]);
 
   useEffect(() => {
     if (!paymentOverlay) return;
     if (overlayRemainingSeconds <= 0) {
-      setPaymentOverlay(null);
+      window.location.reload();
     }
   }, [overlayRemainingSeconds, paymentOverlay]);
 
@@ -714,7 +747,6 @@ export default function BookCourtPage() {
 
   const clearProofSelection = () => {
     setOptimizedProof(null);
-    if (proofFileInputRef.current) proofFileInputRef.current.value = "";
   };
 
   const performCartCheckout = () => {
@@ -1594,212 +1626,26 @@ export default function BookCourtPage() {
         </div>
       </div>
       {paymentOverlay ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
-          <Card className="w-full max-w-md border-primary/25 shadow-2xl">
-            <CardContent className="space-y-5 p-6">
-              <div className="space-y-1.5 text-center">
-                <h2 className="font-heading text-xl font-semibold tracking-tight">
-                  Complete your payment
-                </h2>
-                <p className="text-sm text-muted-foreground leading-snug">
-                  Send the amount to the account below, then add a clear photo of your
-                  receipt or transfer screen.
-                </p>
-              </div>
-              <div className="rounded-2xl bg-primary/10 px-4 py-4 text-center ring-1 ring-primary/20">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Time left to submit
-                </p>
-                <p className="mt-1 font-heading text-3xl font-bold text-primary tabular-nums">
-                  {Math.floor(overlayRemainingSeconds / 60)
-                    .toString()
-                    .padStart(2, "0")}
-                  :
-                  {(overlayRemainingSeconds % 60).toString().padStart(2, "0")}
-                </p>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="payment-method-select" className="text-sm font-medium">
-                    Pay with
-                  </Label>
-                  <Select
-                    value={selectedPaymentMethod ?? ""}
-                    onValueChange={(value) =>
-                      setSelectedPaymentMethod(value as "gcash" | "maya")
-                    }
-                  >
-                    <SelectTrigger id="payment-method-select" className="h-11">
-                      <SelectValue placeholder="Choose GCash or Maya" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {paymentOverlay.payment_methods.map((method) => (
-                        <SelectItem key={method.method} value={method.method}>
-                          {formatStatusLabel(method.method)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedPaymentMethod ? (
-                    <div className="rounded-xl bg-muted/50 px-3.5 py-3 text-sm">
-                      {(() => {
-                        const selected = paymentOverlay.payment_methods.find(
-                          (method) => method.method === selectedPaymentMethod,
-                        );
-                        if (!selected) return null;
-                        return (
-                          <dl className="space-y-1">
-                            <div>
-                              <dt className="text-xs text-muted-foreground">Account name</dt>
-                              <dd className="font-medium text-foreground">
-                                {selected.account_name}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-xs text-muted-foreground">Number</dt>
-                              <dd className="font-mono text-[15px] font-medium tracking-wide text-foreground">
-                                {selected.account_number}
-                              </dd>
-                            </div>
-                          </dl>
-                        );
-                      })()}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div
-                  className="space-y-2"
-                  aria-busy={proofOptimizing}
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    Payment photo
-                  </span>
-                  <input
-                    ref={proofFileInputRef}
-                    id="payment-proof-file"
-                    type="file"
-                    accept={PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES.join(",")}
-                    onChange={onProofFileChange}
-                    className="sr-only"
-                  />
-                  {optimizedProof && !proofOptimizing ? (
-                    <div className="overflow-hidden rounded-2xl border border-border bg-muted/20">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- data URL preview */}
-                      <img
-                        src={optimizedProof.dataUrl}
-                        alt="Preview of your payment screenshot"
-                        className="max-h-48 w-full object-contain bg-black/5"
-                      />
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-background/80 px-3 py-2.5">
-                        <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-                          Looks good — tap submit when ready
-                        </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 shrink-0 text-muted-foreground"
-                          onClick={clearProofSelection}
-                        >
-                          Change photo
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="payment-proof-file"
-                      onDragEnter={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setProofDragActive(true);
-                      }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setProofDragActive(true);
-                      }}
-                      onDragLeave={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                          setProofDragActive(false);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setProofDragActive(false);
-                        const file = e.dataTransfer.files?.[0];
-                        if (file) void processProofFile(file);
-                      }}
-                      className={cn(
-                        "flex min-h-38 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
-                        proofDragActive
-                          ? "border-primary bg-primary/10"
-                          : "border-muted-foreground/25 bg-muted/15 hover:border-muted-foreground/40 hover:bg-muted/25",
-                        proofOptimizing && "pointer-events-none opacity-70",
-                      )}
-                    >
-                      {proofOptimizing ? (
-                        <>
-                          <Loader2
-                            className="h-9 w-9 animate-spin text-primary"
-                            aria-hidden
-                          />
-                          <span className="text-sm font-medium text-foreground">
-                            Preparing your photo…
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            This usually takes a moment
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex size-12 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border">
-                            <Upload className="h-5 w-5 text-muted-foreground" aria-hidden />
-                          </span>
-                          <span className="text-sm font-medium text-foreground">
-                            Tap to choose or drop a photo here
-                          </span>
-                          <span className="max-w-[16rem] text-xs text-muted-foreground leading-relaxed">
-                            Screenshot or camera photo of your payment confirmation. JPG,
-                            PNG, or WebP.
-                          </span>
-                        </>
-                      )}
-                    </label>
-                  )}
-                </div>
-              </div>
-              <Button
-                type="button"
-                size="lg"
-                className="w-full font-heading font-semibold"
-                onClick={() => submitPaymentProof.mutate()}
-                disabled={
-                  submitPaymentProof.isPending ||
-                  proofOptimizing ||
-                  !selectedPaymentMethod ||
-                  !optimizedProof
-                }
-              >
-                {submitPaymentProof.isPending ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Submitting…
-                  </span>
-                ) : (
-                  "Submit for confirmation"
-                )}
-              </Button>
-              <p className="text-center text-xs text-muted-foreground leading-relaxed">
-                This window closes when the timer ends or after you submit.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <PaymentLockOverlay
+          description="Send the amount to the account below, then add a clear photo of your receipt or transfer screen."
+          remainingSeconds={overlayRemainingSeconds}
+          totalDue={overlayTotalDue}
+          paymentMethods={paymentOverlay.payment_methods}
+          selectedPaymentMethod={selectedPaymentMethod}
+          onPaymentMethodChange={(value) => setSelectedPaymentMethod(value)}
+          onPickProofFile={processProofFile}
+          proofPreviewUrl={optimizedProof?.dataUrl ?? null}
+          proofOptimizing={proofOptimizing}
+          onClearProof={clearProofSelection}
+          onSubmit={() => submitPaymentProof.mutate()}
+          submitDisabled={
+            submitPaymentProof.isPending ||
+            proofOptimizing ||
+            !selectedPaymentMethod ||
+            !optimizedProof
+          }
+          submitPending={submitPaymentProof.isPending}
+        />
       ) : null}
       {createBookings.isPending ? (
         <div className="fixed bottom-4 right-4 z-50 rounded-full border border-border bg-background/95 px-4 py-2 text-sm shadow-lg">
