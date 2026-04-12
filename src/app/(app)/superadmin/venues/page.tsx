@@ -882,6 +882,34 @@ export default function SuperadminVenuesPage() {
               <p className="mb-1.5 text-xs text-muted-foreground">
                 Add or remove court admins. Only users with Court admin role are allowed.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedAdminIds.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No assigned admins.</p>
+                ) : (
+                  selectedAdminIds.map((adminId) => {
+                    const adminUser = adminOptions.find((option) => option.id === adminId);
+                    if (!adminUser) return null;
+                    return (
+                      <Badge
+                        key={adminId}
+                        variant="outline"
+                        className="gap-1.5 border-primary/30 bg-primary/10 py-1 text-primary"
+                      >
+                        <span>{adminDirectoryLabel(adminUser)}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${adminDirectoryLabel(adminUser)}`}
+                          onClick={() =>
+                            setSelectedAdminIds((prev) => prev.filter((id) => id !== adminId))
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })
+                )}
+              </div>
               <div className="flex gap-2">
                 <Select value={adminToAdd} onValueChange={setAdminToAdd}>
                   <SelectTrigger className="mt-2 flex-1">
@@ -911,30 +939,6 @@ export default function SuperadminVenuesPage() {
                   <UserPlus className="mr-1.5 h-3.5 w-3.5" />
                   Add
                 </Button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {selectedAdminIds.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No assigned admins.</p>
-                ) : (
-                  selectedAdminIds.map((adminId) => {
-                    const adminUser = adminOptions.find((option) => option.id === adminId);
-                    if (!adminUser) return null;
-                    return (
-                      <Badge key={adminId} variant="outline" className="gap-1.5 py-1">
-                        <span>{adminDirectoryLabel(adminUser)}</span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${adminDirectoryLabel(adminUser)}`}
-                          onClick={() =>
-                            setSelectedAdminIds((prev) => prev.filter((id) => id !== adminId))
-                          }
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    );
-                  })
-                )}
               </div>
             </div>
           </div>
