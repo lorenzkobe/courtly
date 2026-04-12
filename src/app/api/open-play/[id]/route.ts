@@ -195,7 +195,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   patch.maya_account_name = nextAcceptsMaya ? nextMayaAccountName : null;
   patch.maya_account_number = nextAcceptsMaya ? nextMayaAccountNumber : null;
   patch.title = nextTitle;
-  patch.description = nextDescription || null;
+  patch.description = nextDescription || undefined;
   patch.max_players = nextMaxPlayers;
   patch.price_per_player = nextPricePerPlayer;
   patch.fee = nextPricePerPlayer;

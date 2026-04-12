@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   }
   const { searchParams } = new URL(req.url);
   const rawStatus = (searchParams.get("status") ?? "").trim();
-  const statuses = rawStatus
+  const statuses: VenueRequestStatus[] = rawStatus
     ? rawStatus
         .split(",")
         .map((value) => value.trim())
