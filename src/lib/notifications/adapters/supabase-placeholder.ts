@@ -46,11 +46,19 @@ function categoryForEmit(input: EmitNotificationInput): NotificationCategory {
   if (
     t === "review_flagged_author" ||
     t === "review_flagged_superadmin" ||
-    t === "review_flag_resolution_feedback"
+    t === "review_flag_resolution_feedback" ||
+    t === "review_flag_deleted_author"
   ) {
     return "moderation";
   }
   if (t === "court_created_superadmin") return "court";
+  if (
+    t === "open_play_join_approved" ||
+    t === "open_play_join_denied" ||
+    t === "open_play_payment_submitted_host"
+  ) {
+    return "open_play";
+  }
   return "platform";
 }
 

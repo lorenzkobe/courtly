@@ -314,8 +314,14 @@ export const courtlyApi = {
       ),
     addComment: (id: string, body: { comment: string }) =>
       http.post<{ comment: OpenPlayComment }>(`/api/open-play/${id}/comments`, body),
+    updateComment: (sessionId: string, commentId: string, body: { comment: string }) =>
+      http.patch<{ comment: OpenPlayComment }>(
+        `/api/open-play/${sessionId}/comments/${commentId}`,
+        body,
+      ),
     update: (id: string, data: Partial<OpenPlaySession>) =>
       http.patch<OpenPlaySession>(`/api/open-play/${id}`, data),
+    delete: (id: string) => http.delete<{ ok: boolean }>(`/api/open-play/${id}`),
   },
 
   registrations: {

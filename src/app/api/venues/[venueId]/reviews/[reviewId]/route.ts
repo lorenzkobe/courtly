@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { isSuperadmin } from "@/lib/auth/management";
 import { deleteRow, listCourtReviews, listVenues, updateRow } from "@/lib/data/courtly-db";
-import { emitReviewFlagCleared } from "@/lib/notifications/emit-from-server";
+import {
+  emitReviewDeletedByModerationToAuthor,
+  emitReviewFlagCleared,
+} from "@/lib/notifications/emit-from-server";
 import type { CourtReview } from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
@@ -112,5 +115,12 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   }
 
   await deleteRow("court_reviews", reviewId);
+  if (isPlatform && !isAuthor) {
+    void emitReviewDeletedByModerationToAuthor({
+      review: { id: review.id, user_id: review.user_id },
+      venueName: venue.name,
+      reason: review.flag_reason ?? null,
+    });
+  }
   return NextResponse.json({ ok: true });
 }

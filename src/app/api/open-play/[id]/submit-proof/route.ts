@@ -4,13 +4,14 @@ import {
   getOpenPlayById,
   submitOpenPlayJoinPaymentProof,
 } from "@/lib/data/courtly-db";
+import { emitOpenPlayPaymentSubmittedToHost } from "@/lib/notifications/emit-from-server";
 import {
   PAYMENT_PROOF_CANONICAL_MIME_TYPE,
   PAYMENT_PROOF_FINAL_MAX_BYTES,
   PAYMENT_PROOF_MAX_LONG_EDGE_PX,
   PAYMENT_PROOF_MIN_SHORT_EDGE_PX,
 } from "@/lib/payments/payment-proof-constraints";
-import { isOpenPlayJoinableBySchedule } from "@/lib/open-play/schedule";
+import { assertOpenPlayAllowsSubmitProof } from "@/lib/open-play/lifecycle";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,8 +41,9 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!session) {
     return NextResponse.json({ error: "Open play not found" }, { status: 404 });
   }
-  if (!isOpenPlayJoinableBySchedule(session, Date.now())) {
-    return NextResponse.json({ error: "Open play has ended" }, { status: 409 });
+  const proofGate = assertOpenPlayAllowsSubmitProof(session, Date.now());
+  if (!proofGate.ok) {
+    return NextResponse.json({ error: proofGate.message }, { status: 409 });
   }
 
   const body = (await req.json()) as Partial<SubmitProofBody>;
@@ -92,5 +94,11 @@ export async function POST(req: Request, ctx: Ctx) {
       { status: 409 },
     );
   }
+  await emitOpenPlayPaymentSubmittedToHost({
+    hostUserId: session.host_user_id,
+    participantName: user.full_name || "A player",
+    sessionId: id,
+    sessionTitle: session.title,
+  });
   return NextResponse.json({ request });
 }

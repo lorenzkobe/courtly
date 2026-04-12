@@ -49,12 +49,25 @@ function NotificationRow({
   );
 
   const path = item.metadata?.target_path;
+  const bookingId = item.metadata?.booking_id;
+  const pathWithDetail =
+    path && bookingId && path.startsWith("/admin/bookings")
+      ? (() => {
+          const [pathname, rawQuery = ""] = path.split("?", 2);
+          const params = new URLSearchParams(rawQuery);
+          if (!params.get("detail")) {
+            params.set("detail", bookingId);
+          }
+          const query = params.toString();
+          return query ? `${pathname}?${query}` : pathname;
+        })()
+      : path;
   const unread = !item.read_at;
 
-  if (path) {
+  if (pathWithDetail) {
     return (
       <Link
-        href={path}
+        href={pathWithDetail}
         className={cn(
           "block rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent",
           unread && "bg-accent/40",
@@ -92,6 +105,10 @@ export default function NotificationBell() {
   const realtimeOk = isSupabasePublicConfigured();
   const [open, setOpen] = useState(false);
   useNotificationRealtime(user?.id ?? null);
+  const roleCaption =
+    user?.role === "admin" || user?.role === "superadmin"
+      ? "Ops and moderation alerts"
+      : "Booking and open play updates";
 
   const {
     data,
@@ -112,12 +129,10 @@ export default function NotificationBell() {
       },
       initialPageParam: null as string | null,
       getNextPageParam: (lastPage) => lastPage.next_cursor ?? null,
-      // Keep this active while authenticated so realtime invalidations can update
+      // Keep this active while authenticated so push realtime updates can refresh
       // the badge count immediately, even before the popover is opened.
       enabled: Boolean(user),
       staleTime: 15_000,
-      // Realtime invalidates on insert; poll as backup (especially if channel misses an event).
-      refetchInterval: realtimeOk ? 30_000 : 10_000,
     });
 
   const markRead = useMutation({
@@ -184,11 +199,6 @@ export default function NotificationBell() {
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold">Notifications</p>
             <div className="flex items-center gap-2">
-              {live && !realtimeOk ? (
-                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                  Refreshes ~30s
-                </span>
-              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -205,6 +215,9 @@ export default function NotificationBell() {
           </div>
           {isError ? (
             <p className="mt-1 text-xs text-destructive">Could not load notifications.</p>
+          ) : null}
+          {live && realtimeOk ? (
+            <p className="mt-1 text-xs text-muted-foreground">{roleCaption}</p>
           ) : null}
         </div>
 

@@ -276,14 +276,41 @@ export async function POST(req: Request) {
     }),
   );
 
+  const notifyByGroup = new Map<
+    string,
+    {
+      venueId: string;
+      venueName: string;
+      courtNames: Set<string>;
+      bookingId: string;
+    }
+  >();
   for (const [index, inserted] of insertedRows.entries()) {
     const meta = bookingVenuePairs[index];
     if (!meta) continue;
-    void emitBookingCreatedToVenueAdmins({
+    const row = rows[index] as { booking_group_id?: string | null } | undefined;
+    const groupKey = `${row?.booking_group_id ?? inserted.id}:${meta.venueId}`;
+    const current = notifyByGroup.get(groupKey);
+    if (current) {
+      current.courtNames.add(meta.courtName);
+      continue;
+    }
+    notifyByGroup.set(groupKey, {
       venueId: meta.venueId,
       venueName: meta.venueName,
-      courtName: meta.courtName,
+      courtNames: new Set([meta.courtName]),
       bookingId: inserted.id,
+    });
+  }
+  for (const group of notifyByGroup.values()) {
+    const names = [...group.courtNames];
+    const bookingLabel =
+      names.length <= 1 ? names[0] ?? "Court" : `${names.length} slots`;
+    void emitBookingCreatedToVenueAdmins({
+      venueId: group.venueId,
+      venueName: group.venueName,
+      courtName: bookingLabel,
+      bookingId: group.bookingId,
       bookerLabel: sessionUser.full_name?.trim() || sessionUser.email,
       bookerUserId: sessionUser.id,
     });

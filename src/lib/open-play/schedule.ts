@@ -19,11 +19,19 @@ export function openPlaySchedulePhase(
   nowMs: number,
 ): OpenPlaySchedulePhase | "cancelled" {
   if (session.status === "cancelled") return "cancelled";
-  if (session.status === "completed") return "ended";
+  if (session.status === "closed" || session.status === "completed") {
+    return "ended";
+  }
 
   const startMs = localSessionInstantMs(session.date, session.start_time);
   const endMs = localSessionInstantMs(session.date, session.end_time);
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return "upcoming";
+
+  if (session.status === "started") {
+    if (nowMs >= endMs) return "ended";
+    return "in_progress";
+  }
+
   if (nowMs < startMs) return "upcoming";
   if (nowMs >= endMs) return "ended";
   return "in_progress";
@@ -46,10 +54,22 @@ export function openPlaySchedulePhaseLabel(
   }
 }
 
+/** True only before slot start (new joins / list affordances). */
 export function isOpenPlayJoinableBySchedule(
   session: Pick<OpenPlaySession, "date" | "start_time" | "end_time" | "status">,
   nowMs: number,
 ): boolean {
-  const phase = openPlaySchedulePhase(session, nowMs);
-  return phase !== "cancelled" && phase !== "ended";
+  if (
+    session.status === "cancelled" ||
+    session.status === "closed" ||
+    session.status === "completed" ||
+    session.status === "started"
+  ) {
+    return false;
+  }
+  const startMs = localSessionInstantMs(session.date, session.start_time);
+  const endMs = localSessionInstantMs(session.date, session.end_time);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
+  if (nowMs >= endMs) return false;
+  return nowMs < startMs;
 }

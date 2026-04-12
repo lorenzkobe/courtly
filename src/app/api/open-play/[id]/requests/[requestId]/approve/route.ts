@@ -4,6 +4,8 @@ import {
   getOpenPlayById,
   setOpenPlayJoinRequestDecision,
 } from "@/lib/data/courtly-db";
+import { isOpenPlayTerminalDbStatus } from "@/lib/open-play/lifecycle";
+import { emitOpenPlayDecisionToUser } from "@/lib/notifications/emit-from-server";
 
 type Ctx = { params: Promise<{ id: string; requestId: string }> };
 
@@ -16,6 +18,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const session = await getOpenPlayById(id);
   if (!session) {
     return NextResponse.json({ error: "Open play not found" }, { status: 404 });
+  }
+  if (isOpenPlayTerminalDbStatus(session.status)) {
+    return NextResponse.json({ error: "Open play is closed" }, { status: 409 });
   }
   const canApprove = user.role === "superadmin" || session.host_user_id === user.id;
   if (!canApprove) {
@@ -33,5 +38,13 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!requestRecord) {
     return NextResponse.json({ error: "Request is not approvable" }, { status: 409 });
   }
+
+  await emitOpenPlayDecisionToUser({
+    userId: requestRecord.user_id,
+    sessionId: id,
+    sessionTitle: session.title,
+    decision: "approved",
+  });
+
   return NextResponse.json({ request: requestRecord });
 }
