@@ -18,6 +18,9 @@ export type NotificationEventType =
   | "review_flag_resolution_feedback"
   | "review_flag_deleted_author"
   | "court_created_superadmin"
+  | "venue_request_approved"
+  | "venue_request_rejected"
+  | "venue_request_update_requested"
   | "open_play_join_approved"
   | "open_play_join_denied"
   | "open_play_payment_submitted_host";
@@ -31,6 +34,8 @@ export type NotificationMetadata = {
   target_path?: string;
   open_play_session_id?: string;
   moderation_reason?: string;
+  venue_request_id?: string;
+  venue_id?: string;
 };
 
 export type Notification = {

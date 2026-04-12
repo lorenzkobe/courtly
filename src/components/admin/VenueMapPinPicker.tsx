@@ -12,6 +12,8 @@ type Props = {
   onChange: (next: VenueMapPinValue) => void;
   /** When false, map click/drag only (no Places search). Use for venue edit / venue admins. */
   showPlaceSearch?: boolean;
+  /** Optional non-interactive preview mode. */
+  readOnly?: boolean;
 };
 
 const DEFAULT_CENTER = { lat: 14.5995, lng: 120.9842 };
@@ -67,6 +69,7 @@ export function VenueMapPinPicker({
   value,
   onChange,
   showPlaceSearch = true,
+  readOnly = false,
 }: Props) {
   const mapElRef = useRef<HTMLDivElement>(null);
   const pacHostRef = useRef<HTMLDivElement>(null);
@@ -92,20 +95,22 @@ export function VenueMapPinPicker({
     if (markerRef.current) return markerRef.current;
     const marker = new AdvancedMarkerElement({
       map,
-      gmpDraggable: true,
+      gmpDraggable: !readOnly,
     });
-    marker.addListener("dragend", () => {
-      const pos = marker.position;
-      if (!pos) return;
-      const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
-      const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
-      if (typeof lat === "number" && typeof lng === "number") {
-        onChangeRef.current({ lat, lng });
-      }
-    });
+    if (!readOnly) {
+      marker.addListener("dragend", () => {
+        const pos = marker.position;
+        if (!pos) return;
+        const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
+        const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
+        if (typeof lat === "number" && typeof lng === "number") {
+          onChangeRef.current({ lat, lng });
+        }
+      });
+    }
     markerRef.current = marker;
     return marker;
-  }, []);
+  }, [readOnly]);
 
   const applyPin = useCallback(
     (map: google.maps.Map, lat: number, lng: number) => {
@@ -209,13 +214,15 @@ export function VenueMapPinPicker({
           pacElementRef.current = null;
         }
 
-        listeners.push(
-          map.addListener("click", (e: google.maps.MapMouseEvent) => {
-            if (!e.latLng) return;
-            setPlacesSearchError(null);
-            applyPin(map, e.latLng.lat(), e.latLng.lng());
-          }),
-        );
+        if (!readOnly) {
+          listeners.push(
+            map.addListener("click", (e: google.maps.MapMouseEvent) => {
+              if (!e.latLng) return;
+              setPlacesSearchError(null);
+              applyPin(map, e.latLng.lat(), e.latLng.lng());
+            }),
+          );
+        }
 
         if (initialPin) {
           const marker = ensureMarkerOnMap(map);
@@ -247,7 +254,7 @@ export function VenueMapPinPicker({
       setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initialPin at mount; parent remounts via key
-  }, [applyPin, ensureMarkerOnMap, showPlaceSearch]);
+  }, [applyPin, ensureMarkerOnMap, showPlaceSearch, readOnly]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -314,20 +321,22 @@ export function VenueMapPinPicker({
                 className="mt-1.5 w-full [&_gmp-place-autocomplete]:block [&_gmp-place-autocomplete]:w-full"
               />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              disabled={!value}
-              onClick={() => {
-                setPlacesSearchError(null);
-                onChange(null);
-                clearPacValue();
-              }}
-            >
-              Clear pin
-            </Button>
+            {readOnly ? null : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={!value}
+                onClick={() => {
+                  setPlacesSearchError(null);
+                  onChange(null);
+                  clearPacValue();
+                }}
+              >
+                Clear pin
+              </Button>
+            )}
           </div>
           {placesSearchError ? (
             <div
@@ -350,10 +359,14 @@ export function VenueMapPinPicker({
               </p>
             </div>
           ) : null}
-          <p className="text-xs text-muted-foreground">
-            Search for a place, or <strong>click the map</strong> to drop the pin; drag the pin to
-            fine-tune. This sets the map players see when booking.
-          </p>
+          {readOnly ? (
+            <p className="text-xs text-muted-foreground">Map preview for this venue request.</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Search for a place, or <strong>click the map</strong> to drop the pin; drag the pin to
+              fine-tune. This sets the map players see when booking.
+            </p>
+          )}
         </>
       ) : (
         <>
@@ -365,18 +378,20 @@ export function VenueMapPinPicker({
                 booking page.
               </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              disabled={!value}
-              onClick={() => {
-                onChange(null);
-              }}
-            >
-              Clear pin
-            </Button>
+            {readOnly ? null : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={!value}
+                onClick={() => {
+                  onChange(null);
+                }}
+              >
+                Clear pin
+              </Button>
+            )}
           </div>
         </>
       )}

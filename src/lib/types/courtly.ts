@@ -56,7 +56,12 @@ export type CourtReviewSummary = {
 };
 
 export type VenueStatus = "active" | "closed";
-export type VenueRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type VenueRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "needs_update";
 export type VenueManualPaymentMethod = "gcash" | "maya";
 
 export type VenuePaymentMethodDetails = {
@@ -119,6 +124,7 @@ export type VenueRequest = {
   maya_account_number?: string;
   request_status: VenueRequestStatus;
   requested_by: string;
+  requested_by_name?: string;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   review_note?: string | null;

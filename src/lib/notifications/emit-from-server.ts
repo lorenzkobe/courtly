@@ -484,3 +484,63 @@ export async function emitOpenPlayDecisionToUser(params: {
     },
   ]);
 }
+
+export async function emitVenueRequestDecisionToRequester(params: {
+  userId: string;
+  requestId: string;
+  venueName: string;
+  decision: "approved" | "rejected" | "needs_update";
+  reviewNote?: string | null;
+  approvedVenueId?: string | null;
+}): Promise<void> {
+  const trimmedNote =
+    typeof params.reviewNote === "string" ? params.reviewNote.trim() : "";
+  if (params.decision === "approved") {
+    await safeEmitMany([
+      {
+        user_id: params.userId,
+        type: "venue_request_approved",
+        category: "platform",
+        title: "Venue request approved",
+        body: `Your venue request for "${params.venueName}" was approved.`,
+        metadata: {
+          venue_request_id: params.requestId,
+          venue_id: params.approvedVenueId ?? undefined,
+          target_path: "/admin/venues",
+        },
+      },
+    ]);
+    return;
+  }
+  if (params.decision === "rejected") {
+    await safeEmitMany([
+      {
+        user_id: params.userId,
+        type: "venue_request_rejected",
+        category: "platform",
+        title: "Venue request rejected",
+        body: `Your venue request for "${params.venueName}" was rejected.`,
+        metadata: {
+          venue_request_id: params.requestId,
+          target_path: "/admin/venues",
+        },
+      },
+    ]);
+    return;
+  }
+  await safeEmitMany([
+    {
+      user_id: params.userId,
+      type: "venue_request_update_requested",
+      category: "platform",
+      title: "Venue request needs updates",
+      body: trimmedNote
+        ? `Update requested for "${params.venueName}": ${trimmedNote}`
+        : `Update requested for "${params.venueName}".`,
+      metadata: {
+        venue_request_id: params.requestId,
+        target_path: "/admin/venues",
+      },
+    },
+  ]);
+}

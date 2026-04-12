@@ -27,9 +27,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (current.requested_by !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (current.request_status !== "pending") {
+  if (
+    current.request_status !== "pending" &&
+    current.request_status !== "needs_update"
+  ) {
     return NextResponse.json(
-      { error: "Only pending requests can be edited or cancelled." },
+      { error: "Only pending or update-requested venue requests can be edited." },
       { status: 409 },
     );
   }

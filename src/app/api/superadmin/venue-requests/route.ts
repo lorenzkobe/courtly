@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { listVenueRequests } from "@/lib/data/courtly-db";
+import { listManagedUsersByIds, listVenueRequests } from "@/lib/data/courtly-db";
 import type {
   SuperadminVenueRequestsResponse,
+  VenueRequest,
   VenueRequestStatus,
 } from "@/lib/types/courtly";
 
 const ALLOWED_STATUS: VenueRequestStatus[] = [
   "pending",
+  "needs_update",
   "approved",
   "rejected",
   "cancelled",
@@ -31,6 +33,16 @@ export async function GET(req: Request) {
   const requests = await listVenueRequests({
     statuses: statuses.length > 0 ? statuses : ["pending"],
   });
-  const body: SuperadminVenueRequestsResponse = { requests };
+  const requesterIds = [...new Set(requests.map((request) => request.requested_by))];
+  const requesters = await listManagedUsersByIds(requesterIds);
+  const requesterNameById = new Map(
+    requesters.map((requester) => [requester.id, requester.full_name]),
+  );
+  const requestsWithRequesterName: VenueRequest[] = requests.map((request) => ({
+    ...request,
+    requested_by_name:
+      requesterNameById.get(request.requested_by) ?? request.requested_by,
+  }));
+  const body: SuperadminVenueRequestsResponse = { requests: requestsWithRequesterName };
   return NextResponse.json(body);
 }

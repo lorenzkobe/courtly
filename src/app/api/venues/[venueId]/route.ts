@@ -23,6 +23,7 @@ import {
 } from "@/lib/venue-price-ranges";
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
+import { isValidPhMobile, normalizePhMobile } from "@/lib/validation/person-fields";
 
 function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
   const keys: (keyof Venue)[] = [
@@ -189,6 +190,21 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
     venuePatch.instagram_url = value;
   }
+  if (Object.prototype.hasOwnProperty.call(venuePatch, "contact_phone")) {
+    const rawContact =
+      typeof venuePatch.contact_phone === "string" ? venuePatch.contact_phone : "";
+    const normalizedContact = normalizePhMobile(rawContact);
+    if (!normalizedContact || !isValidPhMobile(normalizedContact)) {
+      return NextResponse.json(
+        {
+          error:
+            "Contact number must be a valid PH mobile number (0917... or +63917...).",
+        },
+        { status: 400 },
+      );
+    }
+    venuePatch.contact_phone = normalizedContact;
+  }
   const paymentKeys: Array<keyof Venue> = [
     "accepts_gcash",
     "gcash_account_name",
@@ -228,12 +244,36 @@ export async function PATCH(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: paymentSettings.error }, { status: 400 });
   }
   if (hasPaymentPatch) {
+    const normalizedGcashNumber = paymentSettings.value.gcash_account_number
+      ? normalizePhMobile(paymentSettings.value.gcash_account_number)
+      : undefined;
+    const normalizedMayaNumber = paymentSettings.value.maya_account_number
+      ? normalizePhMobile(paymentSettings.value.maya_account_number)
+      : undefined;
+    if (
+      paymentSettings.value.accepts_gcash &&
+      (!normalizedGcashNumber || !isValidPhMobile(normalizedGcashNumber))
+    ) {
+      return NextResponse.json(
+        { error: "GCash account number must be a valid PH mobile number." },
+        { status: 400 },
+      );
+    }
+    if (
+      paymentSettings.value.accepts_maya &&
+      (!normalizedMayaNumber || !isValidPhMobile(normalizedMayaNumber))
+    ) {
+      return NextResponse.json(
+        { error: "Maya account number must be a valid PH mobile number." },
+        { status: 400 },
+      );
+    }
     venuePatch.accepts_gcash = paymentSettings.value.accepts_gcash;
     venuePatch.gcash_account_name = paymentSettings.value.gcash_account_name;
-    venuePatch.gcash_account_number = paymentSettings.value.gcash_account_number;
+    venuePatch.gcash_account_number = normalizedGcashNumber;
     venuePatch.accepts_maya = paymentSettings.value.accepts_maya;
     venuePatch.maya_account_name = paymentSettings.value.maya_account_name;
-    venuePatch.maya_account_number = paymentSettings.value.maya_account_number;
+    venuePatch.maya_account_number = normalizedMayaNumber;
   }
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 

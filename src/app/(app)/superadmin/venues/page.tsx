@@ -1,7 +1,7 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Check, Plus, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, Check, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import { useMemo, useState } from "react";
@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
@@ -91,9 +92,20 @@ export default function SuperadminVenuesPage() {
   const [adminToAdd, setAdminToAdd] = useState<string>("");
   const [reviewNoteByRequestId, setReviewNoteByRequestId] = useState<Record<string, string>>({});
   const [confirmRemoveVenueId, setConfirmRemoveVenueId] = useState<string | null>(null);
-  const [confirmRemoveRequestId, setConfirmRemoveRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [requestUpdateComposerOpen, setRequestUpdateComposerOpen] = useState(false);
+  const [confirmApproveRequestId, setConfirmApproveRequestId] = useState<string | null>(null);
+  const [confirmRejectRequestId, setConfirmRejectRequestId] = useState<string | null>(null);
+  const [confirmRequestUpdateRequestId, setConfirmRequestUpdateRequestId] = useState<string | null>(null);
 
-  const { data: directoryPages, isLoading, isFetchingNextPage, fetchNextPage } =
+  const {
+    data: directoryPages,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    fetchNextPage,
+    refetch: refetchDirectory,
+  } =
     useInfiniteQuery({
       queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
       queryFn: async ({ pageParam }) => {
@@ -126,7 +138,7 @@ export default function SuperadminVenuesPage() {
     directoryPages?.pages?.[directoryPages.pages.length - 1]?.venues.has_more ??
     false;
 
-  const { data: requestData, isLoading: isLoadingRequests } = useQuery({
+  const { data: requestData, isLoading: isLoadingRequests, isFetching: isFetchingRequests, refetch: refetchPendingRequests } = useQuery({
     queryKey: queryKeys.superadmin.venueRequests("pending"),
     queryFn: async () => {
       const { data } = await courtlyApi.superadminVenueRequests.list({
@@ -136,6 +148,9 @@ export default function SuperadminVenuesPage() {
     },
   });
   const pendingRequests = requestData?.requests ?? [];
+  const isRefreshing = isFetching || isFetchingRequests;
+  const selectedRequest =
+    pendingRequests.find((request) => request.id === selectedRequestId) ?? null;
 
   const adminOptions = managedUsers.filter(
     (managedUser) => managedUser.role === "admin",
@@ -256,6 +271,7 @@ export default function SuperadminVenuesPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
       void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       toast.success("Venue request approved");
+      setSelectedRequestId(null);
     },
     onError: (error: unknown) => {
       toast.error(apiErrorMessage(error, "Could not approve request"));
@@ -271,22 +287,32 @@ export default function SuperadminVenuesPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
       toast.success("Venue request rejected");
+      setSelectedRequestId(null);
     },
     onError: (error: unknown) => {
       toast.error(apiErrorMessage(error, "Could not reject request"));
     },
   });
 
-  const deleteRequest = useMutation({
+  const requestVenueUpdate = useMutation({
     mutationFn: async (requestId: string) => {
-      await courtlyApi.superadminVenueRequests.remove(requestId);
+      const note = reviewNoteByRequestId[requestId]?.trim() ?? "";
+      if (!note) {
+        throw new Error("Please add a note before requesting updates.");
+      }
+      await courtlyApi.superadminVenueRequests.requestUpdate(requestId, {
+        review_note: note,
+      });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
-      toast.success("Venue request deleted");
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.superadmin.venueRequests("pending"),
+      });
+      toast.success("Update request sent to admin");
+      setSelectedRequestId(null);
     },
     onError: (error: unknown) => {
-      toast.error(apiErrorMessage(error, "Could not delete request"));
+      toast.error(apiErrorMessage(error, "Could not request updates"));
     },
   });
 
@@ -387,127 +413,363 @@ export default function SuperadminVenuesPage() {
         }}
       />
       <ConfirmDialog
-        open={!!confirmRemoveRequestId}
+        open={!!confirmApproveRequestId}
         onOpenChange={(open) => {
-          if (!open) setConfirmRemoveRequestId(null);
+          if (!open) setConfirmApproveRequestId(null);
         }}
-        title="Delete request?"
-        description="This permanently deletes the venue request."
-        confirmLabel="Delete request"
-        isPending={deleteRequest.isPending}
+        title="Approve venue request?"
+        description="This will create the venue and assign the requester as a venue admin."
+        confirmLabel="Approve"
+        isPending={approveRequest.isPending}
         onConfirm={() => {
-          if (!confirmRemoveRequestId) return;
-          deleteRequest.mutate(confirmRemoveRequestId);
-          setConfirmRemoveRequestId(null);
+          if (!confirmApproveRequestId) return;
+          approveRequest.mutate(confirmApproveRequestId);
+          setConfirmApproveRequestId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!confirmRejectRequestId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRejectRequestId(null);
+        }}
+        title="Reject venue request?"
+        description="Rejecting permanently removes this request."
+        confirmLabel="Reject"
+        isPending={rejectRequest.isPending}
+        onConfirm={() => {
+          if (!confirmRejectRequestId) return;
+          rejectRequest.mutate(confirmRejectRequestId);
+          setConfirmRejectRequestId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!confirmRequestUpdateRequestId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRequestUpdateRequestId(null);
+        }}
+        title="Send update request?"
+        description="This will send your note to the admin and mark the request as needs update."
+        confirmLabel="Send update request"
+        isPending={requestVenueUpdate.isPending}
+        onConfirm={() => {
+          if (!confirmRequestUpdateRequestId) return;
+          requestVenueUpdate.mutate(confirmRequestUpdateRequestId, {
+            onSuccess: () => {
+              setConfirmRequestUpdateRequestId(null);
+              setRequestUpdateComposerOpen(false);
+            },
+          });
         }}
       />
       <PageHeader
         title="Venues"
         subtitle="Review pending venue requests, approve or reject them, and manage venue admins."
-      />
+      >
+        <Button
+          type="button"
+          variant="outline"
+          onClick={async () => {
+            await Promise.all([refetchDirectory(), refetchPendingRequests()]);
+          }}
+          disabled={isRefreshing}
+        >
+          <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </PageHeader>
 
-      <section className="mb-8 space-y-3">
-        <h2 className="font-heading text-lg font-semibold">Pending venue requests</h2>
-        {isLoadingRequests ? (
-          <div className="space-y-3">
-            {[1, 2].map((idx) => (
-              <Skeleton key={idx} className="h-40 rounded-xl" />
-            ))}
-          </div>
-        ) : pendingRequests.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No pending venue requests.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {pendingRequests.map((request) => (
-              <VenueRequestCard
-                key={request.id}
-                request={request}
-                reviewNote={reviewNoteByRequestId[request.id] ?? ""}
-                onReviewNoteChange={(value) =>
-                  setReviewNoteByRequestId((prev) => ({
-                    ...prev,
-                    [request.id]: value,
-                  }))
-                }
-                onApprove={() => approveRequest.mutate(request.id)}
-                onReject={() => rejectRequest.mutate(request.id)}
-                onDelete={() => setConfirmRemoveRequestId(request.id)}
-                isApproving={approveRequest.isPending}
-                isRejecting={rejectRequest.isPending}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-24 rounded-xl" />
-          ))}
-        </div>
-      ) : venues.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <Building2 className="h-10 w-10 text-muted-foreground" />
-            <p className="max-w-md text-sm text-muted-foreground">
-              No venues yet. Approved requests will appear here.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {venues.map((venue) => (
-            <Card
-              key={venue.id}
-              className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
-              onClick={() => openEdit(venue)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  openEdit(venue);
-                }
-              }}
-            >
-              <CardContent className="flex min-h-24 items-center justify-between gap-3 p-5">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-heading font-bold text-foreground">
-                      {venue.name}
-                    </h3>
-                    <Badge
-                      variant="outline"
-                      className={statusVariant(venue.status)}
-                    >
-                      {formatStatusLabel(venue.status)}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{venue.location}</p>
-                </div>
-                <div className="shrink-0 text-xs text-muted-foreground">Click to edit</div>
+      <div className="mb-8 grid gap-6 lg:grid-cols-3 lg:items-start">
+        <section className="space-y-3 lg:col-span-2">
+          <h2 className="font-heading text-lg font-semibold">Active venues</h2>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 rounded-xl" />
+              ))}
+            </div>
+          ) : venues.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+                <Building2 className="h-10 w-10 text-muted-foreground" />
+                <p className="max-w-md text-sm text-muted-foreground">
+                  No venues yet. Approved requests will appear here.
+                </p>
               </CardContent>
             </Card>
-          ))}
-          {hasMoreVenues ? (
-            <div className="flex justify-center pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isFetchingNextPage}
-                onClick={() => void fetchNextPage()}
-              >
-                {isFetchingNextPage ? "Loading..." : "Load more"}
-              </Button>
+          ) : (
+            <div className="space-y-3">
+              {venues.map((venue) => (
+                <Card
+                  key={venue.id}
+                  className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
+                  onClick={() => openEdit(venue)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openEdit(venue);
+                    }
+                  }}
+                >
+                  <CardContent className="flex min-h-24 items-center justify-between gap-3 p-5">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-heading font-bold text-foreground">
+                          {venue.name}
+                        </h3>
+                        <Badge
+                          variant="outline"
+                          className={statusVariant(venue.status)}
+                        >
+                          {formatStatusLabel(venue.status)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{venue.location}</p>
+                    </div>
+                    <div className="shrink-0 text-xs text-muted-foreground">Click to edit</div>
+                  </CardContent>
+                </Card>
+              ))}
+              {hasMoreVenues ? (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isFetchingNextPage}
+                    onClick={() => void fetchNextPage()}
+                  >
+                    {isFetchingNextPage ? "Loading..." : "Load more"}
+                  </Button>
+                </div>
+              ) : null}
             </div>
+          )}
+        </section>
+
+        <aside className="space-y-3 lg:col-span-1">
+          <h2 className="font-heading text-lg font-semibold">Pending venue requests</h2>
+          {isLoadingRequests ? (
+            <div className="space-y-3">
+              {[1, 2].map((idx) => (
+                <Skeleton key={idx} className="h-28 rounded-xl" />
+              ))}
+            </div>
+          ) : pendingRequests.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No pending venue requests.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {pendingRequests.map((request) => (
+                <VenueRequestCard
+                  key={request.id}
+                  request={request}
+                  onOpen={() => setSelectedRequestId(request.id)}
+                />
+              ))}
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <Dialog
+        open={!!selectedRequest}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedRequestId(null);
+            setRequestUpdateComposerOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              {requestUpdateComposerOpen ? "Request venue update" : "Venue request details"}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedRequest ? (
+            requestUpdateComposerOpen ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="venue-request-update-note">Required note</Label>
+                  <Textarea
+                    id="venue-request-update-note"
+                    value={reviewNoteByRequestId[selectedRequest.id] ?? ""}
+                    onChange={(event) =>
+                      setReviewNoteByRequestId((prev) => ({
+                        ...prev,
+                        [selectedRequest.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Describe exactly what the admin should update before resubmitting."
+                  />
+                </div>
+                <DialogFooter className="mt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRequestUpdateComposerOpen(false)}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={requestVenueUpdate.isPending}
+                    onClick={() => setConfirmRequestUpdateRequestId(selectedRequest.id)}
+                  >
+                    {requestVenueUpdate.isPending ? "Sending..." : "Send update request"}
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : (
+              <>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-heading text-lg font-semibold">{selectedRequest.name}</h3>
+                    <p className="text-sm text-muted-foreground">{selectedRequest.location}</p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-500/10 text-amber-800 dark:text-amber-100"
+                  >
+                    Pending
+                  </Badge>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/10 p-4 text-sm sm:grid-cols-2">
+                  <p>
+                    <span className="font-medium">Contact:</span> {selectedRequest.contact_phone}
+                  </p>
+                  <p>
+                    <span className="font-medium">Sport:</span> {formatStatusLabel(selectedRequest.sport)}
+                  </p>
+                  <p>
+                    <span className="font-medium">Submitted:</span>{" "}
+                    {new Date(selectedRequest.created_at).toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Amenities</Label>
+                  {selectedRequest.amenities.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRequest.amenities.map((amenity) => (
+                        <Badge key={amenity} variant="outline">
+                          {formatAmenityLabel(amenity)}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No amenities listed.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Price ranges</Label>
+                  <div className="space-y-2">
+                    {selectedRequest.hourly_rate_windows.map((window, index) => (
+                      <div
+                        key={`${selectedRequest.id}-window-${index}`}
+                        className="rounded-md border border-border/60 px-3 py-2 text-sm"
+                      >
+                        {window.start} - {window.end}: PHP {window.hourly_rate}/hr
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Location</Label>
+                  <p className="text-sm text-muted-foreground">{selectedRequest.location}</p>
+                  <VenueMapPinPicker
+                    key={`request-map-${selectedRequest.id}`}
+                    showPlaceSearch={false}
+                    readOnly
+                    value={
+                      selectedRequest.map_latitude != null &&
+                      selectedRequest.map_longitude != null
+                        ? {
+                            lat: selectedRequest.map_latitude,
+                            lng: selectedRequest.map_longitude,
+                          }
+                        : null
+                    }
+                    onChange={() => {
+                      // Read-only preview in superadmin request review.
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Coordinates:{" "}
+                    {selectedRequest.map_latitude != null &&
+                    selectedRequest.map_longitude != null
+                      ? `${selectedRequest.map_latitude.toFixed(6)}, ${selectedRequest.map_longitude.toFixed(6)}`
+                      : "Not set"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Payment methods</Label>
+                  <div className="grid gap-2 rounded-xl border border-border/60 bg-muted/10 p-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="font-medium">GCash</p>
+                      <p className="text-muted-foreground">
+                        {selectedRequest.accepts_gcash
+                          ? `${selectedRequest.gcash_account_name ?? "-"} / ${selectedRequest.gcash_account_number ?? "-"}`
+                          : "Disabled"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Maya</p>
+                      <p className="text-muted-foreground">
+                        {selectedRequest.accepts_maya
+                          ? `${selectedRequest.maya_account_name ?? "-"} / ${selectedRequest.maya_account_number ?? "-"}`
+                          : "Disabled"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <DialogFooter className="mt-4 flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => setConfirmApproveRequestId(selectedRequest.id)}
+                  disabled={approveRequest.isPending || rejectRequest.isPending || requestVenueUpdate.isPending}
+                >
+                  <Check className="mr-1.5 h-4 w-4" />
+                  {approveRequest.isPending ? "Approving..." : "Approve"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmRejectRequestId(selectedRequest.id)}
+                  disabled={approveRequest.isPending || rejectRequest.isPending || requestVenueUpdate.isPending}
+                >
+                  {rejectRequest.isPending ? "Rejecting..." : "Reject"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRequestUpdateComposerOpen(true)}
+                  disabled={
+                    approveRequest.isPending ||
+                    rejectRequest.isPending ||
+                    requestVenueUpdate.isPending
+                  }
+                >
+                  Request update
+                </Button>
+              </DialogFooter>
+              </>
+            )
           ) : null}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
@@ -1004,71 +1266,38 @@ export default function SuperadminVenuesPage() {
 
 function VenueRequestCard({
   request,
-  reviewNote,
-  onReviewNoteChange,
-  onApprove,
-  onReject,
-  onDelete,
-  isApproving,
-  isRejecting,
+  onOpen,
 }: {
   request: VenueRequest;
-  reviewNote: string;
-  onReviewNoteChange: (value: string) => void;
-  onApprove: () => void;
-  onReject: () => void;
-  onDelete: () => void;
-  isApproving: boolean;
-  isRejecting: boolean;
+  onOpen: () => void;
 }) {
   return (
-    <Card className="border-border/60">
+    <Card
+      className="cursor-pointer border-border/60 transition-shadow hover:shadow-sm"
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <CardContent className="space-y-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="font-heading text-base font-semibold">{request.name}</h3>
-            <p className="text-sm text-muted-foreground">{request.location}</p>
-            <p className="text-xs text-muted-foreground">
-              Submitted {new Date(request.created_at).toLocaleString()}
-            </p>
-          </div>
-          <Badge variant="outline" className="bg-amber-500/10 text-amber-800 dark:text-amber-100">
-            Pending
-          </Badge>
-        </div>
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-          <p>Contact: {request.contact_phone}</p>
-          <p>
-            Map pin:{" "}
-            {request.map_latitude != null && request.map_longitude != null ? "Set" : "Not set"}
+        <div className="min-w-0">
+          <h3 className="font-heading text-base font-semibold">
+            {request.name}
+          </h3>
+          <p className="truncate text-sm text-muted-foreground">
+            {request.location}
           </p>
-        </div>
-        <div>
-          <Label htmlFor={`review-note-${request.id}`}>Review note (optional)</Label>
-          <Input
-            id={`review-note-${request.id}`}
-            className="mt-1.5"
-            value={reviewNote}
-            onChange={(event) => onReviewNoteChange(event.target.value)}
-            placeholder="Internal note for approval/rejection"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={onApprove} disabled={isApproving || isRejecting}>
-            <Check className="mr-1.5 h-4 w-4" />
-            {isApproving ? "Approving..." : "Approve"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onReject}
-            disabled={isApproving || isRejecting}
-          >
-            {isRejecting ? "Rejecting..." : "Reject"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onDelete}>
-            Delete request
-          </Button>
+          <p className="text-sm text-muted-foreground">
+            By: {request.requested_by_name ?? request.requested_by}
+          </p>
+          <p className="shrink-0 text-xs text-muted-foreground">
+            Submitted {new Date(request.created_at).toLocaleString()}
+          </p>
         </div>
       </CardContent>
     </Card>

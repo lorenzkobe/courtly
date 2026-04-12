@@ -6,6 +6,7 @@ import {
   listVenueRequests,
   listVenues,
 } from "@/lib/data/courtly-db";
+import { emitVenueRequestDecisionToRequester } from "@/lib/notifications/emit-from-server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Venue } from "@/lib/types/courtly";
 import { findPotentialVenueDuplicate } from "@/lib/venue-requests";
@@ -131,6 +132,15 @@ export async function POST(req: Request, ctx: Ctx) {
       { status: 409 },
     );
   }
+
+  void emitVenueRequestDecisionToRequester({
+    userId: requester.id,
+    requestId: requestRecord.id,
+    venueName: requestRecord.name,
+    decision: "approved",
+    reviewNote: reviewNote,
+    approvedVenueId: venueId,
+  });
 
   return NextResponse.json({ request: updatedRequest, venue: insertedVenue });
 }

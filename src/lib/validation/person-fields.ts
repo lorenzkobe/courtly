@@ -4,6 +4,14 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PERSON_NAME_PART_REGEX = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 export const PH_MOBILE_REGEX = /^(?:\+63|0)9\d{9}$/;
 
+export function normalizePhMobile(value: string) {
+  return value.trim().replace(/[\s-]/g, "");
+}
+
+export function isValidPhMobile(value: string) {
+  return PH_MOBILE_REGEX.test(normalizePhMobile(value));
+}
+
 export function isValidPersonName(value: string) {
   const trimmed = value.trim();
   if (!PERSON_NAME_PART_REGEX.test(trimmed)) return false;

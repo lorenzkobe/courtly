@@ -6,6 +6,7 @@ import {
 } from "@/lib/venue-price-ranges";
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
+import { isValidPhMobile, normalizePhMobile } from "@/lib/validation/person-fields";
 
 export type NormalizedVenueDraft = Omit<
   VenueRequest,
@@ -57,7 +58,9 @@ export function normalizeVenueDraftFromBody(
     name: typeof body.name === "string" ? body.name.trim() : "",
     location: typeof body.location === "string" ? body.location.trim() : "",
     contact_phone:
-      typeof body.contact_phone === "string" ? body.contact_phone.trim() : "",
+      typeof body.contact_phone === "string"
+        ? normalizePhMobile(body.contact_phone)
+        : "",
     facebook_url: facebookUrl,
     instagram_url: instagramUrl,
     sport:
@@ -77,10 +80,14 @@ export function normalizeVenueDraftFromBody(
     image_url: typeof body.image_url === "string" ? body.image_url.trim() : "",
     accepts_gcash: paymentSettings.value.accepts_gcash,
     gcash_account_name: paymentSettings.value.gcash_account_name,
-    gcash_account_number: paymentSettings.value.gcash_account_number,
+    gcash_account_number: paymentSettings.value.gcash_account_number
+      ? normalizePhMobile(paymentSettings.value.gcash_account_number)
+      : undefined,
     accepts_maya: paymentSettings.value.accepts_maya,
     maya_account_name: paymentSettings.value.maya_account_name,
-    maya_account_number: paymentSettings.value.maya_account_number,
+    maya_account_number: paymentSettings.value.maya_account_number
+      ? normalizePhMobile(paymentSettings.value.maya_account_number)
+      : undefined,
     ...(mapCoords.mode === "set"
       ? {
           map_latitude: mapCoords.map_latitude,
@@ -93,6 +100,32 @@ export function normalizeVenueDraftFromBody(
     return {
       ok: false,
       error: "Name, location, contact number, and image URL are required.",
+    };
+  }
+  if (!isValidPhMobile(nextValue.contact_phone)) {
+    return {
+      ok: false,
+      error: "Contact number must be a valid PH mobile number (0917... or +63917...).",
+    };
+  }
+  if (
+    nextValue.accepts_gcash &&
+    (!nextValue.gcash_account_number ||
+      !isValidPhMobile(nextValue.gcash_account_number))
+  ) {
+    return {
+      ok: false,
+      error: "GCash account number must be a valid PH mobile number.",
+    };
+  }
+  if (
+    nextValue.accepts_maya &&
+    (!nextValue.maya_account_number ||
+      !isValidPhMobile(nextValue.maya_account_number))
+  ) {
+    return {
+      ok: false,
+      error: "Maya account number must be a valid PH mobile number.",
     };
   }
 

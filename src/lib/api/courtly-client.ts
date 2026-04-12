@@ -358,7 +358,15 @@ export const courtlyApi = {
         body ?? {},
       ),
     reject: (id: string, body?: { review_note?: string }) =>
-      http.post<VenueRequest>(`/api/superadmin/venue-requests/${id}/reject`, body ?? {}),
+      http.post<{ ok: boolean }>(
+        `/api/superadmin/venue-requests/${id}/reject`,
+        body ?? {},
+      ),
+    requestUpdate: (id: string, body: { review_note: string }) =>
+      http.post<VenueRequest>(
+        `/api/superadmin/venue-requests/${id}/request-update`,
+        body,
+      ),
     remove: (id: string) => http.delete<{ ok: boolean }>(`/api/superadmin/venue-requests/${id}`),
   },
 

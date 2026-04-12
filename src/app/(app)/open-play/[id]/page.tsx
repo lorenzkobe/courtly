@@ -389,7 +389,7 @@ export default function OpenPlayDetailPage() {
     mutationFn: async () =>
       courtlyApi.openPlay.update(sessionId, {
         title: editTitle.trim(),
-        description: editDescription.trim() || null,
+        description: editDescription.trim() || undefined,
         max_players: Number.parseInt(editMaxPlayers.trim(), 10),
         price_per_player: Number.parseInt(editPricePerPlayer.trim(), 10),
         dupr_min: Number.parseInt(editDuprMin.trim(), 10),

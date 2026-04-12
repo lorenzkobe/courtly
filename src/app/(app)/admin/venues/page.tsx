@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Building2, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Building2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -30,6 +30,7 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
+import { formatStatusLabel } from "@/lib/utils";
 import type { Venue } from "@/lib/types/courtly";
 
 type PriceRangeRow = { start: string; end: string; rate: string };
@@ -73,17 +74,20 @@ export default function AdminVenuesPage() {
   const queryClient = useQueryClient();
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [editingRequestStatus, setEditingRequestStatus] = useState<
+    "pending" | "needs_update" | null
+  >(null);
   const [form, setForm] = useState(emptyRequestForm);
   const [confirmCancelRequestId, setConfirmCancelRequestId] = useState<string | null>(null);
 
-  const { data: venueCards = [], isLoading } = useQuery({
+  const { data: venueCards = [], isLoading, isFetching: isFetchingVenues, refetch: refetchVenues } = useQuery({
     queryKey: ["admin-venues"],
     queryFn: async () => {
       const { data } = await courtlyApi.assignedVenues.list();
       return data;
     },
   });
-  const { data: requestData, isLoading: isLoadingRequests } = useQuery({
+  const { data: requestData, isLoading: isLoadingRequests, isFetching: isFetchingRequests, refetch: refetchRequests } = useQuery({
     queryKey: queryKeys.admin.venueRequests(),
     queryFn: async () => {
       const { data } = await courtlyApi.adminVenueRequests.list();
@@ -91,6 +95,11 @@ export default function AdminVenuesPage() {
     },
   });
   const myRequests = requestData?.requests ?? [];
+  const isRefreshing = isFetchingVenues || isFetchingRequests;
+  const actionableRequests = myRequests.filter(
+    (request) =>
+      request.request_status === "pending" || request.request_status === "needs_update",
+  );
 
   const formRateValidation = useMemo(
     () => validatePriceRangeFormRows(form.hourly_rate_windows),
@@ -146,10 +155,15 @@ export default function AdminVenuesPage() {
     },
     onSuccess: (mode) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueRequests() });
-      toast.success(mode === "updated" ? "Venue request updated" : "Venue request submitted");
+      if (mode === "updated" && editingRequestStatus === "needs_update") {
+        toast.success("Venue request resent for review");
+      } else {
+        toast.success(mode === "updated" ? "Venue request updated" : "Venue request submitted");
+      }
       setRequestDialogOpen(false);
       setForm(emptyRequestForm);
       setEditingRequestId(null);
+      setEditingRequestStatus(null);
     },
     onError: (error: unknown) => {
       toast.error(apiErrorMessage(error, "Could not submit venue request"));
@@ -192,7 +206,7 @@ export default function AdminVenuesPage() {
           if (!open) setConfirmCancelRequestId(null);
         }}
         title="Cancel venue request?"
-        description="You can only cancel pending requests."
+        description="You can cancel pending requests."
         confirmLabel="Cancel request"
         isPending={cancelRequest.isPending}
         onConfirm={() => {
@@ -205,53 +219,71 @@ export default function AdminVenuesPage() {
         title="My venues"
         subtitle="Manage assigned venues and submit requests for new venues."
       >
-        <Button
-          onClick={() => {
-            setEditingRequestId(null);
-            setForm(emptyRequestForm);
-            setRequestDialogOpen(true);
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Request new venue
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={async () => {
+              await Promise.all([refetchVenues(), refetchRequests()]);
+            }}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          <Button
+            onClick={() => {
+              setEditingRequestId(null);
+              setEditingRequestStatus(null);
+              setForm(emptyRequestForm);
+              setRequestDialogOpen(true);
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add new venue
+          </Button>
+        </div>
       </PageHeader>
 
-      <section className="mb-8 space-y-3">
-        <h2 className="font-heading text-lg font-semibold">My venue requests</h2>
-        {isLoadingRequests ? (
-          <div className="space-y-3">
-            {[1, 2].map((idx) => (
-              <Skeleton key={idx} className="h-28 rounded-xl" />
-            ))}
-          </div>
-        ) : myRequests.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No requests yet. Submit one to onboard a new venue.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {myRequests.map((request) => (
-              <Card key={request.id} className="border-border/60">
-                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-heading font-semibold">{request.name}</h3>
-                      <Badge variant="outline">{request.request_status}</Badge>
+      {isLoadingRequests || actionableRequests.length > 0 ? (
+        <section className="mb-8 space-y-3">
+          <h2 className="font-heading text-lg font-semibold">Pending venue approval</h2>
+          {isLoadingRequests ? (
+            <div className="space-y-3">
+              {[1, 2].map((idx) => (
+                <Skeleton key={idx} className="h-28 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {actionableRequests.map((request) => (
+                <Card key={request.id} className="border-border/60">
+                  <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-heading font-semibold">{request.name}</h3>
+                        <Badge variant="outline">
+                          {formatStatusLabel(request.request_status)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{request.location}</p>
+                      {request.request_status === "needs_update" && request.review_note ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-200">
+                          Update requested: {request.review_note}
+                        </p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Submitted {new Date(request.created_at).toLocaleString()}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{request.location}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Submitted {new Date(request.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  {request.request_status === "pending" ? (
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
                         onClick={() => {
                           setEditingRequestId(request.id);
+                          setEditingRequestStatus(
+                            request.request_status === "needs_update" ? "needs_update" : "pending",
+                          );
                           setForm({
                             name: request.name,
                             location: request.location,
@@ -282,23 +314,25 @@ export default function AdminVenuesPage() {
                           setRequestDialogOpen(true);
                         }}
                       >
-                        Edit
+                        {request.request_status === "needs_update" ? "Update & resend" : "Edit"}
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setConfirmCancelRequestId(request.id)}
-                      >
-                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                        Cancel
-                      </Button>
+                      {request.request_status === "pending" ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => setConfirmCancelRequestId(request.id)}
+                        >
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+                      ) : null}
                     </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -370,6 +404,7 @@ export default function AdminVenuesPage() {
           setRequestDialogOpen(open);
           if (!open) {
             setEditingRequestId(null);
+            setEditingRequestStatus(null);
             setForm(emptyRequestForm);
           }
         }}
@@ -377,7 +412,11 @@ export default function AdminVenuesPage() {
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading">
-              {editingRequestId ? "Edit venue request" : "Request new venue"}
+              {editingRequestId
+                ? editingRequestStatus === "needs_update"
+                  ? "Update venue request"
+                  : "Edit venue request"
+                : "Add new venue"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -665,7 +704,9 @@ export default function AdminVenuesPage() {
               {createRequest.isPending
                 ? "Saving..."
                 : editingRequestId
-                  ? "Save changes"
+                  ? editingRequestStatus === "needs_update"
+                    ? "Resend for review"
+                    : "Save changes"
                   : "Submit request"}
             </Button>
           </DialogFooter>
