@@ -31,11 +31,14 @@ export async function GET(req: Request) {
   ]);
 
   todayBookings.sort(byCreatedDesc);
+  const dashboardOpenPlaySessions = openPlaySessions.filter(
+    (session) => session.status !== "closed",
+  );
 
   const payload: DashboardOverviewResponse = {
     today_bookings: todayBookings,
     tournaments_open: tournamentsOpen,
-    open_play_sessions: openPlaySessions,
+    open_play_sessions: dashboardOpenPlaySessions,
   };
 
   return NextResponse.json(payload);

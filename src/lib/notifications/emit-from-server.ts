@@ -211,7 +211,7 @@ export async function emitBookingCreatedToVenueAdmins(params: {
     body: `${params.bookerLabel} booked ${params.courtName} at ${params.venueName}.`,
     metadata: {
       booking_id: params.bookingId,
-      target_path: "/admin/bookings",
+      target_path: `/admin/bookings?detail=${params.bookingId}`,
     },
   }));
   await safeEmitMany(inputs);
@@ -271,24 +271,14 @@ async function emitBookingLifecycleNotificationsInner(params: {
     return;
   }
 
-  const changed =
-    prev.date !== next.date ||
-    prev.start_time !== next.start_time ||
-    prev.end_time !== next.end_time ||
-    prev.court_id !== next.court_id ||
-    prev.status !== next.status ||
-    prev.admin_note !== next.admin_note;
-
-  if (changed) {
-    const statusConfirmedNow = next.status === "confirmed" && prev.status !== "confirmed";
+  const statusConfirmedNow = next.status === "confirmed" && prev.status !== "confirmed";
+  if (statusConfirmedNow) {
     await safeEmitMany([
       {
         user_id: uid,
         type: "booking_changed",
-        title: statusConfirmedNow ? "Booking confirmed" : "Booking updated",
-        body: statusConfirmedNow
-          ? "Your booking was confirmed by the venue."
-          : "Your booking details were updated by the venue.",
+        title: "Booking confirmed",
+        body: "Your booking was confirmed by the venue.",
         metadata: {
           booking_id: params.bookingId,
           target_path: `/my-bookings/${params.bookingId}`,
@@ -420,4 +410,77 @@ export async function emitReviewFlagCleared(params: {
     });
   }
   await safeEmitMany(inputs);
+}
+
+export async function emitReviewDeletedByModerationToAuthor(params: {
+  review: Pick<CourtReview, "id" | "user_id">;
+  venueName: string;
+  reason?: string | null;
+}): Promise<void> {
+  const reasonText =
+    typeof params.reason === "string" && params.reason.trim().length > 0
+      ? ` Reason: ${params.reason.trim().slice(0, 200)}`
+      : "";
+  await safeEmitMany([
+    {
+      user_id: params.review.user_id,
+      type: "review_flag_deleted_author",
+      title: "Review removed by moderation",
+      body: `Your flagged review at ${params.venueName} was removed.${reasonText}`,
+      metadata: {
+        review_id: params.review.id,
+        target_path: "/my-bookings",
+        moderation_reason: params.reason?.trim() || undefined,
+      },
+    },
+  ]);
+}
+
+export async function emitOpenPlayPaymentSubmittedToHost(params: {
+  hostUserId: string | null | undefined;
+  participantName: string;
+  sessionId: string;
+  sessionTitle: string;
+}): Promise<void> {
+  if (!params.hostUserId) return;
+  await safeEmitMany([
+    {
+      user_id: params.hostUserId,
+      type: "open_play_payment_submitted_host",
+      category: "open_play",
+      title: "Payment proof submitted",
+      body: `${params.participantName} submitted payment proof for "${params.sessionTitle}".`,
+      metadata: {
+        open_play_session_id: params.sessionId,
+        target_path: `/open-play/${params.sessionId}`,
+      },
+    },
+  ]);
+}
+
+export async function emitOpenPlayDecisionToUser(params: {
+  userId: string;
+  sessionId: string;
+  sessionTitle: string;
+  decision: "approved" | "denied";
+}): Promise<void> {
+  await safeEmitMany([
+    {
+      user_id: params.userId,
+      type: params.decision === "approved" ? "open_play_join_approved" : "open_play_join_denied",
+      category: "open_play",
+      title:
+        params.decision === "approved"
+          ? "Open play request approved"
+          : "Open play request declined",
+      body:
+        params.decision === "approved"
+          ? `You're approved for "${params.sessionTitle}".`
+          : `Your request for "${params.sessionTitle}" was declined.`,
+      metadata: {
+        open_play_session_id: params.sessionId,
+        target_path: `/open-play/${params.sessionId}`,
+      },
+    },
+  ]);
 }

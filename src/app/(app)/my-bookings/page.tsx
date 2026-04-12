@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
+  Loader2,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,7 +34,6 @@ import {
 } from "@/lib/booking-range";
 import { segmentStatusForDisplay } from "@/lib/bookings/booking-time-display";
 import { useAuth } from "@/lib/auth/auth-context";
-import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
 import { formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
@@ -116,7 +116,8 @@ export default function MyBookingsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const { data, isLoading, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
+  const { data, isLoading, isRefetching, isFetchingNextPage, fetchNextPage, refetch } =
+    useInfiniteQuery({
     queryKey: queryKeys.me.bookingsOverview(user?.email, selectedSport, PAGE_LIMIT),
     queryFn: async ({ pageParam }) => {
       const cursorParam = (pageParam ?? {
@@ -153,13 +154,6 @@ export default function MyBookingsPage() {
   const latestPage = pages.length > 0 ? pages[pages.length - 1] : undefined;
   const hasMoreBookings = latestPage?.bookings.has_more ?? false;
   const hasMoreRegistrations = latestPage?.registrations.has_more ?? false;
-  const bookingsRealtimeKeys = useMemo(() => [["me", "bookings-overview"]], []);
-  useBookingsRealtime({
-    playerEmail: user?.email,
-    enabled: !!user?.email,
-    queryKeysToInvalidate: bookingsRealtimeKeys,
-  });
-
   const bookingGroups = useMemo(() => {
     const searchQuery = query.trim().toLowerCase();
     const filtered = bookings.filter((booking) => {
@@ -193,7 +187,23 @@ export default function MyBookingsPage() {
       <PageHeader
         title="My Bookings"
         subtitle="Manage your reservations and registrations"
-      />
+      >
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void refetch()}
+          disabled={isLoading || isRefetching}
+        >
+          {isRefetching ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Refreshing...
+            </span>
+          ) : (
+            "Refresh"
+          )}
+        </Button>
+      </PageHeader>
 
       <Tabs value={tab} onValueChange={setTab} className="mb-6">
         <TabsList>

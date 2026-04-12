@@ -423,21 +423,25 @@ export default function BookCourtPage() {
     [court],
   );
 
-  const matrixOccupiedByCourtId = useMemo(() => {
-    const out = new Map<string, Set<string>>();
+  const matrixOccupationByCourtId = useMemo(() => {
+    const out = new Map<
+      string,
+      {
+        bookingBlocked: Set<string>;
+        closureBlocked: Set<string>;
+      }
+    >();
     matrixCourts.forEach((matrixCourt, idx) => {
       const surface = matrixSurfaceQueries[idx]?.data;
       const bookings = surface?.availability.bookings ?? EMPTY_BOOKINGS;
       const courtClosures = surface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
       const venueClosures = surface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
-      const occupiedForCourt = occupiedHourStarts(bookings);
-      for (const token of occupiedHourStartsFromClosures(courtClosures, dateIso)) {
-        occupiedForCourt.add(token);
-      }
+      const bookingBlocked = occupiedHourStarts(bookings);
+      const closureBlocked = occupiedHourStartsFromClosures(courtClosures, dateIso);
       for (const token of occupiedHourStartsFromClosures(venueClosures, dateIso)) {
-        occupiedForCourt.add(token);
+        closureBlocked.add(token);
       }
-      out.set(matrixCourt.id, occupiedForCourt);
+      out.set(matrixCourt.id, { bookingBlocked, closureBlocked });
     });
     return out;
   }, [dateIso, matrixCourts, matrixSurfaceQueries]);
@@ -588,12 +592,16 @@ export default function BookCourtPage() {
       return data;
     },
     onSuccess: () => {
+      const nextBookingId = paymentOverlay?.booking_id ?? null;
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: bookingSurfaceKey });
       setPaymentOverlay(null);
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
       toast.success("Payment submitted. Waiting for venue confirmation.");
+      if (nextBookingId) {
+        router.push(`/my-bookings/${nextBookingId}`);
+      }
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Could not submit payment proof."));
@@ -769,7 +777,14 @@ export default function BookCourtPage() {
       return;
     }
     if (isBookableHourStartInPast(time, selectedDate)) return;
-    const occupiedForCourt = matrixOccupiedByCourtId.get(matrixCourt.id) ?? new Set<string>();
+    const occupation = matrixOccupationByCourtId.get(matrixCourt.id) ?? {
+      bookingBlocked: new Set<string>(),
+      closureBlocked: new Set<string>(),
+    };
+    const occupiedForCourt = new Set<string>([
+      ...occupation.bookingBlocked,
+      ...occupation.closureBlocked,
+    ]);
     if (occupiedForCourt.has(time)) return;
 
     const existingLine =
@@ -1306,9 +1321,7 @@ export default function BookCourtPage() {
         <div className="order-1 min-w-0 space-y-6 lg:order-1">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-lg">
-              Venue schedule matrix
-            </CardTitle>
+            <CardTitle className="font-heading text-lg">Choose your slots</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-2">
@@ -1391,9 +1404,13 @@ export default function BookCourtPage() {
                         {formatMatrixTimeLabel(time)}
                       </td>
                       {matrixCourts.map((matrixCourt) => {
-                        const occupiedForCourt =
-                          matrixOccupiedByCourtId.get(matrixCourt.id) ?? new Set<string>();
-                        const isUnavailable = occupiedForCourt.has(time);
+                        const occupation = matrixOccupationByCourtId.get(matrixCourt.id) ?? {
+                          bookingBlocked: new Set<string>(),
+                          closureBlocked: new Set<string>(),
+                        };
+                        const isBookedOrPending = occupation.bookingBlocked.has(time);
+                        const isClosureBlocked = occupation.closureBlocked.has(time);
+                        const isUnavailable = isBookedOrPending || isClosureBlocked;
                         const isPastHour = isBookableHourStartInPast(time, selectedDate);
                         const line =
                           cartItems.find(
@@ -1410,6 +1427,8 @@ export default function BookCourtPage() {
                               className={cn(
                                 "h-10 w-full rounded-md border text-[11px] font-medium transition-colors",
                                 isSelected &&
+                                  !isUnavailable &&
+                                  !isPastHour &&
                                   "border-primary bg-primary text-primary-foreground",
                                 !isSelected &&
                                   !isUnavailable &&
@@ -1421,12 +1440,14 @@ export default function BookCourtPage() {
                                   "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
                               )}
                             >
-                              {isSelected
-                                ? "Selected"
-                                : isUnavailable
-                                  ? "Booked"
-                                  : isPastHour
-                                    ? "Past"
+                              {isUnavailable
+                                ? isClosureBlocked
+                                  ? "Blocked"
+                                  : "Booked"
+                                : isPastHour
+                                  ? "Past"
+                                  : isSelected
+                                    ? "Selected"
                                     : "Open"}
                             </button>
                           </td>

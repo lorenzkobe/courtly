@@ -298,12 +298,21 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, "status") && patch.status && patch.status !== booking.status) {
+    patch.status_updated_by_user_id = user?.id ?? null;
+    patch.status_updated_by_name = user?.full_name || user?.email || "Unknown";
+    patch.status_updated_at = new Date().toISOString();
+  }
+
   const updated = await updateRow("bookings", id, {
     ...patch,
     admin_note: patch.admin_note ?? null,
     admin_note_updated_by_user_id: patch.admin_note_updated_by_user_id ?? null,
     admin_note_updated_by_name: patch.admin_note_updated_by_name ?? null,
     admin_note_updated_at: patch.admin_note_updated_at ?? null,
+    status_updated_by_user_id: patch.status_updated_by_user_id ?? null,
+    status_updated_by_name: patch.status_updated_by_name ?? null,
+    status_updated_at: patch.status_updated_at ?? null,
   });
   await emitBookingLifecycleNotifications({
     prev: booking,

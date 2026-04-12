@@ -9,7 +9,7 @@ import {
   PAYMENT_PROOF_TARGET_LONG_EDGE_PX,
 } from "@/lib/payments/payment-proof-constraints";
 
-export type OptimizedPaymentProof = {
+type OptimizedPaymentProof = {
   dataUrl: string;
   mimeType: typeof PAYMENT_PROOF_CANONICAL_MIME_TYPE;
   bytes: number;

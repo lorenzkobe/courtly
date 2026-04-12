@@ -4,39 +4,70 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
+  ArrowLeft,
   Calendar,
   Clock,
   ExternalLink,
   MapPin,
   MessageCircle,
+  MoreVertical,
+  Pencil,
+  Star,
+  Trash2,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatTimeShort } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
-import { formatPhp } from "@/lib/format-currency";
+import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isOpenPlayCommentWithinEditWindow } from "@/lib/open-play/open-play-comment-edit";
 import {
-  isOpenPlayJoinableBySchedule,
-  openPlaySchedulePhase,
-  openPlaySchedulePhaseLabel,
-} from "@/lib/open-play/schedule";
+  openPlayDisplayStatus,
+  openPlayDisplayStatusLabel,
+} from "@/lib/open-play/lifecycle";
+import { useOpenPlayDetailRealtime } from "@/lib/open-play/use-open-play-detail-realtime";
+import { isOpenPlayJoinableBySchedule } from "@/lib/open-play/schedule";
 import { PAYMENT_PROOF_CANONICAL_MIME_TYPE } from "@/lib/payments/payment-proof-constraints";
 import { queryKeys } from "@/lib/query/query-keys";
 import type { Court } from "@/lib/types/courtly";
-import { cn } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
+
+function StarRow({ rating, className }: { rating: number; className?: string }) {
+  const filled = Math.round(rating);
+  return (
+    <div className={cn("flex items-center gap-0.5", className)} aria-hidden>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Star
+          key={i}
+          className={cn(
+            "h-4 w-4 shrink-0",
+            i < filled ? "fill-amber-400 text-amber-400" : "text-muted-foreground/25",
+          )}
+        />
+      ))}
+    </div>
+  );
+}
 
 function courtMapHref(court: Court | null | undefined): string {
   if (!court) return "#";
@@ -76,18 +107,22 @@ function joinRequestStatusLabel(
   }
 }
 
-const scheduleBadgeStyles: Record<string, string> = {
-  upcoming: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
-  in_progress: "border-primary/25 bg-primary/10 text-primary",
-  ended: "bg-muted text-muted-foreground border-border",
+const lifecycleBadgeStyles: Record<string, string> = {
+  open: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+  started: "border-primary/25 bg-primary/10 text-primary",
+  closed: "bg-muted text-muted-foreground border-border",
   cancelled: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 export default function OpenPlayDetailPage() {
   const params = useParams<{ id: string }>();
   const sessionId = params.id;
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  useOpenPlayDetailRealtime(sessionId, user?.id ?? null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [hostOptionsOpen, setHostOptionsOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"gcash" | "maya">("gcash");
   const [joinNote, setJoinNote] = useState("");
   const [proofDataUrl, setProofDataUrl] = useState<string | null>(null);
@@ -95,6 +130,8 @@ export default function OpenPlayDetailPage() {
   const [proofWidth, setProofWidth] = useState(0);
   const [proofHeight, setProofHeight] = useState(0);
   const [commentDraft, setCommentDraft] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [organizerNote, setOrganizerNote] = useState("");
   const [clientNowMs, setClientNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -109,8 +146,33 @@ export default function OpenPlayDetailPage() {
       return data;
     },
     enabled: !!sessionId,
-    refetchInterval: 10_000,
   });
+
+  const venueId = data?.court?.venue_id;
+  const { data: venueReviewBundle, isLoading: loadingVenueReviews } = useQuery({
+    queryKey: ["open-play-venue-reviews", venueId],
+    queryFn: async () => {
+      const { data: bundle } = await courtlyApi.venueReviews.bundle(venueId!);
+      return bundle;
+    },
+    enabled: Boolean(venueId),
+  });
+
+  const reviewsSummaryLine = useMemo(() => {
+    const courtRow = data?.court;
+    const reviews = venueReviewBundle?.reviews ?? [];
+    if (courtRow?.review_summary && courtRow.review_summary.review_count > 0) {
+      return {
+        average: courtRow.review_summary.average_rating,
+        count: courtRow.review_summary.review_count,
+      };
+    }
+    if (reviews.length > 0) {
+      const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
+      return { average: sum / reviews.length, count: reviews.length };
+    }
+    return null;
+  }, [data?.court, venueReviewBundle?.reviews]);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.detail(sessionId) });
@@ -172,6 +234,20 @@ export default function OpenPlayDetailPage() {
     onError: () => toast.error("Could not add comment."),
   });
 
+  const updateCommentMutation = useMutation({
+    mutationFn: async (payload: { commentId: string; text: string }) =>
+      courtlyApi.openPlay.updateComment(sessionId, payload.commentId, {
+        comment: payload.text,
+      }),
+    onSuccess: () => {
+      setEditingCommentId(null);
+      setEditDraft("");
+      refresh();
+    },
+    onError: (err: unknown) =>
+      toast.error(apiErrorMessage(err, "Could not update comment.")),
+  });
+
   const approveMutation = useMutation({
     mutationFn: async (requestId: string) =>
       courtlyApi.openPlay.approveRequest(sessionId, requestId, {
@@ -196,6 +272,16 @@ export default function OpenPlayDetailPage() {
     onError: () => toast.error("Could not deny request."),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => courtlyApi.openPlay.delete(sessionId),
+    onSuccess: () => {
+      toast.success("Open play deleted.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
+      router.push("/open-play");
+    },
+    onError: () => toast.error("Could not delete open play."),
+  });
+
   const myRequest = data?.my_request;
   const lockTimeLabel = myRequest?.payment_lock_expires_at
     ? formatDistanceToNowStrict(new Date(myRequest.payment_lock_expires_at), {
@@ -205,7 +291,7 @@ export default function OpenPlayDetailPage() {
 
   if (isLoading || !data) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4 px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-6xl space-y-4 px-6 py-8 md:px-10">
         <Skeleton className="h-10 w-56" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -213,8 +299,12 @@ export default function OpenPlayDetailPage() {
   }
 
   const { session, court } = data;
-  const schedulePhase = openPlaySchedulePhase(session, clientNowMs);
-  const scheduleLabel = openPlaySchedulePhaseLabel(schedulePhase);
+  const lifecycleDisplay = openPlayDisplayStatus(
+    session,
+    clientNowMs,
+    data.counts.approved,
+  );
+  const lifecycleLabel = openPlayDisplayStatusLabel(lifecycleDisplay);
   const joinableByTime = isOpenPlayJoinableBySchedule(session, clientNowMs);
 
   const isHost = Boolean(user?.id && session.host_user_id === user.id);
@@ -224,23 +314,89 @@ export default function OpenPlayDetailPage() {
     myRequest?.status === "expired" ||
     myRequest?.status === "denied";
 
+  const canAttemptNewJoin =
+    joinableByTime &&
+    lifecycleDisplay === "open" &&
+    session.status !== "cancelled" &&
+    session.status !== "full";
+
   const mapOpenHref = courtMapHref(court);
+  const hasMapPin = Boolean(
+    court &&
+      court.map_latitude != null &&
+      court.map_longitude != null &&
+      Number.isFinite(court.map_latitude) &&
+      Number.isFinite(court.map_longitude),
+  );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-8 md:px-10">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 md:px-10">
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="Delete this open play?"
+        description="This removes the session and related join requests. This cannot be undone."
+        confirmLabel="Delete"
+        isPending={deleteMutation.isPending}
+        onConfirm={() => {
+          deleteMutation.mutate();
+        }}
+      />
+      <Button
+        variant="ghost"
+        className="mb-2 -ml-2 text-muted-foreground"
+        asChild
+      >
+        <Link href="/open-play">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Open play
+        </Link>
+      </Button>
       <PageHeader
         title={session.title}
         subtitle={`${session.venue_name ?? "Venue"} · ${session.court_name ?? "Court"}`}
-      />
+        alignActions="start"
+      >
+        {isHost ? (
+          <Popover open={hostOptionsOpen} onOpenChange={setHostOptionsOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                aria-label="Open play options"
+                disabled={deleteMutation.isPending}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-52 p-1" align="end" sideOffset={8}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setHostOptionsOpen(false);
+                  setConfirmDeleteOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4 shrink-0" />
+                Delete open play
+              </button>
+            </PopoverContent>
+          </Popover>
+        ) : null}
+      </PageHeader>
 
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start">
+        <div className="min-w-0 space-y-6">
       <Card className="border-border/50">
         <CardContent className="space-y-3 p-6">
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
-              className={cn(scheduleBadgeStyles[schedulePhase] ?? "")}
+              className={cn(lifecycleBadgeStyles[lifecycleDisplay] ?? "")}
             >
-              {scheduleLabel}
+              {lifecycleLabel}
             </Badge>
             {session.status === "full" ? (
               <Badge variant="outline" className="border-destructive/30 text-destructive">
@@ -277,82 +433,15 @@ export default function OpenPlayDetailPage() {
         </CardContent>
       </Card>
 
-      {court ? (
-        <Card className="border-border/50">
-          <CardContent className="space-y-5 p-6">
-            <h2 className="font-heading text-lg font-semibold text-foreground">Venue</h2>
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
-              <p className="text-base font-semibold text-foreground">
-                {court.establishment_name ?? session.venue_name ?? "—"}
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Location
-                </p>
-                <div className="space-y-3">
-                  <p className="flex items-start gap-2 text-foreground">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0">{court.location}</span>
-                  </p>
-                  <Button variant="outline" size="sm" className="w-fit" asChild>
-                    <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
-                      Open in Map
-                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                    </a>
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Contact
-                </p>
-                <p className="font-medium text-foreground">{court.contact_phone ?? "—"}</p>
-                {court.facebook_url || court.instagram_url ? (
-                  <div className="flex flex-wrap gap-2 pt-0.5">
-                    {court.facebook_url ? (
-                      <a
-                        href={court.facebook_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                      >
-                        Facebook <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : null}
-                    {court.instagram_url ? (
-                      <a
-                        href={court.instagram_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                      >
-                        Instagram <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            {court.amenities?.length ? (
-              <div className="flex flex-wrap gap-1.5">
-                {court.amenities.map((amenity) => (
-                  <Badge key={amenity} variant="outline" className="font-normal">
-                    {formatAmenityLabel(amenity)}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {!isHost ? (
         <Card className="border-border/50">
           <CardContent className="space-y-4 p-6">
             <h2 className="font-heading text-lg font-semibold">Join</h2>
-            {!joinableByTime || session.status === "cancelled" ? (
+            {session.status === "cancelled" ||
+            (!myRequest &&
+              (!joinableByTime ||
+                lifecycleDisplay === "closed" ||
+                lifecycleDisplay === "cancelled")) ? (
               <p className="text-sm text-muted-foreground">
                 This session is no longer accepting joins.
               </p>
@@ -389,7 +478,11 @@ export default function OpenPlayDetailPage() {
                 {!myRequest ? (
                   <Button
                     onClick={() => joinMutation.mutate()}
-                    disabled={joinMutation.isPending || session.status === "full"}
+                    disabled={
+                      joinMutation.isPending ||
+                      session.status === "full" ||
+                      !canAttemptNewJoin
+                    }
                   >
                     {joinMutation.isPending ? "Joining…" : "Join waitlist"}
                   </Button>
@@ -398,7 +491,11 @@ export default function OpenPlayDetailPage() {
                 {onWaitlist && !canPayNow ? (
                   <Button
                     onClick={() => lockMutation.mutate()}
-                    disabled={lockMutation.isPending || session.status === "full"}
+                    disabled={
+                      lockMutation.isPending ||
+                      session.status === "full" ||
+                      !joinableByTime
+                    }
                   >
                     {lockMutation.isPending ? "Please wait…" : "Continue to payment"}
                   </Button>
@@ -495,12 +592,89 @@ export default function OpenPlayDetailPage() {
             Comments
           </h2>
           <div className="space-y-3">
-            {data.comments.map((comment) => (
-              <div key={comment.id} className="rounded-md border border-border/70 p-3">
-                <p className="text-sm font-medium">{comment.user_name ?? "Player"}</p>
-                <p className="text-sm text-muted-foreground">{comment.comment}</p>
-              </div>
-            ))}
+            {data.comments.map((comment) => {
+              const isAuthor = Boolean(user?.id && user.id === comment.user_id);
+              const canEdit =
+                isAuthor &&
+                isOpenPlayCommentWithinEditWindow(comment.created_at, clientNowMs);
+              const isEditing = editingCommentId === comment.id;
+              const postedLabel = format(
+                new Date(comment.created_at),
+                "MMM d, yyyy · h:mm a",
+              );
+              return (
+                <div key={comment.id} className="rounded-md border border-border/70 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{comment.user_name ?? "Player"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {postedLabel}
+                        {comment.edited_at ? (
+                          <span className="text-muted-foreground"> · Edited</span>
+                        ) : null}
+                      </p>
+                    </div>
+                    {canEdit && !isEditing ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0 px-2"
+                        onClick={() => {
+                          setEditingCommentId(comment.id);
+                          setEditDraft(comment.comment);
+                        }}
+                        aria-label="Edit comment"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                  {isEditing ? (
+                    <div className="mt-2 space-y-2">
+                      <Textarea
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        rows={3}
+                        className="min-h-18 resize-y"
+                        disabled={updateCommentMutation.isPending}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={
+                            updateCommentMutation.isPending || !editDraft.trim()
+                          }
+                          onClick={() =>
+                            updateCommentMutation.mutate({
+                              commentId: comment.id,
+                              text: editDraft.trim(),
+                            })
+                          }
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={updateCommentMutation.isPending}
+                          onClick={() => {
+                            setEditingCommentId(null);
+                            setEditDraft("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted-foreground">{comment.comment}</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="flex gap-2">
             <Input
@@ -568,6 +742,163 @@ export default function OpenPlayDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+        </div>
+
+        {court ? (
+          <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="font-heading text-lg">Court details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6 pb-6">
+                {court.description ? (
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {court.description}
+                  </p>
+                ) : null}
+                <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-muted-foreground">Type</dt>
+                    <dd className="mt-0.5 text-foreground">{formatStatusLabel(court.type)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Surface</dt>
+                    <dd className="mt-0.5 text-foreground">
+                      {formatAmenityLabel(court.surface)}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Rates by time</dt>
+                    <dd className="mt-1 space-y-1 font-medium text-foreground">
+                      {(court.hourly_rate_windows ?? []).length > 0 ? (
+                        (court.hourly_rate_windows ?? []).map((rateWindow) => (
+                          <div
+                            key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                          >
+                            {formatTimeShort(rateWindow.start)} –{" "}
+                            {formatTimeShort(rateWindow.end)}:{" "}
+                            {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                          </div>
+                        ))
+                      ) : (
+                        <span className="font-normal text-muted-foreground">—</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Contact</dt>
+                    <dd className="mt-0.5 font-medium text-foreground">
+                      {court.contact_phone ?? "—"}
+                    </dd>
+                  </div>
+                  {court.facebook_url || court.instagram_url ? (
+                    <div>
+                      <dt className="text-muted-foreground">Links</dt>
+                      <dd className="mt-0.5 flex flex-wrap gap-2">
+                        {court.facebook_url ? (
+                          <a
+                            href={court.facebook_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                          >
+                            Facebook <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : null}
+                        {court.instagram_url ? (
+                          <a
+                            href={court.instagram_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                          >
+                            Instagram <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : null}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div className="sm:col-span-2">
+                    <dt className="mb-2 text-muted-foreground">Amenities</dt>
+                    <dd className="flex flex-wrap gap-1.5">
+                      {court.amenities?.length ? (
+                        court.amenities.map((amenity) => (
+                          <Badge key={amenity} variant="outline" className="font-normal">
+                            {formatAmenityLabel(amenity)}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="space-y-3 border-t border-border/60 pt-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
+                        <MapPin className="h-4 w-4 text-primary" aria-hidden />
+                        Location
+                      </h3>
+                      <p className="text-sm text-foreground">{court.location}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {hasMapPin
+                          ? "Opens in Google Maps at the venue pin."
+                          : "Opens in Google Maps using this address."}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 self-start sm:mt-7"
+                      asChild
+                    >
+                      <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
+                        Open in Map
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 border-t border-border/60 pt-4">
+                  <h3 className="font-heading text-base font-semibold text-foreground">
+                    Reviews
+                  </h3>
+                  {loadingVenueReviews ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-8 w-56 rounded-lg" />
+                    </div>
+                  ) : (
+                    <>
+                      {reviewsSummaryLine ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StarRow rating={reviewsSummaryLine.average} />
+                          <span className="text-sm text-muted-foreground">
+                            {reviewsSummaryLine.average.toFixed(1)} average ·{" "}
+                            {reviewsSummaryLine.count}{" "}
+                            {reviewsSummaryLine.count === 1 ? "rating" : "ratings"}
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No reviews yet. Leave one after a completed visit.
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {court.id ? (
+                    <Button variant="outline" size="sm" className="w-full" asChild>
+                      <Link href={`/courts/${court.id}/book`}>Book this venue</Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }

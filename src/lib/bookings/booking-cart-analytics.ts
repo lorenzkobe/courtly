@@ -1,6 +1,6 @@
 "use client";
 
-export type BookingCartEventName =
+type BookingCartEventName =
   | "cart_item_added"
   | "cart_item_merged"
   | "cart_item_removed"

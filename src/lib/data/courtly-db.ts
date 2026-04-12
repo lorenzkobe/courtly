@@ -1,5 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { OPEN_PLAY_COMMENT_EDIT_WINDOW_MS } from "@/lib/open-play/open-play-comment-edit";
+import { computeOpenPlayLifecycleTargetStatus } from "@/lib/open-play/lifecycle";
 import { reviewSummaryForVenue } from "@/lib/review-summary";
 import { pricingSpanFromRanges } from "@/lib/venue-price-ranges";
 import type {
@@ -118,6 +120,9 @@ function mapBookingRow(row: unknown): Booking {
     admin_note_updated_by_user_id?: string;
     admin_note_updated_by_name?: string;
     admin_note_updated_at?: string;
+    status_updated_by_user_id?: string | null;
+    status_updated_by_name?: string | null;
+    status_updated_at?: string | null;
     created_at: string | null;
     courts?: { name?: string; venue_id?: string; venues?: Venue | null } | null;
     profiles?: { mobile_number?: string | null } | null;
@@ -159,12 +164,7 @@ function mapBookingRow(row: unknown): Booking {
     total_cost: Number(record.total_cost ?? 0),
     status: record.status,
     hold_expires_at: record.hold_expires_at ?? null,
-    payment_provider:
-      record.payment_provider === "paymongo"
-        ? "paymongo"
-        : record.payment_provider === "manual"
-          ? "manual"
-          : null,
+    payment_provider: record.payment_provider === "manual" ? "manual" : null,
     payment_link_id: record.payment_link_id ?? null,
     payment_link_url: record.payment_link_url ?? null,
     payment_link_created_at: record.payment_link_created_at ?? null,
@@ -190,6 +190,9 @@ function mapBookingRow(row: unknown): Booking {
     admin_note_updated_by_user_id: record.admin_note_updated_by_user_id,
     admin_note_updated_by_name: record.admin_note_updated_by_name,
     admin_note_updated_at: record.admin_note_updated_at,
+    status_updated_by_user_id: record.status_updated_by_user_id ?? null,
+    status_updated_by_name: record.status_updated_by_name ?? null,
+    status_updated_at: record.status_updated_at ?? null,
     created_date: toIsoString(record.created_at),
   };
 }
@@ -371,6 +374,7 @@ function mapOpenPlayCommentRow(row: unknown): OpenPlayComment {
     comment: string;
     created_at: string | null;
     updated_at: string | null;
+    edited_at?: string | null;
     profiles?: { full_name?: string | null } | null;
   };
   return {
@@ -381,6 +385,7 @@ function mapOpenPlayCommentRow(row: unknown): OpenPlayComment {
     comment: record.comment,
     created_at: toIsoString(record.created_at),
     updated_at: toIsoString(record.updated_at),
+    edited_at: record.edited_at != null ? toIsoString(record.edited_at) : null,
   };
 }
 
@@ -636,17 +641,6 @@ export async function listCourtsByIds(courtIds: string[]): Promise<Court[]> {
     .in("id", courtIds);
   if (error) throw error;
   return (data ?? []).map(mapCourtRow);
-}
-
-export async function listBookings(): Promise<Booking[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      "*, courts(id,name,venue_id,venues(id,name,sport))",
-    );
-  if (error) throw error;
-  return (data ?? []).map(mapBookingRow);
 }
 
 type ListBookingsFilteredParams = {
@@ -1035,9 +1029,15 @@ export async function markBookingsCompletedByIds(
 ): Promise<Array<{ id: string; booking_group_id: string | null; court_id: string; user_id: string | null }>> {
   if (bookingIds.length === 0) return [];
   const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("bookings")
-    .update({ status: "completed" } as never)
+    .update({
+      status: "completed",
+      status_updated_by_user_id: null,
+      status_updated_by_name: "System",
+      status_updated_at: nowIso,
+    } as never)
     .eq("status", "confirmed")
     .in("id", bookingIds)
     .select("id, booking_group_id, court_id, user_id");
@@ -1175,17 +1175,6 @@ export async function hasConfirmedBookingsForVenue(venueId: string): Promise<boo
   return (count ?? 0) > 0;
 }
 
-export async function listVenueClosures(): Promise<VenueClosure[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("venue_closures").select("*");
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as VenueClosure),
-    date: toDateString((row as { date: string | null }).date),
-    created_at: toIsoString((row as { created_at: string | null }).created_at),
-  }));
-}
-
 export async function listVenueClosuresByVenue(
   venueId: string,
   date?: string,
@@ -1222,17 +1211,6 @@ export async function getVenueClosureById(
     date: toDateString((data as { date: string | null }).date),
     created_at: toIsoString((data as { created_at: string | null }).created_at),
   };
-}
-
-export async function listCourtClosures(): Promise<CourtClosure[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("court_closures").select("*");
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    ...(row as CourtClosure),
-    date: toDateString((row as { date: string | null }).date),
-    created_at: toIsoString((row as { created_at: string | null }).created_at),
-  }));
 }
 
 export async function listCourtClosuresByCourt(
@@ -1605,25 +1583,37 @@ async function hydrateOpenPlayRegisteredCounts(
   const { data, error } = await supabase
     .from("open_play_join_requests")
     .select("open_play_session_id,status")
-    .in("open_play_session_id", sessionIds)
-    .in("status", ["approved", "pending_approval", "payment_locked"]);
+    .in("open_play_session_id", sessionIds);
   if (error) throw error;
   const consumingBySession = new Map<string, number>();
+  const approvedBySession = new Map<string, number>();
   for (const row of data ?? []) {
-    const record = row as { open_play_session_id: string };
-    consumingBySession.set(
-      record.open_play_session_id,
-      (consumingBySession.get(record.open_play_session_id) ?? 0) + 1,
-    );
+    const record = row as { open_play_session_id: string; status: string };
+    if (
+      ["approved", "pending_approval", "payment_locked"].includes(record.status)
+    ) {
+      consumingBySession.set(
+        record.open_play_session_id,
+        (consumingBySession.get(record.open_play_session_id) ?? 0) + 1,
+      );
+    }
+    if (record.status === "approved") {
+      approvedBySession.set(
+        record.open_play_session_id,
+        (approvedBySession.get(record.open_play_session_id) ?? 0) + 1,
+      );
+    }
   }
   return sessions.map((session) => {
     const consuming = consumingBySession.get(session.id) ?? 0;
+    const approvedOnly = approvedBySession.get(session.id) ?? 0;
     const statusValue = consuming >= session.max_players ? "full" : session.status;
     return {
       ...session,
       status: statusValue,
       registered_players_count: consuming,
       current_players: consuming,
+      approved_join_count: approvedOnly,
     };
   });
 }
@@ -1911,6 +1901,50 @@ export async function createOpenPlayComment(params: {
   return mapOpenPlayCommentRow(data);
 }
 
+export type UpdateOpenPlayCommentResult =
+  | { ok: true; comment: OpenPlayComment }
+  | { ok: false; error: "not_found" | "forbidden" | "edit_window_expired" };
+
+export async function updateOpenPlayComment(params: {
+  sessionId: string;
+  commentId: string;
+  userId: string;
+  comment: string;
+}): Promise<UpdateOpenPlayCommentResult> {
+  const supabase = createSupabaseAdminClient();
+  const { data: existing, error: fetchErr } = await supabase
+    .from("open_play_comments")
+    .select("id, user_id, created_at, open_play_session_id")
+    .eq("id", params.commentId)
+    .eq("open_play_session_id", params.sessionId)
+    .maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!existing) {
+    return { ok: false, error: "not_found" };
+  }
+  const row = existing as { user_id: string; created_at: string };
+  if (row.user_id !== params.userId) {
+    return { ok: false, error: "forbidden" };
+  }
+  const createdMs = Date.parse(row.created_at);
+  if (!Number.isFinite(createdMs) || Date.now() - createdMs > OPEN_PLAY_COMMENT_EDIT_WINDOW_MS) {
+    return { ok: false, error: "edit_window_expired" };
+  }
+
+  const editedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("open_play_comments")
+    .update({
+      comment: params.comment,
+      edited_at: editedAt,
+    } as never)
+    .eq("id", params.commentId)
+    .select("*, profiles!open_play_comments_user_id_fkey(full_name)")
+    .single();
+  if (error) throw error;
+  return { ok: true, comment: mapOpenPlayCommentRow(data) };
+}
+
 export async function insertRow<T extends Record<string, unknown>>(
   table: string,
   payload: T,
@@ -1952,4 +1986,54 @@ export async function deleteRow(table: string, id: string) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from(table).delete().eq("id", id);
   if (error) throw error;
+}
+
+/** Cron: persist `started` / `closed` from time + approved join counts (admin client). */
+export async function syncOpenPlayLifecycleStatuses(nowMs: number): Promise<{
+  updated_count: number;
+}> {
+  const supabase = createSupabaseAdminClient();
+  const { data: rows, error } = await supabase
+    .from("open_play_sessions")
+    .select("id, date, start_time, end_time, status");
+  if (error) throw error;
+  const list = (rows ?? []) as Array<{
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    status: OpenPlaySession["status"];
+  }>;
+  const tracked = list.filter(
+    (r) => r.status !== "cancelled" && r.status !== "closed",
+  );
+  if (tracked.length === 0) return { updated_count: 0 };
+
+  const sessionIds = tracked.map((r) => r.id);
+  const { data: approvedRows, error: apprErr } = await supabase
+    .from("open_play_join_requests")
+    .select("open_play_session_id")
+    .in("open_play_session_id", sessionIds)
+    .eq("status", "approved");
+  if (apprErr) throw apprErr;
+
+  const approvedBySession = new Map<string, number>();
+  for (const r of approvedRows ?? []) {
+    const sid = (r as { open_play_session_id: string }).open_play_session_id;
+    approvedBySession.set(sid, (approvedBySession.get(sid) ?? 0) + 1);
+  }
+
+  let updated = 0;
+  for (const row of tracked) {
+    const approvedCount = approvedBySession.get(row.id) ?? 0;
+    const target = computeOpenPlayLifecycleTargetStatus(row, nowMs, approvedCount);
+    if (!target || target === row.status) continue;
+    const { error: upErr } = await supabase
+      .from("open_play_sessions")
+      .update({ status: target } as never)
+      .eq("id", row.id);
+    if (!upErr) updated += 1;
+    else throw upErr;
+  }
+  return { updated_count: updated };
 }

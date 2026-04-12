@@ -10,6 +10,7 @@ import {
   listOpenPlaySessionsByHostUserId,
   getOpenPlaySessionByBookingGroupAndCourt,
 } from "@/lib/data/courtly-db";
+import { bookingSegmentStartMs } from "@/lib/bookings/booking-time-display";
 import type { CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -200,6 +201,21 @@ export async function POST(req: Request) {
     if (existing) {
       return NextResponse.json(
         { error: "Open play already exists for one of the selected courts" },
+        { status: 409 },
+      );
+    }
+  }
+
+  const nowMs = Date.now();
+  for (const courtId of requestedCourtIds) {
+    const courtSegments = segments
+      .filter((s) => s.court_id === courtId)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const first = courtSegments[0]!;
+    const startMs = bookingSegmentStartMs(first);
+    if (!Number.isFinite(startMs) || nowMs >= startMs) {
+      return NextResponse.json(
+        { error: "Open play can only be created before the booked time begins" },
         { status: 409 },
       );
     }

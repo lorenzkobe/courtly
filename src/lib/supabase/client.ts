@@ -22,12 +22,3 @@ export function getSupabaseBrowserClient(): SupabaseClient | null {
     return null;
   }
 }
-
-/** Throws if public Supabase env is missing (e.g. OAuth callback). */
-export function createSupabaseBrowserClient(): SupabaseClient {
-  const browserClient = getSupabaseBrowserClient();
-  if (!browserClient) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL is required");
-  }
-  return browserClient;
-}

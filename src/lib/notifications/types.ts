@@ -16,7 +16,11 @@ export type NotificationEventType =
   | "review_flagged_author"
   | "review_flagged_superadmin"
   | "review_flag_resolution_feedback"
-  | "court_created_superadmin";
+  | "review_flag_deleted_author"
+  | "court_created_superadmin"
+  | "open_play_join_approved"
+  | "open_play_join_denied"
+  | "open_play_payment_submitted_host";
 
 export type NotificationMetadata = {
   booking_id?: string;
@@ -25,6 +29,8 @@ export type NotificationMetadata = {
   review_id?: string;
   actor_user_id?: string;
   target_path?: string;
+  open_play_session_id?: string;
+  moderation_reason?: string;
 };
 
 export type Notification = {

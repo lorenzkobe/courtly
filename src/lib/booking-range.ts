@@ -108,11 +108,6 @@ export function exclusiveEndAfterLastIncludedHour(
   return formatHourToken(hourFromTime(lastIncludedHourStart) + 1);
 }
 
-/** Exclusive end token → last included hour start (for highlighting the grid). */
-export function lastIncludedHourFromExclusiveEnd(exclusiveEnd: string): string {
-  return formatHourToken(hourFromTime(exclusiveEnd) - 1);
-}
-
 /**
  * True when `hourToken` (e.g. `"14:00"`) is the start of an hour that has
  * already begun on `selectedDate` relative to `now` (local). Only applies when
@@ -206,29 +201,6 @@ export function availableSegmentsInRange(
     });
   }
   return segments;
-}
-
-export function bookedHoursInSelection(
-  rangeStart: string,
-  rangeEnd: string,
-  occupied: Set<string>,
-): string[] {
-  const sh = hourFromTime(rangeStart);
-  const eh = hourFromTime(rangeEnd);
-  const list: string[] = [];
-  for (let h = sh; h < eh; h++) {
-    const token = formatHourToken(h);
-    if (occupied.has(token)) list.push(token);
-  }
-  return list;
-}
-
-export function selectionCoversBookedSlots(
-  rangeStart: string,
-  rangeEnd: string,
-  occupied: Set<string>,
-): boolean {
-  return bookedHoursInSelection(rangeStart, rangeEnd, occupied).length > 0;
 }
 
 export function totalBillableHours(segments: BookingSegment[]): number {

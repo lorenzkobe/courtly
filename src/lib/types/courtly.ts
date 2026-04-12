@@ -183,7 +183,7 @@ export type Booking = {
     | "cancelled"
     | "completed";
   hold_expires_at?: string | null;
-  payment_provider?: "paymongo" | "manual" | null;
+  payment_provider?: "manual" | null;
   payment_link_id?: string | null;
   payment_link_url?: string | null;
   payment_link_created_at?: string | null;
@@ -208,6 +208,11 @@ export type Booking = {
   admin_note_updated_by_user_id?: string;
   admin_note_updated_by_name?: string;
   admin_note_updated_at?: string;
+  /** Last actor who changed `status` (admin/superadmin/system). */
+  status_updated_by_user_id?: string | null;
+  status_updated_by_name?: string | null;
+  /** ISO timestamp for last status transition. */
+  status_updated_at?: string | null;
   created_date?: string;
 };
 
@@ -313,11 +318,13 @@ export type OpenPlaySession = {
   accepts_maya: boolean;
   maya_account_name?: string | null;
   maya_account_number?: string | null;
-  status: "open" | "full" | "cancelled" | "completed";
+  status: "open" | "full" | "cancelled" | "completed" | "started" | "closed";
   court_name?: string | null;
   venue_name?: string | null;
   venue_id?: string | null;
   registered_players_count?: number;
+  /** Approved join requests only (for lifecycle display). */
+  approved_join_count?: number;
   current_user_request_status?: OpenPlayJoinRequestStatus | null;
 };
 
@@ -362,6 +369,8 @@ export type OpenPlayComment = {
   comment: string;
   created_at: string;
   updated_at: string;
+  /** Set when the message text was edited (for “Edited” label). */
+  edited_at?: string | null;
 };
 
 export type OpenPlayDetailResponse = {

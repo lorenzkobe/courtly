@@ -221,12 +221,6 @@ export const courtlyApi = {
         `/api/bookings/${id}/submit-proof`,
         body,
       ),
-    retryPayment: (id: string) =>
-      http.post<BookingCheckoutResponse>(`/api/bookings/${id}/retry-payment`),
-    reconcilePayment: (id: string) =>
-      http.post<{ ok: boolean; status: string; reconciled?: boolean; refund_required?: boolean }>(
-        `/api/bookings/${id}/reconcile-payment`,
-      ),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (
@@ -314,8 +308,14 @@ export const courtlyApi = {
       ),
     addComment: (id: string, body: { comment: string }) =>
       http.post<{ comment: OpenPlayComment }>(`/api/open-play/${id}/comments`, body),
+    updateComment: (sessionId: string, commentId: string, body: { comment: string }) =>
+      http.patch<{ comment: OpenPlayComment }>(
+        `/api/open-play/${sessionId}/comments/${commentId}`,
+        body,
+      ),
     update: (id: string, data: Partial<OpenPlaySession>) =>
       http.patch<OpenPlaySession>(`/api/open-play/${id}`, data),
+    delete: (id: string) => http.delete<{ ok: boolean }>(`/api/open-play/${id}`),
   },
 
   registrations: {

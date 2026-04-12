@@ -4,6 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { format } from "date-fns";
 import { Calendar, ListFilter, Loader2, Search, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -36,7 +37,6 @@ import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
-import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import type { Booking } from "@/lib/types/courtly";
 import { cn, formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
 
@@ -121,6 +121,128 @@ type AppliedFilterChip = {
   onRemove: () => void;
 };
 
+type BookingAuditEvent = {
+  id: string;
+  at: string | null;
+  title: string;
+  detail: string;
+  actor?: string | null;
+};
+
+function normalizeAuditActor(actor: string | null | undefined): string | null {
+  const trimmedActor = actor?.trim();
+  return trimmedActor || null;
+}
+
+function bookingAuditBadgeClass(title: string): string {
+  switch (title) {
+    case "Booking created":
+      return "border-slate-500/30 bg-slate-500/10 text-slate-700";
+    case "Payment proof submitted":
+      return "border-blue-500/30 bg-blue-500/10 text-blue-700";
+    case "Booking confirmed":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+    case "Booking completed":
+      return "border-violet-500/30 bg-violet-500/10 text-violet-700";
+    case "Booking cancelled":
+      return "border-orange-500/30 bg-orange-500/10 text-orange-700";
+    case "Booking rejected":
+      return "border-destructive/30 bg-destructive/10 text-destructive";
+    case "Admin note added/updated":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
+}
+
+function bookingAuditAccentClass(title: string): string {
+  switch (title) {
+    case "Booking created":
+      return "bg-slate-500/70";
+    case "Payment proof submitted":
+      return "bg-blue-500/70";
+    case "Booking confirmed":
+      return "bg-emerald-500/70";
+    case "Booking completed":
+      return "bg-violet-500/70";
+    case "Booking cancelled":
+      return "bg-orange-500/70";
+    case "Booking rejected":
+      return "bg-destructive/80";
+    case "Admin note added/updated":
+      return "bg-amber-500/70";
+    default:
+      return "bg-border";
+  }
+}
+
+function bookingAuditEventsForSegment(segment: Booking): BookingAuditEvent[] {
+  const segmentLabel =
+    segment.court_name?.trim() || segment.establishment_name?.trim() || "Booking";
+  const statusActor = normalizeAuditActor(segment.status_updated_by_name);
+  const events: BookingAuditEvent[] = [];
+  if (segment.created_date) {
+    events.push({
+      id: `${segment.id}-created`,
+      at: segment.created_date,
+      title: "Booking created",
+      detail: `${segmentLabel} · ${formatTimeShort(segment.start_time)} - ${formatTimeShort(
+        segment.end_time,
+      )}`,
+    });
+  }
+  if (segment.payment_submitted_at) {
+    events.push({
+      id: `${segment.id}-payment-submitted`,
+      at: segment.payment_submitted_at,
+      title: "Payment proof submitted",
+      detail: `${segmentLabel}`,
+    });
+  }
+  if (segment.status === "confirmed") {
+    events.push({
+      id: `${segment.id}-confirmed`,
+      at: segment.status_updated_at ?? segment.paid_at ?? null,
+      title: "Booking confirmed",
+      detail: segmentLabel,
+      actor: statusActor,
+    });
+  }
+  if (segment.status === "completed") {
+    events.push({
+      id: `${segment.id}-completed`,
+      at: segment.status_updated_at ?? null,
+      title: "Booking completed",
+      detail: segmentLabel,
+      actor: statusActor,
+    });
+  }
+  if (segment.status === "cancelled") {
+    const rejected =
+      Boolean(segment.payment_failed_at) ||
+      (segment.cancel_reason ?? "").toLowerCase().includes("reject");
+    events.push({
+      id: `${segment.id}-${rejected ? "rejected" : "cancelled"}`,
+      at: segment.status_updated_at ?? segment.payment_failed_at ?? segment.refunded_at ?? null,
+      title: rejected ? "Booking rejected" : "Booking cancelled",
+      detail: segment.cancel_reason?.trim() || segmentLabel,
+      actor: statusActor,
+    });
+  }
+  if (segment.admin_note_updated_at) {
+    const noteText = segment.admin_note?.trim() || "Note cleared";
+    const noteActor = normalizeAuditActor(segment.admin_note_updated_by_name) || "Admin";
+    events.push({
+      id: `${segment.id}-note`,
+      at: segment.admin_note_updated_at,
+      title: "Admin note added/updated",
+      detail: noteText,
+      actor: noteActor,
+    });
+  }
+  return events;
+}
+
 function AdminBookingNoteFields({
   booking,
   onSave,
@@ -179,6 +301,9 @@ function AdminBookingNoteFields({
 
 export default function AdminBookingsPage() {
   const PAGE_LIMIT = 25;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const globalAdmin = isSuperadmin(user);
   const queryClient = useQueryClient();
@@ -194,11 +319,16 @@ export default function AdminBookingsPage() {
   >("latest_date");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const detailIdFromQuery = searchParams.get("detail");
+  const activeDetailId = detailId ?? detailIdFromQuery;
+
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
+  const [confirmCompleteBookingId, setConfirmCompleteBookingId] = useState<string | null>(null);
   const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
   const [paymentProofPreviewUrl, setPaymentProofPreviewUrl] = useState<string | null>(
     null,
   );
+  const [bookingAuditOpen, setBookingAuditOpen] = useState(false);
   const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{
     id: string;
     status: Booking["status"];
@@ -208,18 +338,10 @@ export default function AdminBookingsPage() {
     setPaymentProofPreviewUrl(null);
     setPaymentProofZoom(1);
   }, []);
-  const adminRealtimeKeys = useMemo(
-    () => [["admin-bookings"], ["admin-booking-detail"], ["admin-booking-group"]],
-    [],
-  );
-  useBookingsRealtime({
-    enabled: !!user && (user.role === "admin" || user.role === "superadmin"),
-    queryKeysToInvalidate: adminRealtimeKeys,
-  });
-
   const openAdminBookingDetail = useCallback(
     (id: string) => {
       dismissPaymentProofPreview();
+      setBookingAuditOpen(false);
       setDetailId(id);
     },
     [dismissPaymentProofPreview],
@@ -228,8 +350,10 @@ export default function AdminBookingsPage() {
   const {
     data: bookingsPages,
     isLoading,
+    isRefetching,
     isFetchingNextPage,
     fetchNextPage,
+    refetch: refetchBookings,
   } = useInfiniteQuery({
     queryKey: ["admin-bookings", globalAdmin ? "all" : "managed", PAGE_LIMIT],
     queryFn: async ({ pageParam }) => {
@@ -286,17 +410,16 @@ export default function AdminBookingsPage() {
   }, [bookings]);
 
   const { data: detailPayload } = useQuery({
-    queryKey: ["admin-booking-detail", detailId, "with-group"],
+    queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.getWithGroup(detailId!);
+      const { data } = await courtlyApi.bookings.getWithGroup(activeDetailId!);
       return data;
     },
-    enabled: !!detailId,
+    enabled: !!activeDetailId,
     staleTime: 15_000,
   });
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;
-  const paymentTransactions = detailPayload?.payment_transactions ?? [];
 
   const detailSegments = useMemo(() => {
     if (!detailBooking) return [];
@@ -328,6 +451,72 @@ export default function AdminBookingsPage() {
       null
     );
   }, [detailSegments]);
+  const bookingAuditEvents = useMemo(() => {
+    const segmentEvents = detailSegments
+      .flatMap((segment) => bookingAuditEventsForSegment(segment))
+      .filter(
+        (event) =>
+          !(
+            detailBooking?.booking_group_id &&
+            detailSegments.length > 1 &&
+            (event.title === "Booking created" || event.title === "Payment proof submitted")
+          ),
+      );
+
+    const groupEvents: BookingAuditEvent[] = [];
+    if (detailBooking?.booking_group_id && detailSegments.length > 1) {
+      const courtNames = [
+        ...new Set(
+          detailSegments
+            .map((segment) => segment.court_name?.trim())
+            .filter((name): name is string => Boolean(name)),
+        ),
+      ];
+      const groupLabel =
+        courtNames.length > 0
+          ? `${detailSegments.length} slots · ${courtNames.join(", ")}`
+          : `${detailSegments.length} slots`;
+      const createdAt =
+        detailSegments
+          .map((segment) => segment.created_date)
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(0) ?? null;
+      if (createdAt) {
+        groupEvents.push({
+          id: `${detailBooking.booking_group_id}-created-group`,
+          at: createdAt,
+          title: "Booking created",
+          detail: groupLabel,
+        });
+      }
+      const submittedAt =
+        detailSegments
+          .map((segment) => segment.payment_submitted_at)
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1) ?? null;
+      const submittedCount = detailSegments.filter((segment) => segment.payment_submitted_at).length;
+      if (submittedAt && submittedCount > 0) {
+        groupEvents.push({
+          id: `${detailBooking.booking_group_id}-payment-submitted-group`,
+          at: submittedAt,
+          title: "Payment proof submitted",
+          detail:
+            submittedCount === detailSegments.length
+              ? groupLabel
+              : `${submittedCount} of ${detailSegments.length} slots`,
+        });
+      }
+    }
+
+    return [...segmentEvents, ...groupEvents].sort((left, right) => {
+        const leftAt = left.at ? new Date(left.at).getTime() : 0;
+        const rightAt = right.at ? new Date(right.at).getTime() : 0;
+        if (leftAt !== rightAt) return rightAt - leftAt;
+        return left.title.localeCompare(right.title);
+      });
+  }, [detailBooking, detailSegments]);
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -368,7 +557,7 @@ export default function AdminBookingsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["admin-booking-detail", detailId, "with-group"],
+        queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
       });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note saved");
@@ -387,7 +576,7 @@ export default function AdminBookingsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["admin-booking-detail", detailId, "with-group"],
+        queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
       });
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       toast.success("Note deleted");
@@ -653,6 +842,22 @@ export default function AdminBookingsPage() {
         }}
       />
       <ConfirmDialog
+        open={!!confirmCompleteBookingId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmCompleteBookingId(null);
+        }}
+        title="Complete booking?"
+        description="This will mark the booking as completed."
+        confirmLabel="Yes, complete booking"
+        confirmVariant="default"
+        isPending={updateStatus.isPending}
+        onConfirm={() => {
+          if (!confirmCompleteBookingId) return;
+          updateStatus.mutate({ id: confirmCompleteBookingId, status: "completed" });
+          setConfirmCompleteBookingId(null);
+        }}
+      />
+      <ConfirmDialog
         open={confirmDeleteNoteOpen}
         onOpenChange={setConfirmDeleteNoteOpen}
         title="Delete admin note?"
@@ -665,7 +870,7 @@ export default function AdminBookingsPage() {
         }}
       />
       <Dialog
-        open={!!detailId}
+        open={!!activeDetailId}
         onOpenChange={(open) => {
           if (!open && paymentProofPreviewUrl) {
             dismissPaymentProofPreview();
@@ -673,12 +878,16 @@ export default function AdminBookingsPage() {
           }
           if (!open) {
             dismissPaymentProofPreview();
+            setBookingAuditOpen(false);
             setDetailId(null);
+            if (detailIdFromQuery) {
+              router.replace(pathname, { scroll: false });
+            }
           }
         }}
       >
         <DialogContent
-          className="max-h-[min(92dvh,44rem)] sm:max-w-xl"
+          className="max-h-[min(92dvh,44rem)] sm:max-w-5xl"
           onInteractOutside={(e) => {
             if (!paymentProofPreviewUrl) return;
             e.preventDefault();
@@ -781,271 +990,315 @@ export default function AdminBookingsPage() {
                 </Button>
               </DialogFooter>
             </div>
-          ) : detailBooking ? (
-            <div className="space-y-6 text-sm">
-              <section>
-                <h3 className="mb-2 font-heading font-semibold text-foreground">
-                  Reservation
-                </h3>
-                <dl className="grid gap-2 sm:grid-cols-[7rem_1fr]">
-                  <dt className="text-muted-foreground">Venue</dt>
-                  <dd className="font-medium">
-                    {detailBooking.establishment_name ?? "—"}
-                  </dd>
-                  <dt className="text-muted-foreground">Booking #</dt>
-                  <dd className="font-mono text-xs">
-                    {detailBooking.booking_number ?? "—"}
-                  </dd>
-                  {detailSegments.length > 1 ? (
-                    <>
-                      <dt className="text-muted-foreground">Checkout</dt>
-                      <dd className="text-foreground">
-                        {detailSegments.length} reservations in one payment
-                      </dd>
-                    </>
-                  ) : null}
-                  <dt className="text-muted-foreground">Player</dt>
-                  <dd>{detailBooking.player_name ?? "—"}</dd>
-                  <dt className="text-muted-foreground">Email</dt>
-                  <dd className="break-all">{detailBooking.player_email ?? "—"}</dd>
-                  <dt className="text-muted-foreground">Contact number</dt>
-                  <dd className="tabular-nums">
-                    {detailBooking.player_mobile_number?.trim() || "—"}
-                  </dd>
-                  <dt className="text-muted-foreground">Total</dt>
-                  <dd className="font-heading font-bold text-primary">
-                    {formatPhp(adminSessionTotal)}
-                  </dd>
-                  {detailBooking.payment_reference_id ? (
-                    <>
-                      <dt className="text-muted-foreground">Payment reference</dt>
-                      <dd className="break-all text-xs">{detailBooking.payment_reference_id}</dd>
-                    </>
-                  ) : null}
-                  {adminBookingNotes ? (
-                    <>
-                      <dt className="text-muted-foreground">Booking notes</dt>
-                      <dd className="whitespace-pre-wrap text-foreground">
-                        {adminBookingNotes}
-                      </dd>
-                    </>
-                  ) : (
-                    <>
-                      <dt className="text-muted-foreground">Booking notes</dt>
-                      <dd className="text-muted-foreground">—</dd>
-                    </>
-                  )}
-                  {detailBooking.created_date ? (
-                    <>
-                      <dt className="text-muted-foreground">Booked at</dt>
-                      <dd className="text-xs text-muted-foreground">
-                        {format(new Date(detailBooking.created_date), "PPpp")}
-                      </dd>
-                    </>
-                  ) : null}
-                </dl>
-                {paymentDetailSegment &&
-                (paymentDetailSegment.payment_submitted_method ||
-                  paymentDetailSegment.payment_submitted_at) ? (
-                  <div className="mt-3 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs">
-                    <p className="font-medium text-foreground">
-                      Submitted via{" "}
-                      {paymentDetailSegment.payment_submitted_method
-                        ? formatStatusLabel(paymentDetailSegment.payment_submitted_method)
-                        : "—"}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {paymentDetailSegment.payment_submitted_at
-                        ? format(new Date(paymentDetailSegment.payment_submitted_at), "PPpp")
-                        : "—"}
-                    </p>
-                    {paymentDetailSegment.payment_proof_url ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => {
-                          setPaymentProofZoom(1);
-                          setPaymentProofPreviewUrl(paymentDetailSegment.payment_proof_url!);
-                        }}
-                      >
-                        View payment proof
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="mt-4 space-y-3">
-                  <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {detailSegments.length > 1 ? "Items" : "Reservation"}
-                  </h4>
-                  <ul className="space-y-3">
-                    {detailSegments.map((segment) => {
-                      const isConfirming =
-                        updateStatus.isPending &&
-                        pendingStatusUpdate?.id === segment.id &&
-                        pendingStatusUpdate?.status === "confirmed";
-                      const isCompleting =
-                        updateStatus.isPending &&
-                        pendingStatusUpdate?.id === segment.id &&
-                        pendingStatusUpdate?.status === "completed";
-                      return (
-                        <li
-                          key={segment.id}
-                          className="rounded-lg border border-border/60 bg-muted/15 p-3"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1 space-y-0.5">
-                              <p className="font-medium text-foreground">
-                                {segment.court_name ?? "Court"}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {segment.date
-                                  ? format(new Date(segment.date), "MMM d, yyyy")
-                                  : "—"}{" "}
-                                · {formatTimeShort(segment.start_time)} –{" "}
-                                {formatTimeShort(segment.end_time)}
-                              </p>
-                              {segment.notes?.trim() ? (
-                                <p className="pt-1 text-xs text-muted-foreground">
-                                  Note: {segment.notes.trim()}
-                                </p>
-                              ) : null}
-                            </div>
-                            <div className="shrink-0 space-y-1 text-right">
-                              <div className="flex flex-wrap justify-end gap-1">
-                                <Badge
-                                  variant="outline"
-                                  className={statusStyles[segment.status] ?? ""}
-                                >
-                                  {formatBookingStatusLabel(segment.status)}
-                                </Badge>
-                                {segment.refund_required ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-amber-500/30 bg-amber-500/10 text-amber-700"
-                                  >
-                                    Refund
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              <p className="font-semibold tabular-nums text-foreground">
-                                {formatPhp(segment.total_cost ?? 0)}
-                              </p>
-                            </div>
-                          </div>
-                          {segment.status === "pending_confirmation" ? (
-                            <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                              <Button
-                                size="sm"
-                                disabled={updateStatus.isPending}
-                                onClick={() =>
-                                  updateStatus.mutate({
-                                    id: segment.id,
-                                    status: "confirmed",
-                                  })
-                                }
-                              >
-                                {isConfirming ? (
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Confirming…
-                                  </span>
-                                ) : (
-                                  "Confirm payment"
-                                )}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                disabled={updateStatus.isPending}
-                                onClick={() => setConfirmCancelBookingId(segment.id)}
-                              >
-                                <X className="mr-1 h-3.5 w-3.5" /> Reject payment
-                              </Button>
-                            </div>
-                          ) : null}
-                          {segment.status === "confirmed" ? (
-                            <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs"
-                                disabled={updateStatus.isPending}
-                                onClick={() =>
-                                  updateStatus.mutate({
-                                    id: segment.id,
-                                    status: "completed",
-                                  })
-                                }
-                              >
-                                {isCompleting ? (
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Completing…
-                                  </span>
-                                ) : (
-                                  "Complete"
-                                )}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                disabled={updateStatus.isPending}
-                                onClick={() => setConfirmCancelBookingId(segment.id)}
-                              >
-                                <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                              </Button>
-                            </div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              </section>
-              <AdminBookingNoteFields
-                key={`${detailBooking.id}-${detailBooking.admin_note_updated_at ?? ""}`}
-                booking={detailBooking}
-                onSave={(note) => saveAdminNote.mutate(note)}
-                onRequestClear={() => setConfirmDeleteNoteOpen(true)}
-                savePending={saveAdminNote.isPending}
-                clearPending={clearAdminNote.isPending}
-              />
-              <section className="border-t border-border/60 pt-4">
-                <h3 className="mb-2 font-heading font-semibold text-foreground">
-                  Payment audit
-                </h3>
-                {paymentTransactions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No payment audit events yet.</p>
+          ) : bookingAuditOpen ? (
+            <div className="flex max-h-[min(80dvh,36rem)] min-h-0 flex-col gap-4">
+              <DialogHeader className="pr-8 text-left">
+                <DialogTitle className="font-heading">Booking audit</DialogTitle>
+                <DialogDescription>
+                  Timeline of status updates, payment events, and admin actions.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/10 p-3">
+                {bookingAuditEvents.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No booking audit events yet.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {paymentTransactions.map((tx) => (
+                  <ul className="space-y-2.5">
+                    {bookingAuditEvents.map((event) => (
                       <li
-                        key={tx.id}
-                        className="rounded-md border border-border/50 bg-muted/20 p-2 text-xs"
+                        key={event.id}
+                        className="relative overflow-hidden rounded-lg border border-border/50 bg-muted/20 px-3 py-3 text-sm"
                       >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline" className="text-[10px] uppercase">
-                            {tx.trace_status}
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute inset-y-0 left-0 w-1",
+                            bookingAuditAccentClass(event.title),
+                          )}
+                        />
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "w-fit text-[10px] uppercase tracking-wide",
+                              bookingAuditBadgeClass(event.title),
+                            )}
+                          >
+                            {event.title}
                           </Badge>
-                          <span className="text-muted-foreground">
-                            {tx.created_at ? format(new Date(tx.created_at), "PPpp") : "—"}
+                          <span className="inline-flex flex-wrap items-center justify-end gap-1 text-xs text-muted-foreground sm:max-w-[18rem]">
+                            <Calendar className="h-3 w-3" />
+                            <span>{event.at ? format(new Date(event.at), "PPpp") : "Time not tracked"}</span>
+                            {event.actor ? (
+                              <>
+                                <span aria-hidden>·</span>
+                                <span>By {event.actor}</span>
+                              </>
+                            ) : null}
                           </span>
-                          {tx.provider_payment_id ? (
-                            <span className="font-mono text-[10px]">{tx.provider_payment_id}</span>
-                          ) : null}
                         </div>
-                        {tx.trace_note ? (
-                          <p className="mt-1 text-muted-foreground">{tx.trace_note}</p>
-                        ) : null}
+                        <p className="mt-2 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground/85">
+                          {event.detail}
+                        </p>
                       </li>
                     ))}
                   </ul>
                 )}
-              </section>
+              </div>
+              <DialogFooter className="sm:justify-end">
+                <Button type="button" variant="secondary" onClick={() => setBookingAuditOpen(false)}>
+                  Back to booking details
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : detailBooking ? (
+            <div className="space-y-6 text-sm">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
+                <div className="space-y-6">
+                  <section>
+                    <h3 className="mb-2 font-heading font-semibold text-foreground">
+                      Reservation
+                    </h3>
+                    <dl className="grid gap-2 sm:grid-cols-[7rem_1fr]">
+                      <dt className="text-muted-foreground">Venue</dt>
+                      <dd className="font-medium">
+                        {detailBooking.establishment_name ?? "—"}
+                      </dd>
+                      <dt className="text-muted-foreground">Booking #</dt>
+                      <dd className="font-mono text-xs">
+                        {detailBooking.booking_number ?? "—"}
+                      </dd>
+                      {detailSegments.length > 1 ? (
+                        <>
+                          <dt className="text-muted-foreground">Checkout</dt>
+                          <dd className="text-foreground">
+                            {detailSegments.length} reservations in one payment
+                          </dd>
+                        </>
+                      ) : null}
+                      <dt className="text-muted-foreground">Player</dt>
+                      <dd>{detailBooking.player_name ?? "—"}</dd>
+                      <dt className="text-muted-foreground">Email</dt>
+                      <dd className="break-all">{detailBooking.player_email ?? "—"}</dd>
+                      <dt className="text-muted-foreground">Contact number</dt>
+                      <dd className="tabular-nums">
+                        {detailBooking.player_mobile_number?.trim() || "—"}
+                      </dd>
+                      <dt className="text-muted-foreground">Total</dt>
+                      <dd className="font-heading font-bold text-primary">
+                        {formatPhp(adminSessionTotal)}
+                      </dd>
+                      {detailBooking.payment_reference_id ? (
+                        <>
+                          <dt className="text-muted-foreground">Payment reference</dt>
+                          <dd className="break-all text-xs">{detailBooking.payment_reference_id}</dd>
+                        </>
+                      ) : null}
+                      {adminBookingNotes ? (
+                        <>
+                          <dt className="text-muted-foreground">Booking notes</dt>
+                          <dd className="whitespace-pre-wrap text-foreground">
+                            {adminBookingNotes}
+                          </dd>
+                        </>
+                      ) : (
+                        <>
+                          <dt className="text-muted-foreground">Booking notes</dt>
+                          <dd className="text-muted-foreground">—</dd>
+                        </>
+                      )}
+                      {detailBooking.created_date ? (
+                        <>
+                          <dt className="text-muted-foreground">Booked at</dt>
+                          <dd className="text-xs text-muted-foreground">
+                            {format(new Date(detailBooking.created_date), "PPpp")}
+                          </dd>
+                        </>
+                      ) : null}
+                    </dl>
+                    {paymentDetailSegment &&
+                    (paymentDetailSegment.payment_submitted_method ||
+                      paymentDetailSegment.payment_submitted_at) ? (
+                      <div className="mt-3 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs">
+                        <p className="font-medium text-foreground">
+                          Submitted via{" "}
+                          {paymentDetailSegment.payment_submitted_method
+                            ? formatStatusLabel(paymentDetailSegment.payment_submitted_method)
+                            : "—"}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {paymentDetailSegment.payment_submitted_at
+                            ? format(new Date(paymentDetailSegment.payment_submitted_at), "PPpp")
+                            : "—"}
+                        </p>
+                        {paymentDetailSegment.payment_proof_url ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => {
+                              setPaymentProofZoom(1);
+                              setPaymentProofPreviewUrl(paymentDetailSegment.payment_proof_url!);
+                            }}
+                          >
+                            View payment proof
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                </div>
+                <div className="space-y-6">
+                  <section className="space-y-3">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {detailSegments.length > 1 ? "Items" : "Reservation"}
+                    </h4>
+                    <ul className="space-y-3">
+                      {detailSegments.map((segment) => {
+                        const isConfirming =
+                          updateStatus.isPending &&
+                          pendingStatusUpdate?.id === segment.id &&
+                          pendingStatusUpdate?.status === "confirmed";
+                        const isCompleting =
+                          updateStatus.isPending &&
+                          pendingStatusUpdate?.id === segment.id &&
+                          pendingStatusUpdate?.status === "completed";
+                        return (
+                          <li
+                            key={segment.id}
+                            className="rounded-lg border border-border/60 bg-muted/15 p-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <p className="font-medium text-foreground">
+                                  {segment.court_name ?? "Court"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {segment.date
+                                    ? format(new Date(segment.date), "MMM d, yyyy")
+                                    : "—"}{" "}
+                                  · {formatTimeShort(segment.start_time)} –{" "}
+                                  {formatTimeShort(segment.end_time)}
+                                </p>
+                                {segment.notes?.trim() ? (
+                                  <p className="pt-1 text-xs text-muted-foreground">
+                                    Note: {segment.notes.trim()}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="shrink-0 space-y-1 text-right">
+                                <div className="flex flex-wrap justify-end gap-1">
+                                  <Badge
+                                    variant="outline"
+                                    className={statusStyles[segment.status] ?? ""}
+                                  >
+                                    {formatBookingStatusLabel(segment.status)}
+                                  </Badge>
+                                  {segment.refund_required ? (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                    >
+                                      Refund
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <p className="font-semibold tabular-nums text-foreground">
+                                  {formatPhp(segment.total_cost ?? 0)}
+                                </p>
+                              </div>
+                            </div>
+                            {segment.status === "pending_confirmation" ? (
+                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+                                <Button
+                                  size="sm"
+                                  disabled={updateStatus.isPending}
+                                  onClick={() =>
+                                    updateStatus.mutate({
+                                      id: segment.id,
+                                      status: "confirmed",
+                                    })
+                                  }
+                                >
+                                  {isConfirming ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Confirming…
+                                    </span>
+                                  ) : (
+                                    "Confirm payment"
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                  disabled={updateStatus.isPending}
+                                  onClick={() => setConfirmCancelBookingId(segment.id)}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" /> Reject payment
+                                </Button>
+                              </div>
+                            ) : null}
+                            {segment.status === "confirmed" ? (
+                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs"
+                                  disabled={updateStatus.isPending}
+                                  onClick={() => setConfirmCompleteBookingId(segment.id)}
+                                >
+                                  {isCompleting ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Completing…
+                                    </span>
+                                  ) : (
+                                    "Complete"
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                  disabled={updateStatus.isPending}
+                                  onClick={() => setConfirmCancelBookingId(segment.id)}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" /> Cancel
+                                </Button>
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <AdminBookingNoteFields
+                  key={`${detailBooking.id}-${detailBooking.admin_note_updated_at ?? ""}`}
+                  booking={detailBooking}
+                  onSave={(note) => saveAdminNote.mutate(note)}
+                  onRequestClear={() => setConfirmDeleteNoteOpen(true)}
+                  savePending={saveAdminNote.isPending}
+                  clearPending={clearAdminNote.isPending}
+                />
+                <section className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">Booking audit</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {bookingAuditEvents.length} events
+                      </p>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setBookingAuditOpen(true)}>
+                      View booking audit
+                    </Button>
+                  </div>
+                </section>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -1060,7 +1313,23 @@ export default function AdminBookingsPage() {
             ? "One row per player checkout; bulk bookings group courts and dates together."
             : "One row per player checkout on courts you manage."
         }
-      />
+      >
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void refetchBookings()}
+          disabled={isLoading || isRefetching}
+        >
+          {isRefetching ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Refreshing...
+            </span>
+          ) : (
+            "Refresh"
+          )}
+        </Button>
+      </PageHeader>
 
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[

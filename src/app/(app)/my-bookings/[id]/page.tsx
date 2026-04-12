@@ -7,6 +7,7 @@ import {
   Calendar,
   Clock,
   ExternalLink,
+  Loader2,
   MapPin,
   Star,
   Trash2,
@@ -33,13 +34,15 @@ import {
 } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
-import { segmentStatusForDisplay } from "@/lib/bookings/booking-time-display";
+import {
+  bookingSegmentStartMs,
+  segmentStatusForDisplay,
+} from "@/lib/bookings/booking-time-display";
 import {
   aggregateSessionStatus,
   sessionFullyCompletedForReview,
   sessionStatusLabel,
 } from "@/lib/bookings/session-display-status";
-import { useBookingsRealtime } from "@/lib/bookings/use-bookings-realtime";
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 
@@ -75,6 +78,7 @@ function BookingReviewSection({
     if (Number.isNaN(createdAtMs)) return false;
     return serverNowMs - createdAtMs <= 24 * 60 * 60 * 1000;
   }, [myReview, serverNowMs]);
+  const reviewInputsLocked = Boolean(myReview && !canModifyExistingReview);
   const reviewEditDeadlineLabel = useMemo(() => {
     if (!myReview) return null;
     const createdAtMs = Date.parse(myReview.created_at);
@@ -173,13 +177,21 @@ function BookingReviewSection({
           </div>
           <div className="space-y-2">
             <Label>Stars</Label>
-            <div className="flex gap-1">
+            <div
+              className={cn("flex gap-1", reviewInputsLocked && "opacity-60")}
+            >
               {[1, 2, 3, 4, 5].map((starValue) => (
                 <button
                   key={starValue}
                   type="button"
+                  disabled={reviewInputsLocked}
                   onClick={() => setRatingDraft(starValue)}
-                  className="rounded-md p-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={cn(
+                    "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    reviewInputsLocked
+                      ? "cursor-not-allowed"
+                      : "hover:bg-muted",
+                  )}
                   aria-label={`${starValue} stars`}
                 >
                   <Star
@@ -202,6 +214,7 @@ function BookingReviewSection({
               value={commentDraft}
               onChange={(e) => setCommentDraft(e.target.value)}
               placeholder="How was the court?"
+              disabled={reviewInputsLocked}
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -256,17 +269,12 @@ export default function BookingDetailPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const bookingId = params.id;
-  const bookingRealtimeKeys = useMemo(
-    () => [["my-booking-detail", bookingId, "with-group"], queryKeys.bookings.all()],
-    [bookingId],
-  );
-  useBookingsRealtime({
-    playerEmail: user?.email,
-    enabled: !!user?.email,
-    queryKeysToInvalidate: bookingRealtimeKeys,
-  });
-
-  const { data: bookingPayload, isLoading: loadingBooking } = useQuery({
+  const {
+    data: bookingPayload,
+    isLoading: loadingBooking,
+    isFetching: fetchingBooking,
+    refetch,
+  } = useQuery({
     queryKey: ["my-booking-detail", bookingId, "with-group"],
     queryFn: async () => {
       const { data } = await courtlyApi.bookings.getDetailContext(bookingId);
@@ -350,8 +358,17 @@ export default function BookingDetailPage() {
       });
       return data;
     },
-    enabled: Boolean(bookingGroupIdForOpenPlay && openPlayFromBookingEligible),
+    /** Booker's booking group may include completed segments; still need sessions for “View open play” links. */
+    enabled: Boolean(bookingGroupIdForOpenPlay && isMyBooking),
   });
+
+  const openPlaySessionIdByCourtId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of groupOpenPlaySessions) {
+      if (s.court_id) m.set(s.court_id, s.id);
+    }
+    return m;
+  }, [groupOpenPlaySessions]);
 
   const distinctCourtsForOpenPlay = useMemo(() => {
     const m = new Map<string, string>();
@@ -369,8 +386,18 @@ export default function BookingDetailPage() {
         .map((s) => s.court_id)
         .filter((id): id is string => Boolean(id)),
     );
-    return distinctCourtsForOpenPlay.filter((c) => !existing.has(c.id));
-  }, [distinctCourtsForOpenPlay, groupOpenPlaySessions]);
+    return distinctCourtsForOpenPlay.filter((c) => {
+      if (existing.has(c.id)) return false;
+      const courtSegs = segments
+        .filter((s) => s.court_id === c.id)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time));
+      const first = courtSegs[0];
+      if (!first) return false;
+      const startMs = bookingSegmentStartMs(first);
+      if (!Number.isFinite(startMs)) return false;
+      return statusNowMs < startMs;
+    });
+  }, [distinctCourtsForOpenPlay, groupOpenPlaySessions, segments, statusNowMs]);
 
   const [optOutCourtIds, setOptOutCourtIds] = useState<string[]>([]);
 
@@ -497,10 +524,7 @@ export default function BookingDetailPage() {
     myReview.user_id === user.id,
   );
   const canCreateOpenPlay =
-    openPlayFromBookingEligible &&
-    distinctCourtsForOpenPlay.some(
-      (c) => !groupOpenPlaySessions.some((sess) => sess.court_id === c.id),
-    );
+    openPlayFromBookingEligible && openPlaySelectableCourts.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
@@ -519,7 +543,23 @@ export default function BookingDetailPage() {
             ? `${sessionCourts.labelsInOrder.join(", ")} — one checkout, ${segments.length} reserved time${segments.length === 1 ? "" : "s"}`
             : (booking.court_name ?? "Court reservation")
         }
-      />
+      >
+        <Button
+          type="button"
+          variant="outline"
+          disabled={fetchingBooking}
+          onClick={() => void refetch()}
+        >
+          {fetchingBooking ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Refreshing...
+            </span>
+          ) : (
+            "Refresh"
+          )}
+        </Button>
+      </PageHeader>
 
       <div className="space-y-6">
         <Card className="border-border/50">
@@ -569,6 +609,9 @@ export default function BookingDetailPage() {
                     segment,
                     statusNowMs,
                   );
+                  const openPlaySessionId = openPlaySessionIdByCourtId.get(
+                    segment.court_id,
+                  );
                   return (
                     <li
                       key={segment.id}
@@ -589,8 +632,23 @@ export default function BookingDetailPage() {
                               ({hours} {hours === 1 ? "hr" : "hrs"})
                             </span>
                           </div>
+                          {openPlaySessionId ? (
+                            <Button
+                              variant="link"
+                              className="h-auto min-h-0 justify-start p-0 text-xs font-medium text-primary"
+                              asChild
+                            >
+                              <Link href={`/open-play/${openPlaySessionId}`}>
+                                View open play
+                                <ExternalLink
+                                  className="ml-1 h-3.5 w-3.5 shrink-0"
+                                  aria-hidden
+                                />
+                              </Link>
+                            </Button>
+                          ) : null}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                           <Badge
                             variant="outline"
                             className={statusStyles[displayStatus] ?? ""}
@@ -662,22 +720,27 @@ export default function BookingDetailPage() {
                       const already = groupOpenPlaySessions.some(
                         (sess) => sess.court_id === c.id,
                       );
+                      const selectable = openPlaySelectableCourts.some(
+                        (x) => x.id === c.id,
+                      );
                       const isSelected = selectedOpenPlayCourtIds.includes(c.id);
                       return (
                         <button
                           key={c.id}
                           type="button"
-                          disabled={already}
-                          aria-pressed={already ? undefined : isSelected}
+                          disabled={!selectable}
+                          aria-pressed={selectable ? isSelected : undefined}
                           aria-label={
                             already
                               ? `${c.name}, open play already created`
-                              : isSelected
-                                ? `${c.name}, selected for open play`
-                                : `${c.name}, not selected`
+                              : !selectable
+                                ? `${c.name}, booking time has already started`
+                                : isSelected
+                                  ? `${c.name}, selected for open play`
+                                  : `${c.name}, not selected`
                           }
                           onClick={() => {
-                            if (already) return;
+                            if (!selectable) return;
                             setOptOutCourtIds((prev) =>
                               isSelected
                                 ? prev.includes(c.id)
@@ -688,12 +751,12 @@ export default function BookingDetailPage() {
                           }}
                           className={cn(
                             "min-h-10 min-w-[8.5rem] max-w-full rounded-md border px-3 py-2 text-center text-sm font-medium transition-colors",
-                            already &&
+                            !selectable &&
                               "cursor-not-allowed border-border bg-muted text-muted-foreground/80",
-                            !already &&
+                            selectable &&
                               isSelected &&
                               "border-primary bg-primary text-primary-foreground shadow-sm",
-                            !already &&
+                            selectable &&
                               !isSelected &&
                               "border-border bg-background hover:border-primary/40 hover:bg-primary/5",
                           )}
@@ -702,16 +765,18 @@ export default function BookingDetailPage() {
                           <span
                             className={cn(
                               "mt-0.5 block text-[11px] font-normal leading-tight",
-                              already && "text-muted-foreground/90",
-                              !already && isSelected && "text-primary-foreground/90",
-                              !already && !isSelected && "text-muted-foreground",
+                              !selectable && "text-muted-foreground/90",
+                              selectable && isSelected && "text-primary-foreground/90",
+                              selectable && !isSelected && "text-muted-foreground",
                             )}
                           >
                             {already
                               ? "Created"
-                              : isSelected
-                                ? "Selected"
-                                : "Tap to add"}
+                              : !selectable
+                                ? "Started"
+                                : isSelected
+                                  ? "Selected"
+                                  : "Tap to add"}
                           </span>
                         </button>
                       );

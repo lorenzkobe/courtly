@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { format } from "date-fns";
 import axios from "axios";
 import { ArrowLeft, CalendarIcon, Layers, Loader2 } from "lucide-react";
@@ -99,6 +99,17 @@ function LoginContent() {
     isConfirmPasswordValid;
   const selectedBirthdate = parseIsoToLocalDate(birthdate);
 
+  const resetAuthFields = () => {
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setFirstName("");
+    setLastName("");
+    setBirthdate("");
+    setMobileNumber("");
+    setBirthdateOpen(false);
+  };
+
   useEffect(() => {
     if (!isLoading && user) {
       router.replace(nextPath ?? homePathForRole(user.role));
@@ -137,6 +148,8 @@ function LoginContent() {
       toast.success(
         `We sent a verification email to ${normalizedEmail}. Check your inbox to confirm your account.`,
       );
+      resetAuthFields();
+      setAuthMode("signin");
     } catch (err) {
       if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {
         setError(err.response.data.error);
@@ -146,6 +159,18 @@ function LoginContent() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    if (authMode === "signin") {
+      if (!isSignInFormValid) return;
+      void handleSignIn();
+      return;
+    }
+    if (!isSignUpFormValid) return;
+    void handleSignUp();
   };
 
   if (isLoading) {
@@ -227,7 +252,7 @@ function LoginContent() {
             </Button>
           </div>
 
-          <div className="space-y-4">
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {authMode === "signup" ? (
               <>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -415,37 +440,33 @@ function LoginContent() {
                 </div>
               </>
             ) : null}
-          </div>
+            {error ? (
+              <p className="text-center text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
 
-          {error ? (
-            <p className="text-center text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="flex flex-col gap-3">
-            <Button
-              type="button"
-              className="w-full font-heading font-semibold"
-              size="lg"
-              disabled={
-                submitting ||
-                (authMode === "signin" ? !isSignInFormValid : !isSignUpFormValid)
-              }
-              onClick={() =>
-                void (authMode === "signin" ? handleSignIn() : handleSignUp())
-              }
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {authMode === "signin" ? "Signing in…" : "Creating account…"}
-                </>
-              ) : (
-                authMode === "signin" ? "Sign in" : "Create account"
-              )}
-            </Button>
-          </div>
+            <div className="flex flex-col gap-3">
+              <Button
+                type="submit"
+                className="w-full font-heading font-semibold"
+                size="lg"
+                disabled={
+                  submitting ||
+                  (authMode === "signin" ? !isSignInFormValid : !isSignUpFormValid)
+                }
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {authMode === "signin" ? "Signing in…" : "Creating account…"}
+                  </>
+                ) : (
+                  authMode === "signin" ? "Sign in" : "Create account"
+                )}
+              </Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

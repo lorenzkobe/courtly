@@ -7,6 +7,7 @@
 - Handles split/group bookings (`booking_group_id`) as one session:
   - completes only after the latest segment has ended.
 - Sends review reminder notifications only when the user has not reviewed that venue yet.
+- **Open play lifecycle:** the same HTTP handler also runs `syncOpenPlayLifecycleStatuses` so `open_play_sessions` rows move to `started` / `closed` from wall time and approved join counts (implementation lives under `src/app/api/internal/jobs/bookings/complete-hourly/operations/`).
 
 ## Scheduler
 
@@ -39,4 +40,6 @@ curl -i "https://<your-domain>/api/internal/jobs/bookings/complete-hourly" \
 - `skipped_count`: rows selected but already no longer `confirmed`
 - `reminders_sent`: review reminders emitted after completion checks
 - `has_more`: whether additional eligible work likely remains
-- `duration_ms`: total execution time
+- `open_play_updated_count`: open play sessions whose `status` was updated this run
+- `open_play_job_duration_ms`: time spent on open play sync
+- `duration_ms`: total execution time for the combined job

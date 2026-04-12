@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowRight,
@@ -12,8 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useMemo, useState } from "react";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -33,24 +32,22 @@ import { formatTimeShort } from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
-  openPlaySchedulePhase,
-  openPlaySchedulePhaseLabel,
-} from "@/lib/open-play/schedule";
+  openPlayDisplayStatus,
+  openPlayDisplayStatusLabel,
+} from "@/lib/open-play/lifecycle";
 import { queryKeys } from "@/lib/query/query-keys";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
-import type { OpenPlaySession } from "@/lib/types/courtly";
 import { cn } from "@/lib/utils";
 
-const scheduleBadgeStyles: Record<string, string> = {
-  upcoming: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
-  in_progress: "border-primary/25 bg-primary/10 text-primary",
-  ended: "bg-muted text-muted-foreground border-border",
+const lifecycleBadgeStyles: Record<string, string> = {
+  open: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+  started: "border-primary/25 bg-primary/10 text-primary",
+  closed: "bg-muted text-muted-foreground border-border",
   cancelled: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 export default function OpenPlayPage() {
   const [skillFilter, setSkillFilter] = useState("all");
-  const queryClient = useQueryClient();
   const { user } = useAuth();
   const selectedSport = useSelectedSport((state) => state.sport);
   const [listNowMs, setListNowMs] = useState(() => Date.now());
@@ -82,31 +79,22 @@ export default function OpenPlayPage() {
     enabled: Boolean(user),
   });
 
-  const joinWaitlistMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      await courtlyApi.openPlay.join(sessionId);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
-      toast.success("You are on the waitlist.");
-    },
-    onError: () => toast.error("Could not join waitlist."),
-  });
-
-  function ctaLabel(session: OpenPlaySession): string {
-    const userStatus = session.current_user_request_status;
-    if (userStatus === "approved") return "Approved";
-    if (userStatus === "pending_approval") return "Pending Approval";
-    if (userStatus === "payment_locked") return "Proceed to Payment";
-    if (userStatus === "waitlisted") return "Waitlisted";
-    if (session.status === "full") return "Full";
-    return "Join Waitlist";
-  }
-
   const filtered =
     skillFilter === "all"
       ? sessions
       : sessions.filter((session) => session.skill_level === skillFilter);
+
+  /** Public browse list: only sessions that are still joinable or in progress (hide closed/cancelled). */
+  const browseSessions = useMemo(() => {
+    return filtered.filter((session) => {
+      const display = openPlayDisplayStatus(
+        session,
+        listNowMs,
+        session.approved_join_count ?? 0,
+      );
+      return display === "open" || display === "started";
+    });
+  }, [filtered, listNowMs]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -155,7 +143,11 @@ export default function OpenPlayPage() {
             ) : (
               <ul className="space-y-2">
                 {hostedSessions.map((session) => {
-                  const phase = openPlaySchedulePhase(session, listNowMs);
+                  const display = openPlayDisplayStatus(
+                    session,
+                    listNowMs,
+                    session.approved_join_count ?? 0,
+                  );
                   return (
                     <li key={session.id}>
                       <Link
@@ -173,9 +165,9 @@ export default function OpenPlayPage() {
                         </div>
                         <Badge
                           variant="outline"
-                          className={cn("shrink-0", scheduleBadgeStyles[phase] ?? "")}
+                          className={cn("shrink-0", lifecycleBadgeStyles[display] ?? "")}
                         >
-                          {openPlaySchedulePhaseLabel(phase)}
+                          {openPlayDisplayStatusLabel(display)}
                         </Badge>
                       </Link>
                     </li>
@@ -193,7 +185,7 @@ export default function OpenPlayPage() {
             <Skeleton key={i} className="h-64 rounded-xl" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : browseSessions.length === 0 ? (
         <EmptyState
           icon={Users}
           title="No sessions found"
@@ -201,13 +193,18 @@ export default function OpenPlayPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((session) => {
+          {browseSessions.map((session) => {
             const spotsLeft =
               (session.max_players || 0) - (session.current_players || 0);
             const fillPct = session.max_players
               ? ((session.current_players || 0) / session.max_players) * 100
               : 0;
             const isFull = session.status === "full" || spotsLeft <= 0;
+            const lifecycleDisplay = openPlayDisplayStatus(
+              session,
+              listNowMs,
+              session.approved_join_count ?? 0,
+            );
 
             return (
               <Card
@@ -215,14 +212,25 @@ export default function OpenPlayPage() {
                 className="group overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
                 <CardContent className="p-6">
-                  <div className="mb-3 flex items-start justify-between">
+                  <div className="mb-3 flex items-start justify-between gap-2">
                     <h3 className="font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
                       {session.title}
                     </h3>
-                    <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      DUPR {session.dupr_min?.toFixed(2) ?? "0.00"} -{" "}
-                      {session.dupr_max?.toFixed(2) ?? "8.00"}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-medium",
+                          lifecycleBadgeStyles[lifecycleDisplay] ?? "",
+                        )}
+                      >
+                        {openPlayDisplayStatusLabel(lifecycleDisplay)}
+                      </Badge>
+                      <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        DUPR {session.dupr_min?.toFixed(2) ?? "0.00"} -{" "}
+                        {session.dupr_max?.toFixed(2) ?? "8.00"}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mb-4 space-y-2 text-sm text-muted-foreground">
@@ -280,26 +288,6 @@ export default function OpenPlayPage() {
                         <Link href={`/open-play/${session.id}`}>
                           Details <ArrowRight className="ml-1 h-3.5 w-3.5" />
                         </Link>
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={
-                          joinWaitlistMutation.isPending ||
-                          isFull ||
-                          session.current_user_request_status === "approved" ||
-                          session.current_user_request_status === "pending_approval" ||
-                          session.current_user_request_status === "waitlisted"
-                        }
-                        onClick={() => {
-                          if (session.current_user_request_status === "payment_locked") {
-                            window.location.href = `/open-play/${session.id}`;
-                            return;
-                          }
-                          joinWaitlistMutation.mutate(session.id);
-                        }}
-                        className="font-heading font-semibold"
-                      >
-                        {ctaLabel(session)}
                       </Button>
                     </div>
                   </div>
