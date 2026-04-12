@@ -1,14 +1,9 @@
 "use client";
 
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { Building2, Plus, Trash2 } from "lucide-react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2, Check, Plus, Trash2, UserPlus, X } from "lucide-react";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -38,7 +33,7 @@ import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
-import type { ManagedUser, Venue } from "@/lib/types/courtly";
+import type { ManagedUser, Venue, VenueRequest } from "@/lib/types/courtly";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { formatStatusLabel } from "@/lib/utils";
@@ -55,7 +50,6 @@ const emptyForm = {
   amenities: [] as string[],
   customAmenityDraft: "",
   image_url: "",
-  initial_admin_user_id: "" as string,
   hourly_rate_windows: [] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
@@ -91,9 +85,13 @@ export default function SuperadminVenuesPage() {
   const PAGE_LIMIT = 20;
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Venue | null>(null);
+  const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [selectedAdminIds, setSelectedAdminIds] = useState<string[]>([]);
+  const [adminToAdd, setAdminToAdd] = useState<string>("");
+  const [reviewNoteByRequestId, setReviewNoteByRequestId] = useState<Record<string, string>>({});
   const [confirmRemoveVenueId, setConfirmRemoveVenueId] = useState<string | null>(null);
+  const [confirmRemoveRequestId, setConfirmRemoveRequestId] = useState<string | null>(null);
 
   const { data: directoryPages, isLoading, isFetchingNextPage, fetchNextPage } =
     useInfiniteQuery({
@@ -127,6 +125,17 @@ export default function SuperadminVenuesPage() {
   const hasMoreVenues =
     directoryPages?.pages?.[directoryPages.pages.length - 1]?.venues.has_more ??
     false;
+
+  const { data: requestData, isLoading: isLoadingRequests } = useQuery({
+    queryKey: queryKeys.superadmin.venueRequests("pending"),
+    queryFn: async () => {
+      const { data } = await courtlyApi.superadminVenueRequests.list({
+        status: "pending",
+      });
+      return data;
+    },
+  });
+  const pendingRequests = requestData?.requests ?? [];
 
   const adminOptions = managedUsers.filter(
     (managedUser) => managedUser.role === "admin",
@@ -165,9 +174,24 @@ export default function SuperadminVenuesPage() {
         Number.isFinite(form.map_longitude);
       const mapBody = hasMapPin
         ? { map_latitude: form.map_latitude!, map_longitude: form.map_longitude! }
-        : editing
+        : editingVenue
           ? { map_latitude: null, map_longitude: null }
           : {};
+      const beforeIds = new Set(
+        managedUsers
+          .filter(
+            (managedUser) =>
+              managedUser.role === "admin" &&
+              ((managedUser as ManagedUser & { venue_ids?: string[] }).venue_ids ?? []).includes(
+                editingVenue!.id,
+              ),
+          )
+          .map((managedUser) => managedUser.id),
+      );
+      const afterIds = new Set(selectedAdminIds);
+      const add_admin_user_ids = [...afterIds].filter((id) => !beforeIds.has(id));
+      const remove_admin_user_ids = [...beforeIds].filter((id) => !afterIds.has(id));
+
       const body = {
         name: form.name.trim(),
         location: form.location.trim(),
@@ -180,27 +204,25 @@ export default function SuperadminVenuesPage() {
           ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
         ],
         image_url: form.image_url.trim(),
-        initial_admin_user_id: form.initial_admin_user_id.trim() || undefined,
         accepts_gcash: form.accepts_gcash,
         gcash_account_name: form.gcash_account_name.trim(),
         gcash_account_number: form.gcash_account_number.trim(),
         accepts_maya: form.accepts_maya,
         maya_account_name: form.maya_account_name.trim(),
         maya_account_number: form.maya_account_number.trim(),
+        add_admin_user_ids,
+        remove_admin_user_ids,
         ...mapBody,
       };
-      if (editing) {
-        await courtlyApi.venues.update(editing.id, body);
-      } else {
-        await courtlyApi.venues.create(body);
-      }
+      await courtlyApi.venues.update(editingVenue!.id, body);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
-      toast.success(editing ? "Venue updated" : "Venue created");
+      toast.success("Venue updated");
       setDialogOpen(false);
-      setEditing(null);
+      setEditingVenue(null);
       setForm(emptyForm);
+      setSelectedAdminIds([]);
     },
     onError: (e: unknown) => {
       toast.error(apiErrorMessage(e, "Could not save venue"));
@@ -215,31 +237,70 @@ export default function SuperadminVenuesPage() {
       void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
       toast.success("Venue removed");
       setDialogOpen(false);
-      setEditing(null);
+      setEditingVenue(null);
       setForm(emptyForm);
+      setSelectedAdminIds([]);
     },
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Could not remove account"));
     },
   });
 
-  const openCreate = () => {
-    setEditing(null);
-    setForm({
-      ...emptyForm,
-      hourly_rate_windows: [{ start: "07:00", end: "22:00", rate: "" }],
-    });
-    setDialogOpen(true);
-  };
+  const approveRequest = useMutation({
+    mutationFn: async (requestId: string) => {
+      await courtlyApi.superadminVenueRequests.approve(requestId, {
+        review_note: reviewNoteByRequestId[requestId]?.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
+      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
+      toast.success("Venue request approved");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not approve request"));
+    },
+  });
+
+  const rejectRequest = useMutation({
+    mutationFn: async (requestId: string) => {
+      await courtlyApi.superadminVenueRequests.reject(requestId, {
+        review_note: reviewNoteByRequestId[requestId]?.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
+      toast.success("Venue request rejected");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not reject request"));
+    },
+  });
+
+  const deleteRequest = useMutation({
+    mutationFn: async (requestId: string) => {
+      await courtlyApi.superadminVenueRequests.remove(requestId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.superadmin.venueRequests("pending") });
+      toast.success("Venue request deleted");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not delete request"));
+    },
+  });
 
   const openEdit = (a: Venue) => {
-    const assignedAdminId =
-      managedUsers.find(
+    const assignedAdminIds = managedUsers
+      .filter(
         (u) =>
           u.role === "admin" &&
           ((u as ManagedUser & { venue_ids?: string[] }).venue_ids ?? []).includes(a.id),
-      )?.id ?? "";
-    setEditing(a);
+      )
+      .map((u) => u.id);
+    setEditingVenue(a);
+    setSelectedAdminIds(assignedAdminIds);
+    setAdminToAdd("");
     setForm({
       name: a.name,
       location: a.location,
@@ -250,7 +311,6 @@ export default function SuperadminVenuesPage() {
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
       image_url: a.image_url ?? "",
-      initial_admin_user_id: assignedAdminId,
       map_latitude:
         a.map_latitude != null && Number.isFinite(a.map_latitude)
           ? a.map_latitude
@@ -326,14 +386,63 @@ export default function SuperadminVenuesPage() {
           setConfirmRemoveVenueId(null);
         }}
       />
+      <ConfirmDialog
+        open={!!confirmRemoveRequestId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRemoveRequestId(null);
+        }}
+        title="Delete request?"
+        description="This permanently deletes the venue request."
+        confirmLabel="Delete request"
+        isPending={deleteRequest.isPending}
+        onConfirm={() => {
+          if (!confirmRemoveRequestId) return;
+          deleteRequest.mutate(confirmRemoveRequestId);
+          setConfirmRemoveRequestId(null);
+        }}
+      />
       <PageHeader
         title="Venues"
-        subtitle="Manage venues. A venue can have multiple admins and multiple courts."
-      >
-        <Button className="font-heading font-semibold" onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> New venue
-        </Button>
-      </PageHeader>
+        subtitle="Review pending venue requests, approve or reject them, and manage venue admins."
+      />
+
+      <section className="mb-8 space-y-3">
+        <h2 className="font-heading text-lg font-semibold">Pending venue requests</h2>
+        {isLoadingRequests ? (
+          <div className="space-y-3">
+            {[1, 2].map((idx) => (
+              <Skeleton key={idx} className="h-40 rounded-xl" />
+            ))}
+          </div>
+        ) : pendingRequests.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              No pending venue requests.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {pendingRequests.map((request) => (
+              <VenueRequestCard
+                key={request.id}
+                request={request}
+                reviewNote={reviewNoteByRequestId[request.id] ?? ""}
+                onReviewNoteChange={(value) =>
+                  setReviewNoteByRequestId((prev) => ({
+                    ...prev,
+                    [request.id]: value,
+                  }))
+                }
+                onApprove={() => approveRequest.mutate(request.id)}
+                onReject={() => rejectRequest.mutate(request.id)}
+                onDelete={() => setConfirmRemoveRequestId(request.id)}
+                isApproving={approveRequest.isPending}
+                isRejecting={rejectRequest.isPending}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -346,9 +455,8 @@ export default function SuperadminVenuesPage() {
           <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
             <Building2 className="h-10 w-10 text-muted-foreground" />
             <p className="max-w-md text-sm text-muted-foreground">
-              No venues yet. Create one and assign an admin owner.
+              No venues yet. Approved requests will appear here.
             </p>
-            <Button onClick={openCreate}>Create venue</Button>
           </CardContent>
         </Card>
       ) : (
@@ -404,9 +512,7 @@ export default function SuperadminVenuesPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-heading">
-              {editing ? "Edit venue" : "New venue"}
-            </DialogTitle>
+            <DialogTitle className="font-heading">Edit venue</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -430,8 +536,8 @@ export default function SuperadminVenuesPage() {
             </div>
             <div>
               <VenueMapPinPicker
-                key={editing?.id ?? "new-venue"}
-                showPlaceSearch={!editing}
+                key={editingVenue?.id ?? "edit-venue"}
+                showPlaceSearch={false}
                 value={
                   form.map_latitude != null &&
                   form.map_longitude != null &&
@@ -772,47 +878,64 @@ export default function SuperadminVenuesPage() {
               />
             </div>
             <div>
-              <Label>Venue admin *</Label>
+              <Label>Venue admins</Label>
               <p className="mb-1.5 text-xs text-muted-foreground">
-                {editing
-                  ? "Optional on edit: change which court admin is linked to this venue, or clear the selection."
-                  : "Choose an existing court admin. Create accounts (and invite them) from Users first."}
+                Add or remove court admins. Only users with Court admin role are allowed.
               </p>
-              <Select
-                value={form.initial_admin_user_id || "__none__"}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    initial_admin_user_id: v === "__none__" ? "" : v,
+              <div className="flex gap-2">
+                <Select value={adminToAdd} onValueChange={setAdminToAdd}>
+                  <SelectTrigger className="mt-2 flex-1">
+                    <SelectValue placeholder="Select court admin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {adminOptions
+                      .filter((adminUser) => !selectedAdminIds.includes(adminUser.id))
+                      .map((adminUser) => (
+                        <SelectItem key={adminUser.id} value={adminUser.id}>
+                          {adminDirectoryLabel(adminUser)}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={() => {
+                    if (!adminToAdd) return;
+                    setSelectedAdminIds((prev) => [...prev, adminToAdd]);
+                    setAdminToAdd("");
+                  }}
+                  disabled={!adminToAdd}
+                >
+                  <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                  Add
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedAdminIds.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No assigned admins.</p>
+                ) : (
+                  selectedAdminIds.map((adminId) => {
+                    const adminUser = adminOptions.find((option) => option.id === adminId);
+                    if (!adminUser) return null;
+                    return (
+                      <Badge key={adminId} variant="outline" className="gap-1.5 py-1">
+                        <span>{adminDirectoryLabel(adminUser)}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${adminDirectoryLabel(adminUser)}`}
+                          onClick={() =>
+                            setSelectedAdminIds((prev) => prev.filter((id) => id !== adminId))
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
                   })
-                }
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue placeholder="Select admin" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">
-                    {editing ? "No linked admin" : "Select admin"}
-                  </SelectItem>
-                  {adminOptions.map((adminUser) => (
-                    <SelectItem key={adminUser.id} value={adminUser.id}>
-                      {adminDirectoryLabel(adminUser)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {adminOptions.length === 0 ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  No court admins yet.{" "}
-                  <Link
-                    href="/superadmin/users"
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    Add a user
-                  </Link>{" "}
-                  with role Court admin first.
-                </p>
-              ) : null}
+                )}
+              </div>
             </div>
           </div>
           {!priceRangeFormValidation.ok ? (
@@ -832,12 +955,12 @@ export default function SuperadminVenuesPage() {
             </p>
           )}
           <DialogFooter className="gap-2 sm:gap-0">
-            {editing ? (
+            {editingVenue ? (
               <Button
                 type="button"
                 variant="outline"
                 className="border-destructive/25 text-destructive hover:bg-destructive/5"
-                onClick={() => setConfirmRemoveVenueId(editing.id)}
+                onClick={() => setConfirmRemoveVenueId(editingVenue.id)}
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                 Delete
@@ -862,16 +985,88 @@ export default function SuperadminVenuesPage() {
                 !priceRangeFormValidation.ok ||
                 !paymentSettingsValidation.ok ||
                 Boolean(facebookUrlError) ||
-                Boolean(instagramUrlError) ||
-                (!editing && !form.initial_admin_user_id.trim())
+                Boolean(instagramUrlError)
               }
               onClick={() => saveAccount.mutate()}
             >
-              {saveAccount.isPending ? "Saving…" : editing ? "Save" : "Create"}
+              {saveAccount.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function VenueRequestCard({
+  request,
+  reviewNote,
+  onReviewNoteChange,
+  onApprove,
+  onReject,
+  onDelete,
+  isApproving,
+  isRejecting,
+}: {
+  request: VenueRequest;
+  reviewNote: string;
+  onReviewNoteChange: (value: string) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onDelete: () => void;
+  isApproving: boolean;
+  isRejecting: boolean;
+}) {
+  return (
+    <Card className="border-border/60">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-heading text-base font-semibold">{request.name}</h3>
+            <p className="text-sm text-muted-foreground">{request.location}</p>
+            <p className="text-xs text-muted-foreground">
+              Submitted {new Date(request.created_at).toLocaleString()}
+            </p>
+          </div>
+          <Badge variant="outline" className="bg-amber-500/10 text-amber-800 dark:text-amber-100">
+            Pending
+          </Badge>
+        </div>
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <p>Contact: {request.contact_phone}</p>
+          <p>
+            Map pin:{" "}
+            {request.map_latitude != null && request.map_longitude != null ? "Set" : "Not set"}
+          </p>
+        </div>
+        <div>
+          <Label htmlFor={`review-note-${request.id}`}>Review note (optional)</Label>
+          <Input
+            id={`review-note-${request.id}`}
+            className="mt-1.5"
+            value={reviewNote}
+            onChange={(event) => onReviewNoteChange(event.target.value)}
+            placeholder="Internal note for approval/rejection"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={onApprove} disabled={isApproving || isRejecting}>
+            <Check className="mr-1.5 h-4 w-4" />
+            {isApproving ? "Approving..." : "Approve"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onReject}
+            disabled={isApproving || isRejecting}
+          >
+            {isRejecting ? "Rejecting..." : "Reject"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onDelete}>
+            Delete request
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

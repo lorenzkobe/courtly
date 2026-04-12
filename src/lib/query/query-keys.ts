@@ -106,10 +106,13 @@ export const queryKeys = {
   admin: {
     venueWorkspace: (venueId: NullableString) =>
       ["admin", "venue-workspace", normalized(venueId)] as const,
+    venueRequests: () => ["admin", "venue-requests"] as const,
   },
   superadmin: {
     directoryPaged: (limit?: number) =>
       ["superadmin", "directory", "paged", { limit: limit ?? null }] as const,
+    venueRequests: (status?: NullableString) =>
+      ["superadmin", "venue-requests", { status: normalized(status) }] as const,
   },
   bookingSurface: {
     courtDay: (courtId: NullableString, date: NullableString) =>

@@ -6,7 +6,6 @@ import {
   deleteRow,
   getVenueById,
   hasConfirmedBookingsForVenue,
-  insertRow,
   listCourtsByVenue,
   listManagedUsersByIds,
   listVenueAdminAssignments,
@@ -93,8 +92,52 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!cur) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const patch = (await req.json()) as Record<string, unknown> & {
-    initial_admin_user_id?: string;
+    add_admin_user_ids?: string[];
+    remove_admin_user_ids?: string[];
   };
+
+  const hasAssignmentPatch =
+    Object.prototype.hasOwnProperty.call(patch, "add_admin_user_ids") ||
+    Object.prototype.hasOwnProperty.call(patch, "remove_admin_user_ids");
+  if (hasAssignmentPatch && user.role !== "superadmin") {
+    return NextResponse.json(
+      { error: "Only superadmins can change venue admin assignments." },
+      { status: 403 },
+    );
+  }
+  const addAdminIds = Array.isArray(patch.add_admin_user_ids)
+    ? [
+        ...new Set(
+          patch.add_admin_user_ids
+            .map((id) => (typeof id === "string" ? id.trim() : ""))
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  const removeAdminIds = Array.isArray(patch.remove_admin_user_ids)
+    ? [
+        ...new Set(
+          patch.remove_admin_user_ids
+            .map((id) => (typeof id === "string" ? id.trim() : ""))
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  if (user.role === "superadmin" && addAdminIds.length > 0) {
+    const managedUsers = await listManagedUsersByIds(addAdminIds);
+    const invalidIds = addAdminIds.filter(
+      (id) =>
+        !managedUsers.some(
+          (managedUser) => managedUser.id === id && managedUser.role === "admin",
+        ),
+    );
+    if (invalidIds.length > 0) {
+      return NextResponse.json(
+        { error: "Only existing court admins can be assigned to a venue." },
+        { status: 400 },
+      );
+    }
+  }
   if (patch.status === "closed") {
     const hasConfirmed = await hasConfirmedBookingsForVenue(venueId);
     if (hasConfirmed) {
@@ -116,6 +159,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const patchSansMap = { ...patch };
   delete patchSansMap.map_latitude;
   delete patchSansMap.map_longitude;
+  delete patchSansMap.add_admin_user_ids;
+  delete patchSansMap.remove_admin_user_ids;
 
   const venuePatch = pickVenuePatch(patchSansMap) as Partial<Venue>;
   applyVenueMapCoordsToPatch(venuePatch as Record<string, unknown>, mapParse);
@@ -192,31 +237,29 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 
-  if (
-    user.role === "superadmin" &&
-    Object.prototype.hasOwnProperty.call(patch, "initial_admin_user_id")
-  ) {
-    const rawId =
-      typeof patch.initial_admin_user_id === "string"
-        ? patch.initial_admin_user_id.trim()
-        : "";
+  if (user.role === "superadmin" && hasAssignmentPatch) {
     const supabase = await createSupabaseServerClient();
-    await supabase.from("venue_admin_assignments").delete().eq("venue_id", venueId);
-    if (rawId) {
-      const managedUsers = await listManagedUsersByIds([rawId]);
-      const adminUser = managedUsers.find(
-        (managedUser) => managedUser.id === rawId && managedUser.role === "admin",
-      );
-      if (!adminUser) {
-        return NextResponse.json(
-          { error: "Selected admin was not found or is not a court admin." },
-          { status: 404 },
-        );
-      }
-      await insertRow("venue_admin_assignments", {
+    if (addAdminIds.length > 0) {
+      const addRows = addAdminIds.map((adminUserId) => ({
         venue_id: venueId,
-        admin_user_id: rawId,
-      });
+        admin_user_id: adminUserId,
+      }));
+      const { error: addError } = await supabase
+        .from("venue_admin_assignments")
+        .upsert(addRows as never, { onConflict: "venue_id,admin_user_id" });
+      if (addError) {
+        return NextResponse.json({ error: addError.message }, { status: 500 });
+      }
+    }
+    if (removeAdminIds.length > 0) {
+      const { error: removeError } = await supabase
+        .from("venue_admin_assignments")
+        .delete()
+        .eq("venue_id", venueId)
+        .in("admin_user_id", removeAdminIds);
+      if (removeError) {
+        return NextResponse.json({ error: removeError.message }, { status: 500 });
+      }
     }
   }
 

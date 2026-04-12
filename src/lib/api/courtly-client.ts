@@ -21,11 +21,14 @@ import type {
   OpenPlaySession,
   MyBookingsOverviewResponse,
   RevenueSummaryResponse,
+  AdminVenueRequestsResponse,
   SessionUser,
   SuperadminDirectoryPagedResponse,
+  SuperadminVenueRequestsResponse,
   Tournament,
   TournamentRegistration,
   Venue,
+  VenueRequest,
   VenueClosure,
   VenueDetailResponse,
 } from "@/lib/types/courtly";
@@ -34,6 +37,8 @@ import type {
 export type VenueWritePayload = Omit<Partial<Venue>, "map_latitude" | "map_longitude"> & {
   map_latitude?: number | null;
   map_longitude?: number | null;
+  add_admin_user_ids?: string[];
+  remove_admin_user_ids?: string[];
 };
 import type { NotificationsListResponse } from "@/lib/notifications/types";
 
@@ -325,12 +330,36 @@ export const courtlyApi = {
 
   venues: {
     list: () => http.get<Venue[]>("/api/venues"),
-    create: (data: VenueWritePayload) => http.post<Venue>("/api/venues", data),
     get: (id: string) =>
       http.get<VenueDetailResponse>(`/api/venues/${id}`),
     update: (id: string, data: VenueWritePayload) =>
       http.patch<Venue>(`/api/venues/${id}`, data),
     remove: (id: string) => http.delete(`/api/venues/${id}`),
+  },
+
+  adminVenueRequests: {
+    list: () => http.get<AdminVenueRequestsResponse>("/api/admin/venue-requests"),
+    create: (data: VenueWritePayload) =>
+      http.post<VenueRequest>("/api/admin/venue-requests", data),
+    update: (id: string, data: VenueWritePayload) =>
+      http.patch<VenueRequest>(`/api/admin/venue-requests/${id}`, data),
+    cancel: (id: string) =>
+      http.patch<VenueRequest>(`/api/admin/venue-requests/${id}`, {
+        cancel_request: true,
+      }),
+  },
+
+  superadminVenueRequests: {
+    list: (params?: { status?: string }) =>
+      http.get<SuperadminVenueRequestsResponse>("/api/superadmin/venue-requests", { params }),
+    approve: (id: string, body?: { review_note?: string }) =>
+      http.post<{ request: VenueRequest; venue: Venue }>(
+        `/api/superadmin/venue-requests/${id}/approve`,
+        body ?? {},
+      ),
+    reject: (id: string, body?: { review_note?: string }) =>
+      http.post<VenueRequest>(`/api/superadmin/venue-requests/${id}/reject`, body ?? {}),
+    remove: (id: string) => http.delete<{ ok: boolean }>(`/api/superadmin/venue-requests/${id}`),
   },
 
   adminVenues: {

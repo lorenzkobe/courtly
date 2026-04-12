@@ -56,6 +56,7 @@ export type CourtReviewSummary = {
 };
 
 export type VenueStatus = "active" | "closed";
+export type VenueRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type VenueManualPaymentMethod = "gcash" | "maya";
 
 export type VenuePaymentMethodDetails = {
@@ -94,6 +95,36 @@ export type VenueAdminAssignment = {
   venue_id: string;
   admin_user_id: string;
   created_at: string;
+};
+
+export type VenueRequest = {
+  id: string;
+  name: string;
+  location: string;
+  contact_phone: string;
+  facebook_url?: string;
+  instagram_url?: string;
+  sport: CourtSport;
+  hourly_rate_windows: CourtRateWindow[];
+  status: VenueStatus;
+  amenities: string[];
+  image_url: string;
+  map_latitude?: number;
+  map_longitude?: number;
+  accepts_gcash: boolean;
+  gcash_account_name?: string;
+  gcash_account_number?: string;
+  accepts_maya: boolean;
+  maya_account_name?: string;
+  maya_account_number?: string;
+  request_status: VenueRequestStatus;
+  requested_by: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_note?: string | null;
+  approved_venue_id?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Court = {
@@ -547,4 +578,12 @@ export type BookingCheckoutResponse = {
 export type SuperadminDirectoryPagedResponse = {
   venues: CursorPage<Venue>;
   managed_users: CursorPage<ManagedUser>;
+};
+
+export type AdminVenueRequestsResponse = {
+  requests: VenueRequest[];
+};
+
+export type SuperadminVenueRequestsResponse = {
+  requests: VenueRequest[];
 };

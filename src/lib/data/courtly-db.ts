@@ -18,6 +18,7 @@ import type {
   TournamentRegistration,
   Venue,
   VenueAdminAssignment,
+  VenueRequest,
   VenueClosure,
   PaymentTransaction,
 } from "@/lib/types/courtly";
@@ -389,6 +390,31 @@ function mapOpenPlayCommentRow(row: unknown): OpenPlayComment {
   };
 }
 
+function mapVenueRequestRow(row: unknown): VenueRequest {
+  const record = row as VenueRequest;
+  return {
+    ...record,
+    hourly_rate_windows: record.hourly_rate_windows ?? [],
+    amenities: record.amenities ?? [],
+    created_at: toIsoString((row as { created_at: string | null }).created_at),
+    updated_at: toIsoString((row as { updated_at: string | null }).updated_at),
+    accepts_gcash: Boolean((row as { accepts_gcash?: unknown }).accepts_gcash),
+    gcash_account_name:
+      ((row as { gcash_account_name?: string | null }).gcash_account_name ?? undefined) ||
+      undefined,
+    gcash_account_number:
+      ((row as { gcash_account_number?: string | null }).gcash_account_number ?? undefined) ||
+      undefined,
+    accepts_maya: Boolean((row as { accepts_maya?: unknown }).accepts_maya),
+    maya_account_name:
+      ((row as { maya_account_name?: string | null }).maya_account_name ?? undefined) ||
+      undefined,
+    maya_account_number:
+      ((row as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
+      undefined,
+  };
+}
+
 export async function listVenues(): Promise<Venue[]> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("venues").select("*");
@@ -478,6 +504,46 @@ export async function getVenueById(venueId: string): Promise<Venue | null> {
       ((data as { maya_account_number?: string | null }).maya_account_number ?? undefined) ||
       undefined,
   };
+}
+
+export async function getVenueRequestById(requestId: string): Promise<VenueRequest | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venue_requests")
+    .select("*")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapVenueRequestRow(data) : null;
+}
+
+export async function listVenueRequestsByRequester(
+  userId: string,
+): Promise<VenueRequest[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("venue_requests")
+    .select("*")
+    .eq("requested_by", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapVenueRequestRow);
+}
+
+export async function listVenueRequests(params?: {
+  statuses?: VenueRequest["request_status"][];
+}): Promise<VenueRequest[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("venue_requests")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (params?.statuses && params.statuses.length > 0) {
+    query = query.in("request_status", params.statuses);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapVenueRequestRow);
 }
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {
