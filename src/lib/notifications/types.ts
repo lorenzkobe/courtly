@@ -21,6 +21,7 @@ export type NotificationEventType =
   | "venue_request_approved"
   | "venue_request_rejected"
   | "venue_request_update_requested"
+  | "venue_request_created_superadmin"
   | "open_play_join_approved"
   | "open_play_join_denied"
   | "open_play_payment_submitted_host";

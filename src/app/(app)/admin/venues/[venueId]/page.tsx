@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import { ArrowLeft, CalendarIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -43,6 +43,9 @@ import { courtlyApi } from "@/lib/api/courtly-client";
 import {
   formatBookableHourSlotRange,
   formatTimeShort,
+  isBookableHourStartInPast,
+  occupiedHourStarts,
+  occupiedHourStartsFromClosures,
 } from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
 import type { Court, Venue } from "@/lib/types/courtly";
@@ -114,8 +117,9 @@ export default function AdminVenueCourtsPage() {
   const [venueForm, setVenueForm] = useState(defaultVenueForm);
   const [closureOpen, setClosureOpen] = useState(false);
   const [closureForm, setClosureForm] = useState(defaultClosureForm);
-  const [selectedClosureCourtIds, setSelectedClosureCourtIds] = useState<string[]>([]);
-  const [selectedClosureTimes, setSelectedClosureTimes] = useState<string[]>([]);
+  const [closureTokensByCourtId, setClosureTokensByCourtId] = useState<
+    Record<string, string[]>
+  >({});
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
 
@@ -133,7 +137,7 @@ export default function AdminVenueCourtsPage() {
     enabled: !!venueId,
   });
 
-  const venueCourts = workspace?.courts ?? [];
+  const venueCourts = useMemo(() => workspace?.courts ?? [], [workspace?.courts]);
   const venue = workspace?.venue;
   const missingVenue =
     !isLoading &&
@@ -258,7 +262,57 @@ export default function AdminVenueCourtsPage() {
     },
   });
 
-  const applyClosure = useMutation({
+  const closureSurfaceQueries = useQueries({
+    queries: venueCourts.map((court) => ({
+      queryKey: queryKeys.bookingSurface.courtDay(court.id, closureForm.date),
+      queryFn: async () => {
+        const { data } = await courtlyApi.courts.bookingSurface(court.id, {
+          date: closureForm.date,
+        });
+        return data;
+      },
+      enabled: closureOpen && Boolean(closureForm.date),
+      staleTime: 20_000,
+    })),
+  });
+  const closureSurfaceByCourtId = useMemo(() => {
+    const out = new Map<string, (typeof closureSurfaceQueries)[number]["data"]>();
+    venueCourts.forEach((court, index) => {
+      out.set(court.id, closureSurfaceQueries[index]?.data);
+    });
+    return out;
+  }, [closureSurfaceQueries, venueCourts]);
+  const closureTokenSummaryByCourtId = useMemo(() => {
+    const out = new Map<
+      string,
+      {
+        booked: Set<string>;
+        venueClosed: Set<string>;
+        existingCourtClosed: Set<string>;
+        existingCourtClosureIds: string[];
+      }
+    >();
+    venueCourts.forEach((court) => {
+      const payload = closureSurfaceByCourtId.get(court.id);
+      const availability = payload?.availability;
+      const booked = availability ? occupiedHourStarts(availability.bookings ?? []) : new Set<string>();
+      const venueClosed = availability
+        ? occupiedHourStartsFromClosures(availability.venue_closures ?? [], closureForm.date)
+        : new Set<string>();
+      const existingCourtClosed = availability
+        ? occupiedHourStartsFromClosures(availability.court_closures ?? [], closureForm.date)
+        : new Set<string>();
+      const existingCourtClosureIds = (availability?.court_closures ?? []).map((closure) => closure.id);
+      out.set(court.id, {
+        booked,
+        venueClosed,
+        existingCourtClosed,
+        existingCourtClosureIds,
+      });
+    });
+    return out;
+  }, [closureForm.date, closureSurfaceByCourtId, venueCourts]);
+  const saveClosureDraft = useMutation({
     mutationFn: async () => {
       const date = closureForm.date.trim();
       const reason = closureForm.reason.trim();
@@ -267,49 +321,75 @@ export default function AdminVenueCourtsPage() {
       if (!date || !reason) {
         throw new Error("Date and reason are required.");
       }
-      if (selectedClosureCourtIds.length === 0) {
-        throw new Error("Select at least one court.");
+      const touchedCourtIds = venueCourts.filter((court) =>
+        Array.isArray(closureTokensByCourtId[court.id]),
+      );
+      if (touchedCourtIds.length === 0) {
+        throw new Error("No courts available for update.");
       }
-      if (selectedClosureTimes.length === 0) {
-        throw new Error("Select at least one time slot.");
-      }
-
-      const sorted = [...selectedClosureTimes].sort((a, b) => a.localeCompare(b));
-      const contiguousRanges: Array<{ start_time: string; end_time: string }> = [];
-      let rangeStart = sorted[0]!;
-      let previous = sorted[0]!;
-      for (let i = 1; i <= sorted.length; i++) {
-        const current = sorted[i];
-        const prevHour = Number.parseInt(previous.split(":")[0] ?? "0", 10);
-        const expectedNext = `${String(prevHour + 1).padStart(2, "0")}:00`;
-        if (!current || current !== expectedNext) {
-          contiguousRanges.push({
-            start_time: rangeStart,
-            end_time: `${String(prevHour + 1).padStart(2, "0")}:00`,
-          });
-          rangeStart = current ?? rangeStart;
+      for (const court of touchedCourtIds) {
+        const summary = closureTokenSummaryByCourtId.get(court.id);
+        const selected = new Set(
+          closureTokensByCourtId[court.id] ??
+            [...(summary?.existingCourtClosed ?? new Set<string>())],
+        );
+        const locked = new Set<string>([
+          ...(summary?.booked ?? new Set<string>()),
+          ...(summary?.venueClosed ?? new Set<string>()),
+        ]);
+        const desired = [...selected]
+          .filter(
+            (token) =>
+              !locked.has(token) &&
+              !isBookableHourStartInPast(token, new Date(`${date}T12:00:00`)),
+          )
+          .sort((a, b) => a.localeCompare(b));
+        for (const closureId of summary?.existingCourtClosureIds ?? []) {
+          await courtlyApi.courtClosures.remove(court.id, closureId);
         }
-        previous = current ?? previous;
+        if (desired.length === 0) continue;
+        const contiguousRanges: Array<{ start_time: string; end_time: string }> = [];
+        let rangeStart = desired[0]!;
+        let previous = desired[0]!;
+        for (let i = 1; i <= desired.length; i++) {
+          const current = desired[i];
+          const prevHour = Number.parseInt(previous.split(":")[0] ?? "0", 10);
+          const expectedNext = `${String(prevHour + 1).padStart(2, "0")}:00`;
+          if (!current || current !== expectedNext) {
+            contiguousRanges.push({
+              start_time: rangeStart,
+              end_time: `${String(prevHour + 1).padStart(2, "0")}:00`,
+            });
+            rangeStart = current ?? rangeStart;
+          }
+          previous = current ?? previous;
+        }
+        for (const range of contiguousRanges) {
+          await courtlyApi.courtClosures.create(court.id, {
+            date,
+            reason,
+            note: note || undefined,
+            start_time: range.start_time,
+            end_time: range.end_time,
+          });
+        }
       }
-
-      await courtlyApi.adminVenues.applyClosures(venueId, {
-        date,
-        reason,
-        note: note || undefined,
-        court_ids: selectedClosureCourtIds,
-        ranges: contiguousRanges,
-      });
     },
     onSuccess: () => {
-      toast.success("Unavailability applied to selected courts");
+      toast.success("Court unavailability updated");
       setClosureOpen(false);
-      setSelectedClosureCourtIds([]);
-      setSelectedClosureTimes([]);
+      setClosureTokensByCourtId({});
       setClosureForm(defaultClosureForm);
       void queryClient.invalidateQueries({ queryKey: ["court-closures"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueWorkspace(venueId) });
+      venueCourts.forEach((court) => {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(court.id, closureForm.date),
+        });
+      });
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not apply unavailability"));
+      toast.error(apiErrorMessage(error, "Could not update court unavailability"));
     },
   });
 
@@ -367,9 +447,11 @@ export default function AdminVenueCourtsPage() {
     () => bookableHourTokensFromRanges(venue?.hourly_rate_windows ?? []),
     [venue?.hourly_rate_windows],
   );
-  const allClosureHoursSelected =
-    closureTimeSlots.length > 0 &&
-    selectedClosureTimes.length === closureTimeSlots.length;
+  const closureSelectedDate = useMemo(
+    () => new Date(`${closureForm.date}T12:00:00`),
+    [closureForm.date],
+  );
+  const closureGridLoading = closureSurfaceQueries.some((query) => query.isLoading);
 
   const toggleAmenity = (amenity: string) => {
     setVenueForm((prev) => ({
@@ -1120,10 +1202,12 @@ export default function AdminVenueCourtsPage() {
                     selected={new Date(`${closureForm.date}T12:00:00`)}
                     onSelect={(d) => {
                       if (!d) return;
+                      const nextDate = format(d, "yyyy-MM-dd");
                       setClosureForm((prev) => ({
                         ...prev,
-                        date: format(d, "yyyy-MM-dd"),
+                        date: nextDate,
                       }));
+                      setClosureTokensByCourtId({});
                       setClosureDateOpen(false);
                     }}
                     initialFocus
@@ -1131,54 +1215,122 @@ export default function AdminVenueCourtsPage() {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label>Time slots *</Label>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0"
-                    disabled={closureTimeSlots.length === 0}
-                    onClick={() =>
-                      setSelectedClosureTimes(
-                        allClosureHoursSelected ? [] : [...closureTimeSlots],
-                      )
-                    }
-                  >
-                    {allClosureHoursSelected
-                      ? "Unselect all hours"
-                      : "Select all hours"}
-                  </Button>
-                </div>
+            <div className="space-y-3">
+              <div>
+                <Label>Court availability by timeslot *</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Toggle one or more hours to mark unavailable (same as closing the whole venue for that day
-                  when all courts and all hours are selected).
+                  Loaded from the booking calendar surface. Blue toggles are unavailable closures
+                  you can edit. Booked slots cannot be overridden.
                 </p>
-                <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {closureTimeSlots.map((time) => {
-                    const selected = selectedClosureTimes.includes(time);
+              </div>
+              {closureGridLoading ? (
+                <Skeleton className="h-24 w-full rounded-lg" />
+              ) : (
+                <div className="space-y-3">
+                  {venueCourts.map((court) => {
+                    const summary = closureTokenSummaryByCourtId.get(court.id);
+                    const selected = new Set(
+                      closureTokensByCourtId[court.id] ??
+                        [...(summary?.existingCourtClosed ?? new Set<string>())],
+                    );
+                    const booked = summary?.booked ?? new Set<string>();
+                    const venueClosed = summary?.venueClosed ?? new Set<string>();
+                    const selectableTokens = closureTimeSlots.filter((time) => {
+                      const isLocked = booked.has(time) || venueClosed.has(time);
+                      const isPastOrCurrent = isBookableHourStartInPast(
+                        time,
+                        closureSelectedDate,
+                      );
+                      return !isLocked && !isPastOrCurrent;
+                    });
+                    const selectedSelectableCount = selectableTokens.filter((time) =>
+                      selected.has(time),
+                    ).length;
                     return (
-                      <Button
-                        key={time}
-                        type="button"
-                        variant={selected ? "default" : "outline"}
-                        size="sm"
-                        onClick={() =>
-                          setSelectedClosureTimes((prev) =>
-                            prev.includes(time)
-                              ? prev.filter((timeSlot) => timeSlot !== time)
-                              : [...prev, time],
-                          )
-                        }
+                      <div
+                        key={court.id}
+                        className="rounded-lg border border-border/60 p-3"
                       >
-                        {formatBookableHourSlotRange(time)}
-                      </Button>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-foreground">{court.name}</p>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={selectableTokens.length === 0}
+                            onClick={() =>
+                              setClosureTokensByCourtId((prev) => ({
+                                ...prev,
+                                [court.id]:
+                                  selectedSelectableCount === selectableTokens.length
+                                    ? []
+                                    : [...selectableTokens],
+                              }))
+                            }
+                          >
+                            {selectedSelectableCount === selectableTokens.length
+                              ? "Unselect all"
+                              : "Select all"}
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                          {closureTimeSlots.map((time) => {
+                            const isBooked = booked.has(time);
+                            const isVenueClosed = venueClosed.has(time);
+                            const isPastOrCurrent = isBookableHourStartInPast(
+                              time,
+                              closureSelectedDate,
+                            );
+                            const isLocked = isBooked || isVenueClosed || isPastOrCurrent;
+                            const isSelected = selected.has(time) || isLocked;
+                            return (
+                              <Button
+                                key={`${court.id}-${time}`}
+                                type="button"
+                                variant={isSelected ? "default" : "outline"}
+                                size="sm"
+                                disabled={isLocked}
+                                className={cn(
+                                  isBooked &&
+                                    "border-amber-500/30 bg-amber-500/15 text-amber-900 hover:bg-amber-500/20 dark:text-amber-100",
+                                  isVenueClosed &&
+                                    "border-purple-500/30 bg-purple-500/15 text-purple-900 hover:bg-purple-500/20 dark:text-purple-100",
+                                  isPastOrCurrent &&
+                                    "border-slate-500/30 bg-slate-500/15 text-slate-700 hover:bg-slate-500/20 dark:text-slate-200",
+                                )}
+                                onClick={() =>
+                                  setClosureTokensByCourtId((prev) => {
+                                    const current = new Set(prev[court.id] ?? []);
+                                    if (current.has(time)) current.delete(time);
+                                    else current.add(time);
+                                    return {
+                                      ...prev,
+                                      [court.id]: [...current].sort((a, b) =>
+                                        a.localeCompare(b),
+                                      ),
+                                    };
+                                  })
+                                }
+                                title={
+                                  isBooked
+                                    ? "Booked slot (cannot override)"
+                                    : isVenueClosed
+                                      ? "Venue-level closure"
+                                      : isPastOrCurrent
+                                        ? "Past or current slot (cannot modify)"
+                                      : undefined
+                                }
+                              >
+                                {formatBookableHourSlotRange(time)}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-              </div>
+              )}
             </div>
             <div>
               <Label>Reason *</Label>
@@ -1200,31 +1352,6 @@ export default function AdminVenueCourtsPage() {
               </Select>
             </div>
             <div>
-              <Label>Courts *</Label>
-              <div className="mt-1.5 flex flex-wrap gap-2 rounded-md border border-border/60 p-3">
-                {venueCourts.map((court) => {
-                  const selected = selectedClosureCourtIds.includes(court.id);
-                  return (
-                    <Button
-                      key={court.id}
-                      type="button"
-                      size="sm"
-                      variant={selected ? "default" : "outline"}
-                      onClick={() =>
-                        setSelectedClosureCourtIds((prev) =>
-                          prev.includes(court.id)
-                            ? prev.filter((id) => id !== court.id)
-                            : [...prev, court.id],
-                        )
-                      }
-                    >
-                      {court.name}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
               <Label>Note (optional)</Label>
               <Textarea
                 className="mt-1.5"
@@ -1238,10 +1365,10 @@ export default function AdminVenueCourtsPage() {
             <Button
               className="w-full font-heading font-semibold"
               type="button"
-              onClick={() => applyClosure.mutate()}
-              disabled={applyClosure.isPending}
+              onClick={() => saveClosureDraft.mutate()}
+              disabled={saveClosureDraft.isPending}
             >
-              {applyClosure.isPending ? "Applying..." : "Apply to selected courts"}
+              {saveClosureDraft.isPending ? "Saving..." : "Save"}
             </Button>
           </div>
         </DialogContent>

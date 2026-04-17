@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
@@ -46,13 +46,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -601,6 +594,26 @@ export default function BookCourtPage() {
       toast.error(apiErrorMessage(error, "Could not submit payment proof."));
     },
   });
+  const cancelPendingPayment = useMutation({
+    mutationFn: async () => {
+      if (!paymentOverlay) throw new Error("No active booking hold.");
+      await courtlyApi.bookings.cancelPending({
+        booking_id: paymentOverlay.booking_id,
+        booking_group_id: paymentOverlay.booking_group_id,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
+      setPaymentOverlay(null);
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      toast.success("Pending booking cancelled. Slots are now available again.");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
+    },
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
@@ -651,11 +664,18 @@ export default function BookCourtPage() {
       (sum, booking) => sum + Number(booking.total_cost ?? 0),
       0,
     );
+    const bookingGroupId = activePendingBooking.booking_group_id ?? activePendingBooking.id;
     setPaymentOverlay((current) => {
-      if (current && current.booking_id !== activePendingBooking.id) return current;
+      if (
+        current &&
+        current.booking_group_id === bookingGroupId &&
+        current.hold_expires_at === holdExpiresAt
+      ) {
+        return { ...current, total_due: totalDue, payment_methods: paymentMethods };
+      }
       return {
         booking_id: activePendingBooking.id,
-        booking_group_id: activePendingBooking.booking_group_id ?? activePendingBooking.id,
+        booking_group_id: bookingGroupId,
         hold_expires_at: holdExpiresAt,
         total_due: totalDue,
         payment_methods: paymentMethods,
@@ -736,13 +756,6 @@ export default function BookCourtPage() {
     } finally {
       setProofOptimizing(false);
     }
-  };
-
-  const onProofFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await processProofFile(file);
-    event.target.value = "";
   };
 
   const clearProofSelection = () => {
@@ -1645,6 +1658,9 @@ export default function BookCourtPage() {
             !optimizedProof
           }
           submitPending={submitPaymentProof.isPending}
+          onCancel={() => cancelPendingPayment.mutate()}
+          cancelDisabled={submitPaymentProof.isPending}
+          cancelPending={cancelPendingPayment.isPending}
         />
       ) : null}
       {createBookings.isPending ? (

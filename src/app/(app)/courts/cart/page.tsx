@@ -4,7 +4,6 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { format } from "date-fns";
 import {
   ArrowLeft,
-  Loader2,
   ShoppingCart,
   Trash2,
 } from "lucide-react";
@@ -260,6 +259,26 @@ export default function BookingCartPage() {
       toast.error(apiErrorMessage(error, "Could not submit payment proof."));
     },
   });
+  const cancelPendingPayment = useMutation({
+    mutationFn: async () => {
+      if (!paymentOverlay) throw new Error("No active booking hold.");
+      await courtlyApi.bookings.cancelPending({
+        booking_id: paymentOverlay.booking_id,
+        booking_group_id: paymentOverlay.booking_group_id,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
+      setPaymentOverlay(null);
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      toast.success("Pending booking cancelled. Slots are now available again.");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
+    },
+  });
 
   useEffect(() => {
     const id = window.setInterval(() => setCountdownNow(Date.now()), 1000);
@@ -282,17 +301,22 @@ export default function BookingCartPage() {
       (sum, booking) => sum + Number(booking.total_cost ?? 0),
       0,
     );
-    setPaymentOverlay((current) =>
-      current && current.booking_id !== activePendingBooking.id
-        ? current
-        : {
+    setPaymentOverlay((current) => {
+      if (
+        current &&
+        current.booking_group_id === bookingGroupId &&
+        current.hold_expires_at === activePendingBooking.hold_expires_at
+      ) {
+        return { ...current, total_due: totalDue, payment_methods: paymentMethods };
+      }
+      return {
         booking_id: activePendingBooking.id,
         booking_group_id: bookingGroupId,
         hold_expires_at: activePendingBooking.hold_expires_at!,
         total_due: totalDue,
         payment_methods: paymentMethods,
-      },
-    );
+      };
+    });
     setSelectedPaymentMethod((current) => {
       if (current && paymentMethods.some((method) => method.method === current)) return current;
       return paymentMethods[0]?.method ?? null;
@@ -535,6 +559,9 @@ export default function BookingCartPage() {
             !optimizedProof
           }
           submitPending={submitPaymentProof.isPending}
+          onCancel={() => cancelPendingPayment.mutate()}
+          cancelDisabled={submitPaymentProof.isPending}
+          cancelPending={cancelPendingPayment.isPending}
         />
       ) : null}
     </div>

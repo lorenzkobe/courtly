@@ -81,6 +81,7 @@ export function useNotificationRealtime(userId: string | null) {
   const queryClient = useQueryClient();
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
@@ -95,6 +96,14 @@ export function useNotificationRealtime(userId: string | null) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+    };
+    const scheduleReconcile = () => {
+      if (reconcileTimerRef.current) return;
+      reconcileTimerRef.current = setTimeout(() => {
+        reconcileTimerRef.current = null;
+        if (disposed) return;
+        void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });
+      }, 500);
     };
 
     const removeChannel = async () => {
@@ -121,6 +130,8 @@ export function useNotificationRealtime(userId: string | null) {
         { queryKey: [...NOTIFICATIONS_QUERY_KEY] },
         (current) => patchNotificationPages(current, payload),
       );
+      // Reconcile against server so badge/content never drift after reconnects or missed events.
+      scheduleReconcile();
     };
 
     const subscribe = async () => {
@@ -159,6 +170,10 @@ export function useNotificationRealtime(userId: string | null) {
     return () => {
       disposed = true;
       clearReconnectTimer();
+      if (reconcileTimerRef.current) {
+        clearTimeout(reconcileTimerRef.current);
+        reconcileTimerRef.current = null;
+      }
       void removeChannel();
     };
   }, [userId, queryClient]);

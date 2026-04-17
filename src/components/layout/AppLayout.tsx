@@ -20,6 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import GlobalPendingPaymentGate from "@/components/payments/GlobalPendingPaymentGate";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
@@ -299,6 +300,7 @@ export default function AppLayout({
           {children}
         </div>
       </main>
+      <GlobalPendingPaymentGate />
     </div>
   );
 }

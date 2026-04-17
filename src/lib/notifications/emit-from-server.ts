@@ -544,3 +544,25 @@ export async function emitVenueRequestDecisionToRequester(params: {
     },
   ]);
 }
+
+export async function emitVenueRequestCreatedToSuperadmins(params: {
+  requestId: string;
+  venueName: string;
+  requestedByName: string;
+}): Promise<void> {
+  const ids = await listSuperadminProfileIds();
+  if (ids.length === 0) return;
+  await safeEmitMany(
+    ids.map((user_id) => ({
+      user_id,
+      type: "venue_request_created_superadmin",
+      category: "platform",
+      title: "New venue request",
+      body: `${params.requestedByName} submitted a venue request for "${params.venueName}".`,
+      metadata: {
+        venue_request_id: params.requestId,
+        target_path: "/superadmin/venues",
+      },
+    })),
+  );
+}

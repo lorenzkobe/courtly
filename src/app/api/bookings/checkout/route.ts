@@ -4,6 +4,7 @@ import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   hasBlockingBookingConflictForCourt,
   listCourts,
@@ -32,7 +33,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "At least one booking is required." }, { status: 400 });
   }
 
-  const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
+  const [courts, venues, defaultFeeSetting] = await Promise.all([
+    listCourts(),
+    listVenues(),
+    (async () => {
+      const supabase = await createSupabaseServerClient();
+      const { data } = await supabase
+        .from("platform_settings")
+        .select("value")
+        .eq("key", "booking_fee_default")
+        .maybeSingle();
+      return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
+    })(),
+  ]);
   const holdExpiresAt = holdExpiresAtFrom();
   const bookingGroupId = crypto.randomUUID();
   let bookingNumber = generateBookingNumber(payloads[0]?.date ?? null);
@@ -81,18 +94,24 @@ export async function POST(req: Request) {
     let courtSubtotal = body.court_subtotal;
     let bookingFee = body.booking_fee;
     let itemTotal = body.total_cost;
+    const venueOverride = Number(
+      (venue as { booking_fee_override?: unknown }).booking_fee_override ?? Number.NaN,
+    );
+    const bookingFeeForVenue = Number.isFinite(venueOverride)
+      ? venueOverride
+      : defaultFeeSetting;
     const hasFullSplit =
       typeof courtSubtotal === "number" &&
       typeof bookingFee === "number" &&
       typeof itemTotal === "number";
     if (!hasFullSplit) {
       if (typeof courtSubtotal === "number") {
-        const split = splitBookingAmounts(courtSubtotal, undefined);
+        const split = splitBookingAmounts(courtSubtotal, bookingFeeForVenue);
         bookingFee = split.booking_fee;
         itemTotal = split.total_cost;
       } else if (typeof itemTotal === "number") {
         const subtotalFromTotal = Math.max(0, itemTotal);
-        const split = splitBookingAmounts(subtotalFromTotal, undefined);
+        const split = splitBookingAmounts(subtotalFromTotal, bookingFeeForVenue);
         courtSubtotal = split.court_subtotal;
         bookingFee = split.booking_fee;
         itemTotal = split.total_cost;

@@ -20,6 +20,7 @@ import {
 import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { logApiMetrics, payloadBytesOf } from "@/lib/observability/api-metrics";
 import { decodeOffsetCursor, encodeOffsetCursor, parseLimit } from "@/lib/pagination/cursor";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -154,7 +155,19 @@ export async function POST(req: Request) {
   if (payloads.length === 0) {
     return NextResponse.json({ error: "At least one booking is required." }, { status: 400 });
   }
-  const [courts, venues] = await Promise.all([listCourts(), listVenues()]);
+  const [courts, venues, defaultFeeSetting] = await Promise.all([
+    listCourts(),
+    listVenues(),
+    (async () => {
+      const supabase = await createSupabaseServerClient();
+      const { data } = await supabase
+        .from("platform_settings")
+        .select("value")
+        .eq("key", "booking_fee_default")
+        .maybeSingle();
+      return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
+    })(),
+  ]);
   const bookings: Booking[] = [];
   const bookingVenuePairs: Array<{ venueId: string; venueName: string; courtName: string }> = [];
 
@@ -170,7 +183,12 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    const courtBookingFee = undefined;
+    const venueOverride = Number(
+      (venue as { booking_fee_override?: unknown }).booking_fee_override ?? Number.NaN,
+    );
+    const courtBookingFee = Number.isFinite(venueOverride)
+      ? venueOverride
+      : defaultFeeSetting;
 
     let court_subtotal = body.court_subtotal;
     let booking_fee = body.booking_fee;
@@ -290,6 +308,7 @@ export async function POST(req: Request) {
       venueId: string;
       venueName: string;
       courtNames: Set<string>;
+      slotCount: number;
       bookingId: string;
     }
   >();
@@ -303,19 +322,23 @@ export async function POST(req: Request) {
     const current = notifyByGroup.get(groupKey);
     if (current) {
       current.courtNames.add(meta.courtName);
+      current.slotCount += 1;
       continue;
     }
     notifyByGroup.set(groupKey, {
       venueId: meta.venueId,
       venueName: meta.venueName,
       courtNames: new Set([meta.courtName]),
+      slotCount: 1,
       bookingId: inserted.id,
     });
   }
   for (const group of notifyByGroup.values()) {
     const names = [...group.courtNames];
     const bookingLabel =
-      names.length <= 1 ? names[0] ?? "Court" : `${names.length} slots`;
+      group.slotCount <= 1
+        ? names[0] ?? "Court"
+        : `${group.slotCount} slot${group.slotCount === 1 ? "" : "s"}`;
     void emitBookingCreatedToVenueAdmins({
       venueId: group.venueId,
       venueName: group.venueName,

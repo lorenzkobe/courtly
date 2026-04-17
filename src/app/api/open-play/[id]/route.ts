@@ -11,6 +11,7 @@ import {
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { OpenPlaySession } from "@/lib/types/courtly";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -121,7 +122,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     : Number(existing.price_per_player ?? existing.fee ?? 0);
   const nextDuprMin = Object.prototype.hasOwnProperty.call(patch, "dupr_min")
     ? Number(patch.dupr_min)
-    : Number(existing.dupr_min ?? 0);
+    : Number(existing.dupr_min ?? 2);
   const nextDuprMax = Object.prototype.hasOwnProperty.call(patch, "dupr_max")
     ? Number(patch.dupr_max)
     : Number(existing.dupr_max ?? 8);
@@ -143,12 +144,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (
     !Number.isInteger(nextDuprMin) ||
     !Number.isInteger(nextDuprMax) ||
-    nextDuprMin < 0 ||
+    nextDuprMin < 2 ||
     nextDuprMax > 8 ||
     nextDuprMin > nextDuprMax
   ) {
     return NextResponse.json(
-      { error: "DUPR range must use whole numbers between 0 and 8" },
+      { error: "DUPR range must use whole numbers between 2 and 8" },
       { status: 400 },
     );
   }
@@ -182,9 +183,21 @@ export async function PATCH(req: Request, ctx: Ctx) {
       { status: 400 },
     );
   }
+  if (nextAcceptsGcash && !isValidPhMobile(nextGcashAccountNumber)) {
+    return NextResponse.json(
+      { error: "GCash account number must be a valid PH mobile number" },
+      { status: 400 },
+    );
+  }
   if (nextAcceptsMaya && (!nextMayaAccountName || !nextMayaAccountNumber)) {
     return NextResponse.json(
       { error: "Maya account name and number are required when enabled" },
+      { status: 400 },
+    );
+  }
+  if (nextAcceptsMaya && !isValidPhMobile(nextMayaAccountNumber)) {
+    return NextResponse.json(
+      { error: "Maya account number must be a valid PH mobile number" },
       { status: 400 },
     );
   }

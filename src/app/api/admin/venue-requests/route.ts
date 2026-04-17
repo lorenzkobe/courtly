@@ -11,6 +11,7 @@ import {
   findPotentialVenueDuplicate,
   normalizeVenueDraftFromBody,
 } from "@/lib/venue-requests";
+import { emitVenueRequestCreatedToSuperadmins } from "@/lib/notifications/emit-from-server";
 
 export async function GET() {
   const user = await readSessionUser();
@@ -63,5 +64,10 @@ export async function POST(req: Request) {
       approved_venue_id: null,
     } as Omit<VenueRequest, "id" | "created_at" | "updated_at">,
   );
+  void emitVenueRequestCreatedToSuperadmins({
+    requestId: inserted.id,
+    venueName: inserted.name ?? parsed.value.name,
+    requestedByName: user.full_name?.trim() || user.email,
+  });
   return NextResponse.json(inserted, { status: 201 });
 }

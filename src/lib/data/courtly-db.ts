@@ -1956,7 +1956,7 @@ export async function listOpenPlayCommentsBySession(
     .from("open_play_comments")
     .select("*, profiles!open_play_comments_user_id_fkey(full_name)")
     .eq("open_play_session_id", sessionId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map(mapOpenPlayCommentRow);
 }

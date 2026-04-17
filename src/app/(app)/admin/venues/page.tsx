@@ -245,158 +245,164 @@ export default function AdminVenuesPage() {
         </div>
       </PageHeader>
 
-      {isLoadingRequests || actionableRequests.length > 0 ? (
-        <section className="mb-8 space-y-3">
-          <h2 className="font-heading text-lg font-semibold">Pending venue approval</h2>
-          {isLoadingRequests ? (
-            <div className="space-y-3">
-              {[1, 2].map((idx) => (
-                <Skeleton key={idx} className="h-28 rounded-xl" />
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+        <div className="space-y-6">
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-48 rounded-xl" />
               ))}
             </div>
           ) : (
-            <div className="space-y-3">
-              {actionableRequests.map((request) => (
-                <Card key={request.id} className="border-border/60">
-                  <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-heading font-semibold">{request.name}</h3>
-                        <Badge variant="outline">
-                          {formatStatusLabel(request.request_status)}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{request.location}</p>
-                      {request.request_status === "needs_update" && request.review_note ? (
-                        <p className="text-xs text-amber-700 dark:text-amber-200">
-                          Update requested: {request.review_note}
-                        </p>
-                      ) : null}
-                      <p className="text-xs text-muted-foreground">
-                        Submitted {new Date(request.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setEditingRequestId(request.id);
-                          setEditingRequestStatus(
-                            request.request_status === "needs_update" ? "needs_update" : "pending",
-                          );
-                          setForm({
-                            name: request.name,
-                            location: request.location,
-                            contact_phone: request.contact_phone,
-                            facebook_url: request.facebook_url ?? "",
-                            instagram_url: request.instagram_url ?? "",
-                            sport: request.sport,
-                            amenities: [...(request.amenities ?? [])],
-                            customAmenityDraft: "",
-                            image_url: request.image_url ?? "",
-                            hourly_rate_windows:
-                              request.hourly_rate_windows.length > 0
-                                ? request.hourly_rate_windows.map((window) => ({
-                                    start: window.start,
-                                    end: window.end,
-                                    rate: String(window.hourly_rate),
-                                  }))
-                                : [{ start: "07:00", end: "22:00", rate: "" }],
-                            map_latitude: request.map_latitude ?? null,
-                            map_longitude: request.map_longitude ?? null,
-                            accepts_gcash: request.accepts_gcash ?? false,
-                            gcash_account_name: request.gcash_account_name ?? "",
-                            gcash_account_number: request.gcash_account_number ?? "",
-                            accepts_maya: request.accepts_maya ?? false,
-                            maya_account_name: request.maya_account_name ?? "",
-                            maya_account_number: request.maya_account_number ?? "",
-                          });
-                          setRequestDialogOpen(true);
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {venueCards.map((venue) => (
+                <Card
+                  key={venue.id}
+                  className="overflow-hidden border-border/50 transition-shadow hover:shadow-md"
+                >
+                  {venue.image_url ? (
+                    <div className="relative h-36 overflow-hidden">
+                      <Image
+                        src={venue.image_url}
+                        alt={venue.name}
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        unoptimized
+                        className="object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
                         }}
-                      >
-                        {request.request_status === "needs_update" ? "Update & resend" : "Edit"}
-                      </Button>
-                      {request.request_status === "pending" ? (
-                        <Button
-                          variant="outline"
-                          onClick={() => setConfirmCancelRequestId(request.id)}
-                        >
-                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                          Cancel
-                        </Button>
-                      ) : null}
+                      />
                     </div>
+                  ) : null}
+                  <CardContent className="p-5">
+                    <div className="mb-2">
+                      <h3 className="font-heading font-bold text-foreground">
+                        {venue.name}
+                      </h3>
+                    </div>
+                    <div className="mb-4 space-y-1 text-sm text-muted-foreground">
+                      <div>{venue.location}</div>
+                      <div className="text-xs">
+                        {venue.court_count}{" "}
+                        {venue.court_count === 1 ? "court" : "courts"}
+                        {venue.court_count === 0 ? " — add one from Manage courts" : ""}
+                      </div>
+                    </div>
+                    <Button asChild variant="outline" className="w-full">
+                      <Link href={`/admin/venues/${venue.id}`}>
+                        Manage courts <ChevronRight className="ml-1 h-4 w-4" />
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
             </div>
           )}
-        </section>
-      ) : null}
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-48 rounded-xl" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {venueCards.map((venue) => (
-            <Card
-              key={venue.id}
-              className="overflow-hidden border-border/50 transition-shadow hover:shadow-md"
-            >
-              {venue.image_url ? (
-                <div className="relative h-36 overflow-hidden">
-                  <Image
-                    src={venue.image_url}
-                    alt={venue.name}
-                    fill
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    unoptimized
-                    className="object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
-                </div>
-              ) : null}
-              <CardContent className="p-5">
-                <div className="mb-2">
-                  <h3 className="font-heading font-bold text-foreground">
-                    {venue.name}
-                  </h3>
-                </div>
-                <div className="mb-4 space-y-1 text-sm text-muted-foreground">
-                  <div>{venue.location}</div>
-                  <div className="text-xs">
-                    {venue.court_count}{" "}
-                    {venue.court_count === 1 ? "court" : "courts"}
-                    {venue.court_count === 0 ? " — add one from Manage courts" : ""}
-                  </div>
-                </div>
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={`/admin/venues/${venue.id}`}>
-                    Manage courts <ChevronRight className="ml-1 h-4 w-4" />
-                  </Link>
-                </Button>
+          {!isLoading && venueCards.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                <Building2 className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  No assigned venues yet. Submit a venue request to get started.
+                </p>
               </CardContent>
             </Card>
-          ))}
+          ) : null}
         </div>
-      )}
 
-      {!isLoading && venueCards.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-            <Building2 className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No assigned venues yet. Submit a venue request to get started.
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
+        {(isLoadingRequests || actionableRequests.length > 0) ? (
+          <aside className="space-y-3">
+            {!isLoadingRequests ? (
+              <h2 className="font-heading text-lg font-semibold">Pending venue approval</h2>
+            ) : null}
+            {isLoadingRequests ? (
+              <div className="space-y-3">
+                {[1, 2].map((idx) => (
+                  <Skeleton key={idx} className="h-28 rounded-xl" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {actionableRequests.map((request) => (
+                  <Card key={request.id} className="border-border/60">
+                    <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-heading font-semibold">{request.name}</h3>
+                          <Badge variant="outline">
+                            {formatStatusLabel(request.request_status)}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{request.location}</p>
+                        {request.request_status === "needs_update" && request.review_note ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-200">
+                            Update requested: {request.review_note}
+                          </p>
+                        ) : null}
+                        <p className="text-xs text-muted-foreground">
+                          Submitted {new Date(request.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEditingRequestId(request.id);
+                            setEditingRequestStatus(
+                              request.request_status === "needs_update" ? "needs_update" : "pending",
+                            );
+                            setForm({
+                              name: request.name,
+                              location: request.location,
+                              contact_phone: request.contact_phone,
+                              facebook_url: request.facebook_url ?? "",
+                              instagram_url: request.instagram_url ?? "",
+                              sport: request.sport,
+                              amenities: [...(request.amenities ?? [])],
+                              customAmenityDraft: "",
+                              image_url: request.image_url ?? "",
+                              hourly_rate_windows:
+                                request.hourly_rate_windows.length > 0
+                                  ? request.hourly_rate_windows.map((window) => ({
+                                      start: window.start,
+                                      end: window.end,
+                                      rate: String(window.hourly_rate),
+                                    }))
+                                  : [{ start: "07:00", end: "22:00", rate: "" }],
+                              map_latitude: request.map_latitude ?? null,
+                              map_longitude: request.map_longitude ?? null,
+                              accepts_gcash: request.accepts_gcash ?? false,
+                              gcash_account_name: request.gcash_account_name ?? "",
+                              gcash_account_number: request.gcash_account_number ?? "",
+                              accepts_maya: request.accepts_maya ?? false,
+                              maya_account_name: request.maya_account_name ?? "",
+                              maya_account_number: request.maya_account_number ?? "",
+                            });
+                            setRequestDialogOpen(true);
+                          }}
+                        >
+                          {request.request_status === "needs_update" ? "Update & resend" : "Edit"}
+                        </Button>
+                        {request.request_status === "pending" ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => setConfirmCancelRequestId(request.id)}
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Cancel
+                          </Button>
+                        ) : null}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </aside>
+        ) : null}
+      </div>
 
       <Dialog
         open={requestDialogOpen}

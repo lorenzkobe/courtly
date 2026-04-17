@@ -37,6 +37,10 @@ type PaymentLockOverlayProps = {
   submitDisabled: boolean;
   submitPending: boolean;
   submitLabel?: string;
+  onCancel?: () => void;
+  cancelDisabled?: boolean;
+  cancelPending?: boolean;
+  cancelLabel?: string;
 };
 
 export default function PaymentLockOverlay({
@@ -54,6 +58,10 @@ export default function PaymentLockOverlay({
   submitDisabled,
   submitPending,
   submitLabel = "Submit for confirmation",
+  onCancel,
+  cancelDisabled = false,
+  cancelPending = false,
+  cancelLabel = "Cancel booking",
 }: PaymentLockOverlayProps) {
   const [dragActive, setDragActive] = useState(false);
   const selectedPayment = paymentMethods.find(
@@ -243,6 +251,24 @@ export default function PaymentLockOverlay({
               submitLabel
             )}
           </Button>
+          {onCancel ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={onCancel}
+              disabled={cancelDisabled || cancelPending}
+            >
+              {cancelPending ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Cancelling...
+                </span>
+              ) : (
+                cancelLabel
+              )}
+            </Button>
+          ) : null}
           <p className="text-center text-xs text-muted-foreground leading-relaxed">
             This window closes when the timer ends or after you submit.
           </p>

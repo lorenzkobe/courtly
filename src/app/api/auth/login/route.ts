@@ -26,5 +26,12 @@ export async function POST(req: Request) {
   }
 
   const user = await readSessionUserFromAuthUser(data.user);
+  if (!user) {
+    await supabase.auth.signOut();
+    return NextResponse.json(
+      { error: "This account is inactive. Please contact support or an administrator." },
+      { status: 403 },
+    );
+  }
   return NextResponse.json({ user });
 }

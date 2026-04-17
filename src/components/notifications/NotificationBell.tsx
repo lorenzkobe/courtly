@@ -113,6 +113,7 @@ export default function NotificationBell() {
   const {
     data,
     isLoading,
+    isRefetching,
     isError,
     isFetchingNextPage,
     fetchNextPage,
@@ -222,7 +223,7 @@ export default function NotificationBell() {
         </div>
 
         <div className="max-h-80 overflow-y-auto px-2 py-2">
-          {isLoading ? (
+          {isLoading || (open && isRefetching) ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">Loading…</p>
           ) : items.length === 0 ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">No notifications yet.</p>

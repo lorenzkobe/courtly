@@ -62,7 +62,7 @@ import {
   PAYMENT_PROOF_CANONICAL_MIME_TYPE,
 } from "@/lib/payments/payment-proof-constraints";
 import { queryKeys } from "@/lib/query/query-keys";
-import type { Court } from "@/lib/types/courtly";
+import type { Court, OpenPlayDetailResponse } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 
 function StarRow({ rating, className }: { rating: number; className?: string }) {
@@ -208,7 +208,7 @@ export default function OpenPlayDetailPage() {
     setPaymentMethod((current) =>
       available.includes(current) ? current : available[0]!,
     );
-  }, [data?.session?.accepts_gcash, data?.session?.accepts_maya]);
+  }, [data?.session]);
   useEffect(() => {
     const session = data?.session;
     if (!session) return;
@@ -222,7 +222,7 @@ export default function OpenPlayDetailPage() {
     setEditDescription(session.description ?? "");
     setEditMaxPlayers(String(session.max_players ?? ""));
     setEditPricePerPlayer(String(session.price_per_player ?? 0));
-    setEditDuprMin(String(session.dupr_min ?? 0));
+    setEditDuprMin(String(session.dupr_min ?? 2));
     setEditDuprMax(String(session.dupr_max ?? 8));
   }, [data?.session]);
 
@@ -343,10 +343,21 @@ export default function OpenPlayDetailPage() {
       courtlyApi.openPlay.updateComment(sessionId, payload.commentId, {
         comment: payload.text,
       }),
-    onSuccess: () => {
+    onSuccess: ({ data: response }) => {
+      queryClient.setQueryData<OpenPlayDetailResponse>(
+        queryKeys.openPlay.detail(sessionId),
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            comments: current.comments.map((comment) =>
+              comment.id === response.comment.id ? response.comment : comment,
+            ),
+          };
+        },
+      );
       setEditingCommentId(null);
       setEditDraft("");
-      refresh();
     },
     onError: (err: unknown) =>
       toast.error(apiErrorMessage(err, "Could not update comment.")),
@@ -1073,6 +1084,11 @@ export default function OpenPlayDetailPage() {
                           rows={3}
                         />
                       </div>
+                    ) : null}
+                    {!myRequest && session.status === "full" ? (
+                      <p className="text-sm text-muted-foreground">
+                        This session is currently full. Join requests are disabled.
+                      </p>
                     ) : null}
 
                     {canRestartJoin ? (

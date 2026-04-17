@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { httpStatusOf } from "@/lib/api/http-status";
@@ -38,7 +39,7 @@ import { formatPhp } from "@/lib/format-currency";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
-import type { Booking } from "@/lib/types/courtly";
+import type { Booking, BookingAdminNote } from "@/lib/types/courtly";
 import { cn, formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
 
 function isEmbedSafePaymentProofUrl(url: string): boolean {
@@ -224,7 +225,12 @@ function bookingAuditEventsForSegment(segment: Booking): BookingAuditEvent[] {
       (segment.cancel_reason ?? "").toLowerCase().includes("reject");
     events.push({
       id: `${segment.id}-${rejected ? "rejected" : "cancelled"}`,
-      at: segment.status_updated_at ?? segment.payment_failed_at ?? segment.refunded_at ?? null,
+      at:
+        segment.status_updated_at ??
+        segment.payment_failed_at ??
+        segment.refunded_at ??
+        segment.created_date ??
+        null,
       title: rejected ? "Booking rejected" : "Booking cancelled",
       detail: segment.cancel_reason?.trim() || segmentLabel,
       actor: statusActor,
@@ -244,57 +250,94 @@ function bookingAuditEventsForSegment(segment: Booking): BookingAuditEvent[] {
   return events;
 }
 
-function AdminBookingNoteFields({
-  booking,
-  onSave,
-  onRequestClear,
-  savePending,
-  clearPending,
+function BookingNotesPanel({
+  notes,
+  legacyNote,
+  onAddNote,
+  addPending,
+  loading,
 }: {
-  booking: Booking;
-  onSave: (note: string) => void;
-  onRequestClear: () => void;
-  savePending: boolean;
-  clearPending: boolean;
+  notes: BookingAdminNote[];
+  legacyNote: Pick<Booking, "admin_note" | "admin_note_updated_at" | "admin_note_updated_by_name"> | null;
+  onAddNote: (note: string) => void;
+  addPending: boolean;
+  loading: boolean;
 }) {
-  const [draft, setDraft] = useState(booking.admin_note ?? "");
+  const [draft, setDraft] = useState("");
+  const canSubmit = draft.trim().length > 0 && !addPending;
+  const showLegacyNote =
+    !!legacyNote?.admin_note?.trim() &&
+    !notes.some((note) => note.body.trim() === legacyNote.admin_note?.trim());
 
   return (
-    <section className="border-t border-border/60 pt-4">
-      <Label htmlFor="admin-booking-note">Admin note</Label>
-      <Textarea
-        id="admin-booking-note"
-        className="mt-1.5"
-        rows={3}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder="Add internal note/comment for this booking"
-      />
-      {booking.admin_note_updated_at ? (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Last updated by{" "}
-          {booking.admin_note_updated_by_name ?? "Admin"} on{" "}
-          {format(new Date(booking.admin_note_updated_at), "PPpp")}
-        </p>
-      ) : null}
-      <div className="mt-2 flex gap-2">
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => onSave(draft)}
-          disabled={savePending}
-        >
-          Save note
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={onRequestClear}
-          disabled={clearPending}
-        >
-          Delete note
-        </Button>
+    <section className="space-y-3">
+      <div>
+        <Label htmlFor="admin-booking-note-add">Add note</Label>
+        <Textarea
+          id="admin-booking-note-add"
+          className="mt-1.5"
+          rows={3}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={addPending}
+          placeholder="Write a new internal note"
+        />
+        <div className="mt-2 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={() => {
+              const text = draft.trim();
+              if (!text) return;
+              onAddNote(text);
+              setDraft("");
+            }}
+          >
+            {addPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Adding...
+              </span>
+            ) : (
+              "Add note"
+            )}
+          </Button>
+        </div>
+      </div>
+      <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+        {loading ? (
+          <p className="text-xs text-muted-foreground">Loading notes…</p>
+        ) : notes.length === 0 && !showLegacyNote ? (
+          <p className="text-xs text-muted-foreground">No notes yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {notes.map((note) => (
+              <li key={note.id} className="rounded-md border border-border/50 bg-background px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{note.author_name || "Admin"}</span>
+                  <span>{format(new Date(note.created_at), "PPpp")}</span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{note.body}</p>
+              </li>
+            ))}
+            {showLegacyNote ? (
+              <li className="rounded-md border border-border/50 bg-background px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{legacyNote?.admin_note_updated_by_name ?? "Admin"}</span>
+                  <span>
+                    {legacyNote?.admin_note_updated_at
+                      ? format(new Date(legacyNote.admin_note_updated_at), "PPpp")
+                      : "Earlier note"}
+                  </span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                  {legacyNote?.admin_note?.trim()}
+                </p>
+              </li>
+            ) : null}
+          </ul>
+        )}
       </div>
     </section>
   );
@@ -323,17 +366,19 @@ export default function AdminBookingsPage() {
   const detailIdFromQuery = searchParams.get("detail");
   const activeDetailId = detailId ?? detailIdFromQuery;
 
-  const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
-  const [confirmCompleteBookingId, setConfirmCompleteBookingId] = useState<string | null>(null);
-  const [confirmDeleteNoteOpen, setConfirmDeleteNoteOpen] = useState(false);
+  const [confirmBulkPendingOpen, setConfirmBulkPendingOpen] = useState(false);
+  const [confirmBulkCompleteOpen, setConfirmBulkCompleteOpen] = useState(false);
   const [paymentProofPreviewUrl, setPaymentProofPreviewUrl] = useState<string | null>(
     null,
   );
-  const [bookingAuditOpen, setBookingAuditOpen] = useState(false);
-  const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{
-    id: string;
-    status: Booking["status"];
-  } | null>(null);
+  const [detailPanelTab, setDetailPanelTab] = useState<"notes" | "history">("notes");
+  const [historyTabLoaded, setHistoryTabLoaded] = useState(false);
+  const [pendingDecisionById, setPendingDecisionById] = useState<
+    Record<string, "confirmed" | "cancelled">
+  >({});
+  const [completionDecisionById, setCompletionDecisionById] = useState<
+    Record<string, "completed">
+  >({});
   const [paymentProofZoom, setPaymentProofZoom] = useState(1);
   const dismissPaymentProofPreview = useCallback(() => {
     setPaymentProofPreviewUrl(null);
@@ -342,7 +387,8 @@ export default function AdminBookingsPage() {
   const openAdminBookingDetail = useCallback(
     (id: string) => {
       dismissPaymentProofPreview();
-      setBookingAuditOpen(false);
+      setDetailPanelTab("notes");
+      setHistoryTabLoaded(false);
       setDetailId(id);
     },
     [dismissPaymentProofPreview],
@@ -423,6 +469,18 @@ export default function AdminBookingsPage() {
     enabled: !!activeDetailId,
     staleTime: 15_000,
   });
+  const {
+    data: bookingNotesPayload,
+    isLoading: bookingNotesLoading,
+  } = useQuery({
+    queryKey: ["admin-booking-notes", activeDetailId],
+    queryFn: async () => {
+      const { data } = await courtlyApi.adminBookings.listNotes(activeDetailId!);
+      return data;
+    },
+    enabled: !!activeDetailId,
+    staleTime: 15_000,
+  });
   const missingAdminDetail =
     Boolean(activeDetailId) &&
     !detailPayload &&
@@ -430,12 +488,14 @@ export default function AdminBookingsPage() {
     httpStatusOf(detailError) === 404;
   useEffect(() => {
     if (!missingAdminDetail) return;
-    dismissPaymentProofPreview();
-    setBookingAuditOpen(false);
-    setDetailId(null);
-    if (detailIdFromQuery) {
-      router.replace(pathname, { scroll: false });
-    }
+    const timeoutId = window.setTimeout(() => {
+      dismissPaymentProofPreview();
+      setDetailId(null);
+      if (detailIdFromQuery) {
+        router.replace(pathname, { scroll: false });
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [
     detailIdFromQuery,
     dismissPaymentProofPreview,
@@ -443,6 +503,14 @@ export default function AdminBookingsPage() {
     pathname,
     router,
   ]);
+  useEffect(() => {
+    if (!activeDetailId) return;
+    const timeoutId = window.setTimeout(() => {
+      setDetailPanelTab("notes");
+      setHistoryTabLoaded(false);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeDetailId]);
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;
 
@@ -453,6 +521,32 @@ export default function AdminBookingsPage() {
     }
     return [detailBooking];
   }, [detailBooking, detailGroup]);
+  const pendingConfirmationSegments = useMemo(
+    () => detailSegments.filter((segment) => segment.status === "pending_confirmation"),
+    [detailSegments],
+  );
+  const confirmedSegments = useMemo(
+    () => detailSegments.filter((segment) => segment.status === "confirmed"),
+    [detailSegments],
+  );
+  const selectedPendingUpdates = useMemo(
+    () =>
+      pendingConfirmationSegments.flatMap((segment) => {
+        const status = pendingDecisionById[segment.id];
+        if (!status) return [];
+        return [{ id: segment.id, status }];
+      }),
+    [pendingConfirmationSegments, pendingDecisionById],
+  );
+  const selectedCompleteUpdates = useMemo(
+    () =>
+      confirmedSegments.flatMap((segment) =>
+        completionDecisionById[segment.id]
+          ? [{ id: segment.id, status: "completed" as const }]
+          : [],
+      ),
+    [confirmedSegments, completionDecisionById],
+  );
 
   const adminBookingNotes = useMemo(() => {
     const texts = new Set<string>();
@@ -462,6 +556,31 @@ export default function AdminBookingsPage() {
     }
     return [...texts].join("\n\n");
   }, [detailSegments]);
+  const latestAdminNoteSegment = useMemo(() => {
+    const withUpdatedAt = detailSegments.filter((segment) => segment.admin_note_updated_at);
+    if (withUpdatedAt.length === 0) return null;
+    return [...withUpdatedAt].sort((left, right) => {
+      const leftAt = left.admin_note_updated_at
+        ? new Date(left.admin_note_updated_at).getTime()
+        : 0;
+      const rightAt = right.admin_note_updated_at
+        ? new Date(right.admin_note_updated_at).getTime()
+        : 0;
+      return rightAt - leftAt;
+    })[0]!;
+  }, [detailSegments]);
+  const adminNoteBooking = useMemo(() => {
+    if (!detailBooking) return null;
+    if (!latestAdminNoteSegment) return detailBooking;
+    return {
+      ...detailBooking,
+      admin_note: latestAdminNoteSegment.admin_note ?? "",
+      admin_note_updated_at: latestAdminNoteSegment.admin_note_updated_at ?? null,
+      admin_note_updated_by_name: latestAdminNoteSegment.admin_note_updated_by_name ?? null,
+      admin_note_updated_by_user_id: latestAdminNoteSegment.admin_note_updated_by_user_id ?? null,
+    } satisfies Booking;
+  }, [detailBooking, latestAdminNoteSegment]);
+  const bookingNotes = bookingNotesPayload?.notes ?? [];
 
   const adminSessionTotal = useMemo(
     () => detailSegments.reduce((sum, s) => sum + (s.total_cost ?? 0), 0),
@@ -477,6 +596,7 @@ export default function AdminBookingsPage() {
     );
   }, [detailSegments]);
   const bookingAuditEvents = useMemo(() => {
+    if (!historyTabLoaded) return [];
     const segmentEvents = detailSegments
       .flatMap((segment) => bookingAuditEventsForSegment(segment))
       .filter(
@@ -541,7 +661,7 @@ export default function AdminBookingsPage() {
         if (leftAt !== rightAt) return rightAt - leftAt;
         return left.title.localeCompare(right.title);
       });
-  }, [detailBooking, detailSegments]);
+  }, [detailBooking, detailSegments, historyTabLoaded]);
 
   const applyBookingUpdateToCaches = useCallback(
     (updated: Booking) => {
@@ -593,73 +713,40 @@ export default function AdminBookingsPage() {
     [queryClient],
   );
 
-  const updateStatus = useMutation({
-    mutationFn: async ({
-      id,
-      status,
-    }: {
-      id: string;
-      status: string;
-    }) => {
-      const { data } = await courtlyApi.bookings.update(id, {
-        status: status as Booking["status"],
-      });
-      return data;
+  const bulkUpdateStatuses = useMutation({
+    mutationFn: async (updates: Array<{ id: string; status: Booking["status"] }>) => {
+      const { data } = await courtlyApi.adminBookings.bulkStatus(updates);
+      return data.updates;
     },
-    onMutate: ({ id, status }) => {
-      setPendingStatusUpdate({ id, status: status as Booking["status"] });
-    },
-    onSuccess: (updated) => {
-      applyBookingUpdateToCaches(updated);
+    onSuccess: (updatedRows) => {
+      for (const updated of updatedRows) {
+        applyBookingUpdateToCaches(updated);
+      }
       void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["me", "bookings-overview"] });
-      void queryClient.invalidateQueries({ queryKey: ["my-booking-detail"] });
-      toast.success("Booking updated");
-    },
-    onSettled: () => {
-      setPendingStatusUpdate(null);
+      toast.success("Booking decisions submitted");
+      setPendingDecisionById({});
+      setCompletionDecisionById({});
+      setConfirmBulkPendingOpen(false);
+      setConfirmBulkCompleteOpen(false);
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not update booking"));
+      toast.error(apiErrorMessage(error, "Could not submit bulk booking decisions"));
     },
   });
 
-  const saveAdminNote = useMutation({
+  const addBookingNote = useMutation({
     mutationFn: async (note: string) => {
       if (!detailBooking) throw new Error("No booking selected");
-      await courtlyApi.bookings.setAdminNote(detailBooking.id, {
-        admin_note: note,
-      });
+      const { data } = await courtlyApi.adminBookings.addNote(detailBooking.id, note);
+      return data.note;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
-      toast.success("Note saved");
+      void queryClient.invalidateQueries({ queryKey: ["admin-booking-notes", activeDetailId] });
+      toast.success("Note added");
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not save note"));
-    },
-  });
-
-  const clearAdminNote = useMutation({
-    mutationFn: async () => {
-      if (!detailBooking) throw new Error("No booking selected");
-      await courtlyApi.bookings.setAdminNote(detailBooking.id, {
-        clear_admin_note: true,
-      });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
-      toast.success("Note deleted");
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not delete note"));
+      toast.error(apiErrorMessage(error, "Could not add note"));
     },
   });
 
@@ -904,46 +991,27 @@ export default function AdminBookingsPage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
       <ConfirmDialog
-        open={!!confirmCancelBookingId}
-        onOpenChange={(open) => {
-          if (!open) setConfirmCancelBookingId(null);
-        }}
-        title="Cancel booking?"
-        description="This will mark the booking as cancelled."
-        confirmLabel="Yes, cancel booking"
-        isPending={updateStatus.isPending}
+        open={confirmBulkPendingOpen}
+        onOpenChange={setConfirmBulkPendingOpen}
+        title="Submit slot decisions?"
+        description={`This will apply decisions to ${selectedPendingUpdates.length} slot${selectedPendingUpdates.length === 1 ? "" : "s"}.`}
+        confirmLabel="Submit decisions"
+        isPending={bulkUpdateStatuses.isPending}
         onConfirm={() => {
-          if (!confirmCancelBookingId) return;
-          updateStatus.mutate({ id: confirmCancelBookingId, status: "cancelled" });
-          setConfirmCancelBookingId(null);
+          if (selectedPendingUpdates.length === 0) return;
+          bulkUpdateStatuses.mutate(selectedPendingUpdates);
         }}
       />
       <ConfirmDialog
-        open={!!confirmCompleteBookingId}
-        onOpenChange={(open) => {
-          if (!open) setConfirmCompleteBookingId(null);
-        }}
-        title="Complete booking?"
-        description="This will mark the booking as completed."
-        confirmLabel="Yes, complete booking"
-        confirmVariant="default"
-        isPending={updateStatus.isPending}
+        open={confirmBulkCompleteOpen}
+        onOpenChange={setConfirmBulkCompleteOpen}
+        title="Complete selected slots?"
+        description={`This will mark ${selectedCompleteUpdates.length} slot${selectedCompleteUpdates.length === 1 ? "" : "s"} as completed.`}
+        confirmLabel="Complete selected"
+        isPending={bulkUpdateStatuses.isPending}
         onConfirm={() => {
-          if (!confirmCompleteBookingId) return;
-          updateStatus.mutate({ id: confirmCompleteBookingId, status: "completed" });
-          setConfirmCompleteBookingId(null);
-        }}
-      />
-      <ConfirmDialog
-        open={confirmDeleteNoteOpen}
-        onOpenChange={setConfirmDeleteNoteOpen}
-        title="Delete admin note?"
-        description="This will remove the internal note for this booking."
-        confirmLabel="Delete note"
-        isPending={clearAdminNote.isPending}
-        onConfirm={() => {
-          clearAdminNote.mutate();
-          setConfirmDeleteNoteOpen(false);
+          if (selectedCompleteUpdates.length === 0) return;
+          bulkUpdateStatuses.mutate(selectedCompleteUpdates);
         }}
       />
       <Dialog
@@ -955,7 +1023,6 @@ export default function AdminBookingsPage() {
           }
           if (!open) {
             dismissPaymentProofPreview();
-            setBookingAuditOpen(false);
             setDetailId(null);
             if (detailIdFromQuery) {
               router.replace(pathname, { scroll: false });
@@ -1067,66 +1134,6 @@ export default function AdminBookingsPage() {
                 </Button>
               </DialogFooter>
             </div>
-          ) : bookingAuditOpen ? (
-            <div className="flex max-h-[min(80dvh,36rem)] min-h-0 flex-col gap-4">
-              <DialogHeader className="pr-8 text-left">
-                <DialogTitle className="font-heading">Booking audit</DialogTitle>
-                <DialogDescription>
-                  Timeline of status updates, payment events, and admin actions.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/10 p-3">
-                {bookingAuditEvents.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No booking audit events yet.</p>
-                ) : (
-                  <ul className="space-y-2.5">
-                    {bookingAuditEvents.map((event) => (
-                      <li
-                        key={event.id}
-                        className="relative overflow-hidden rounded-lg border border-border/50 bg-muted/20 px-3 py-3 text-sm"
-                      >
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "absolute inset-y-0 left-0 w-1",
-                            bookingAuditAccentClass(event.title),
-                          )}
-                        />
-                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "w-fit text-[10px] uppercase tracking-wide",
-                              bookingAuditBadgeClass(event.title),
-                            )}
-                          >
-                            {event.title}
-                          </Badge>
-                          <span className="inline-flex flex-wrap items-center justify-end gap-1 text-xs text-muted-foreground sm:max-w-[18rem]">
-                            <Calendar className="h-3 w-3" />
-                            <span>{event.at ? format(new Date(event.at), "PPpp") : "Time not tracked"}</span>
-                            {event.actor ? (
-                              <>
-                                <span aria-hidden>·</span>
-                                <span>By {event.actor}</span>
-                              </>
-                            ) : null}
-                          </span>
-                        </div>
-                        <p className="mt-2 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground/85">
-                          {event.detail}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <DialogFooter className="sm:justify-end">
-                <Button type="button" variant="secondary" onClick={() => setBookingAuditOpen(false)}>
-                  Back to booking details
-                </Button>
-              </DialogFooter>
-            </div>
           ) : detailBooking ? (
             <div className="space-y-6 text-sm">
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
@@ -1202,25 +1209,27 @@ export default function AdminBookingsPage() {
                             ? formatStatusLabel(paymentDetailSegment.payment_submitted_method)
                             : "—"}
                         </p>
-                        <p className="text-muted-foreground">
-                          {paymentDetailSegment.payment_submitted_at
-                            ? format(new Date(paymentDetailSegment.payment_submitted_at), "PPpp")
-                            : "—"}
-                        </p>
-                        {paymentDetailSegment.payment_proof_url ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="mt-2"
-                            onClick={() => {
-                              setPaymentProofZoom(1);
-                              setPaymentProofPreviewUrl(paymentDetailSegment.payment_proof_url!);
-                            }}
-                          >
-                            View payment proof
-                          </Button>
-                        ) : null}
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className="text-muted-foreground">
+                            {paymentDetailSegment.payment_submitted_at
+                              ? format(new Date(paymentDetailSegment.payment_submitted_at), "PPpp")
+                              : "—"}
+                          </p>
+                          {paymentDetailSegment.payment_proof_url ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => {
+                                setPaymentProofZoom(1);
+                                setPaymentProofPreviewUrl(paymentDetailSegment.payment_proof_url!);
+                              }}
+                            >
+                              View payment proof
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
                     ) : null}
                   </section>
@@ -1230,16 +1239,22 @@ export default function AdminBookingsPage() {
                     <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {detailSegments.length > 1 ? "Items" : "Reservation"}
                     </h4>
+                    {pendingConfirmationSegments.length > 0 ? (
+                      <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Select pending slots to confirm or reject, then submit in bulk.
+                        </p>
+                      </div>
+                    ) : null}
+                    {confirmedSegments.length > 0 ? (
+                      <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Select confirmed slots to complete, then submit in bulk.
+                        </p>
+                      </div>
+                    ) : null}
                     <ul className="space-y-3">
                       {detailSegments.map((segment) => {
-                        const isConfirming =
-                          updateStatus.isPending &&
-                          pendingStatusUpdate?.id === segment.id &&
-                          pendingStatusUpdate?.status === "confirmed";
-                        const isCompleting =
-                          updateStatus.isPending &&
-                          pendingStatusUpdate?.id === segment.id &&
-                          pendingStatusUpdate?.status === "completed";
                         return (
                           <li
                             key={segment.id}
@@ -1287,95 +1302,171 @@ export default function AdminBookingsPage() {
                             </div>
                             {segment.status === "pending_confirmation" ? (
                               <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                                <Button
-                                  size="sm"
-                                  disabled={updateStatus.isPending}
-                                  onClick={() =>
-                                    updateStatus.mutate({
-                                      id: segment.id,
-                                      status: "confirmed",
-                                    })
+                                <Select
+                                  value={pendingDecisionById[segment.id] ?? ""}
+                                  onValueChange={(value) =>
+                                    setPendingDecisionById((current) => ({
+                                      ...current,
+                                      [segment.id]: value as "confirmed" | "cancelled",
+                                    }))
                                   }
                                 >
-                                  {isConfirming ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Confirming…
-                                    </span>
-                                  ) : (
-                                    "Confirm payment"
-                                  )}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                  disabled={updateStatus.isPending}
-                                  onClick={() => setConfirmCancelBookingId(segment.id)}
-                                >
-                                  <X className="mr-1 h-3.5 w-3.5" /> Reject payment
-                                </Button>
+                                  <SelectTrigger className="h-8 w-[220px]">
+                                    <SelectValue placeholder="Select decision" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="confirmed">Confirm payment</SelectItem>
+                                    <SelectItem value="cancelled">Reject payment</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </div>
                             ) : null}
                             {segment.status === "confirmed" ? (
                               <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-xs"
-                                  disabled={updateStatus.isPending}
-                                  onClick={() => setConfirmCompleteBookingId(segment.id)}
+                                <Select
+                                  value={completionDecisionById[segment.id] ?? ""}
+                                  onValueChange={(value) =>
+                                    setCompletionDecisionById((current) => {
+                                      const next = { ...current };
+                                      if (value === "completed") {
+                                        next[segment.id] = "completed";
+                                      } else {
+                                        delete next[segment.id];
+                                      }
+                                      return next;
+                                    })
+                                  }
                                 >
-                                  {isCompleting ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Completing…
-                                    </span>
-                                  ) : (
-                                    "Complete"
-                                  )}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-destructive/20 text-xs text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                  disabled={updateStatus.isPending}
-                                  onClick={() => setConfirmCancelBookingId(segment.id)}
-                                >
-                                  <X className="mr-1 h-3.5 w-3.5" /> Cancel
-                                </Button>
+                                  <SelectTrigger className="h-8 w-[220px]">
+                                    <SelectValue placeholder="Select action" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="completed">Complete slot</SelectItem>
+                                    <SelectItem value="skip">No action</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </div>
                             ) : null}
                           </li>
                         );
                       })}
                     </ul>
+                    {pendingConfirmationSegments.length > 0 ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={selectedPendingUpdates.length === 0 || bulkUpdateStatuses.isPending}
+                          onClick={() => {
+                            if (selectedPendingUpdates.length === 0) {
+                              toast.error("Select at least one pending slot decision.");
+                              return;
+                            }
+                            setConfirmBulkPendingOpen(true);
+                          }}
+                        >
+                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit"}
+                        </Button>
+                      </div>
+                    ) : null}
+                    {confirmedSegments.length > 0 ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={selectedCompleteUpdates.length === 0 || bulkUpdateStatuses.isPending}
+                          onClick={() => {
+                            if (selectedCompleteUpdates.length === 0) {
+                              toast.error("Select at least one confirmed slot to complete.");
+                              return;
+                            }
+                            setConfirmBulkCompleteOpen(true);
+                          }}
+                        >
+                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit completion"}
+                        </Button>
+                      </div>
+                    ) : null}
                   </section>
                 </div>
               </div>
-              <div className="space-y-4">
-                <AdminBookingNoteFields
-                  key={`${detailBooking.id}-${detailBooking.admin_note_updated_at ?? ""}`}
-                  booking={detailBooking}
-                  onSave={(note) => saveAdminNote.mutate(note)}
-                  onRequestClear={() => setConfirmDeleteNoteOpen(true)}
-                  savePending={saveAdminNote.isPending}
-                  clearPending={clearAdminNote.isPending}
-                />
-                <section className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">Booking audit</h4>
+              <Tabs
+                value={detailPanelTab}
+                onValueChange={(value) => {
+                  const next = value as "notes" | "history";
+                  setDetailPanelTab(next);
+                  if (next === "history") setHistoryTabLoaded(true);
+                }}
+                className="space-y-3"
+              >
+                <TabsList className="grid h-9 w-full grid-cols-2">
+                  <TabsTrigger value="notes">Notes</TabsTrigger>
+                  <TabsTrigger value="history">History</TabsTrigger>
+                </TabsList>
+                <TabsContent value="notes" className="mt-0">
+                  <BookingNotesPanel
+                    notes={bookingNotes}
+                    legacyNote={adminNoteBooking ?? detailBooking}
+                    onAddNote={(note) => addBookingNote.mutate(note)}
+                    addPending={addBookingNote.isPending}
+                    loading={bookingNotesLoading}
+                  />
+                </TabsContent>
+                <TabsContent value="history" className="mt-0">
+                  <section className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                    {!historyTabLoaded ? (
                       <p className="text-xs text-muted-foreground">
-                        {bookingAuditEvents.length} events
+                        Open the History tab to load booking timeline.
                       </p>
-                    </div>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setBookingAuditOpen(true)}>
-                      View booking audit
-                    </Button>
-                  </div>
-                </section>
-              </div>
+                    ) : bookingAuditEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No booking audit events yet.</p>
+                    ) : (
+                      <ul className="space-y-2.5">
+                        {bookingAuditEvents.map((event) => (
+                          <li
+                            key={event.id}
+                            className="relative overflow-hidden rounded-lg border border-border/50 bg-muted/20 px-3 py-3 text-sm"
+                          >
+                            <span
+                              aria-hidden
+                              className={cn(
+                                "absolute inset-y-0 left-0 w-1",
+                                bookingAuditAccentClass(event.title),
+                              )}
+                            />
+                            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "w-fit text-[10px] uppercase tracking-wide",
+                                  bookingAuditBadgeClass(event.title),
+                                )}
+                              >
+                                {event.title}
+                              </Badge>
+                              <span className="inline-flex flex-wrap items-center justify-end gap-1 text-xs text-muted-foreground sm:max-w-[18rem]">
+                                <Calendar className="h-3 w-3" />
+                                <span>
+                                  {event.at ? format(new Date(event.at), "PPpp") : "Time not tracked"}
+                                </span>
+                                {event.actor ? (
+                                  <>
+                                    <span aria-hidden>·</span>
+                                    <span>By {event.actor}</span>
+                                  </>
+                                ) : null}
+                              </span>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground/85">
+                              {event.detail}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </TabsContent>
+              </Tabs>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Loading…</p>

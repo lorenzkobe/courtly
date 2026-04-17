@@ -253,6 +253,16 @@ export type Booking = {
   created_date?: string;
 };
 
+export type BookingAdminNote = {
+  id: string;
+  booking_id: string;
+  booking_group_id?: string | null;
+  author_user_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+};
+
 export type PaymentTransaction = {
   id: string;
   provider: string;

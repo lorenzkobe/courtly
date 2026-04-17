@@ -39,6 +39,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
     is_active: boolean;
     created_at: string;
   };
+  const { data: currentAssignments } = await supabase
+    .from("venue_admin_assignments")
+    .select("venue_id")
+    .eq("admin_user_id", id);
 
   const patch = (await req.json()) as Partial<ManagedUser> & {
     venue_ids?: string[];
@@ -146,13 +150,40 @@ export async function PATCH(req: Request, ctx: Ctx) {
     .from("venue_admin_assignments")
     .select("venue_id")
     .eq("admin_user_id", id);
+  const nextVenueIds =
+    role === "admin"
+      ? (assignments ?? []).map((assignment: { venue_id: string }) => assignment.venue_id)
+      : [];
+  const changedFields: Record<string, { before: unknown; after: unknown }> = {};
+  const setDiff = (field: string, before: unknown, after: unknown) => {
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    changedFields[field] = { before, after };
+  };
+  setDiff("first_name", current.first_name ?? "", firstName);
+  setDiff("last_name", current.last_name ?? "", lastName);
+  setDiff("birthdate", current.birthdate ? String(current.birthdate).slice(0, 10) : "", birthdate);
+  setDiff("mobile_number", current.mobile_number ?? "", mobileNumber);
+  setDiff("role", current.role, role);
+  setDiff(
+    "is_active",
+    current.is_active,
+    typeof patch.is_active === "boolean" ? patch.is_active : current.is_active,
+  );
+  const previousVenueIds = (currentAssignments ?? []).map(
+    (assignment: { venue_id: string }) => assignment.venue_id,
+  );
+  setDiff("venue_ids", previousVenueIds, nextVenueIds);
+  if (Object.keys(changedFields).length > 0) {
+    await supabase.from("user_change_audits").insert({
+      actor_user_id: user.id,
+      target_user_id: id,
+      changed_fields: changedFields,
+    });
+  }
   return NextResponse.json({
     ...next,
     email,
-    venue_ids:
-      role === "admin"
-        ? (assignments ?? []).map((assignment: { venue_id: string }) => assignment.venue_id)
-        : [],
+    venue_ids: nextVenueIds,
   });
 }
 

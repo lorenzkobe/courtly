@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { courtlyApi } from "@/lib/api/courtly-client";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const STORAGE_KEY = "courtly.favoriteVenueIds";
 const CHANGED = "courtly-favorites-changed";
@@ -44,7 +46,31 @@ function subscribe(onChange: () => void) {
 }
 
 export function useFavoriteVenueIds() {
+  const { user } = useAuth();
+  const hydratedUserIdRef = useRef<string | null>(null);
   const favoriteIds = useSyncExternalStore(subscribe, getSnapshot, () => serverEmpty);
+
+  useEffect(() => {
+    if (!user?.id) {
+      hydratedUserIdRef.current = null;
+      return;
+    }
+    if (hydratedUserIdRef.current === user.id) return;
+    hydratedUserIdRef.current = user.id;
+    void (async () => {
+      try {
+        const { data } = await courtlyApi.favoriteVenues.list();
+        const next = new Set(data.venue_ids);
+        const json = JSON.stringify([...next]);
+        window.localStorage.setItem(STORAGE_KEY, json);
+        cachedJson = json;
+        cachedSet = next;
+        window.dispatchEvent(new Event(CHANGED));
+      } catch {
+        // Keep local-only fallback when server fetch fails.
+      }
+    })();
+  }, [user?.id]);
 
   const toggleFavorite = useCallback((venueId: string) => {
     const next = new Set(getSnapshot());
@@ -59,7 +85,22 @@ export function useFavoriteVenueIds() {
     cachedJson = json;
     cachedSet = next;
     window.dispatchEvent(new Event(CHANGED));
-  }, []);
+    if (!user?.id) return;
+    void courtlyApi.favoriteVenues.set(venueId, next.has(venueId)).catch(() => {
+      const rollback = new Set(getSnapshot());
+      if (rollback.has(venueId)) rollback.delete(venueId);
+      else rollback.add(venueId);
+      const rollbackJson = JSON.stringify([...rollback]);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, rollbackJson);
+      } catch {
+        // noop
+      }
+      cachedJson = rollbackJson;
+      cachedSet = rollback;
+      window.dispatchEvent(new Event(CHANGED));
+    });
+  }, [user?.id]);
 
   const isFavorite = useCallback(
     (venueId: string) => favoriteIds.has(venueId),

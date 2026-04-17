@@ -78,7 +78,9 @@ type Props = {
   to: string;
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
+  onApply: () => void;
   onClear: () => void;
+  applyDisabled?: boolean;
   className?: string;
 };
 
@@ -87,7 +89,9 @@ export function RevenueDateFilter({
   to,
   onFromChange,
   onToChange,
+  onApply,
   onClear,
+  applyDisabled = false,
   className,
 }: Props) {
   return (
@@ -109,6 +113,14 @@ export function RevenueDateFilter({
         value={to}
         onChange={onToChange}
       />
+      <Button
+        type="button"
+        className="h-11 shrink-0 rounded-xl font-medium"
+        onClick={onApply}
+        disabled={applyDisabled}
+      >
+        Apply
+      </Button>
       <Button
         type="button"
         variant="secondary"

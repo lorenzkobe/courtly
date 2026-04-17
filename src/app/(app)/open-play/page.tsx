@@ -48,6 +48,8 @@ const lifecycleBadgeStyles: Record<string, string> = {
 
 export default function OpenPlayPage() {
   const [skillFilter, setSkillFilter] = useState("all");
+  const [managedFilter, setManagedFilter] = useState<"active" | "closed">("active");
+  const [managedSort, setManagedSort] = useState<"latest" | "oldest">("latest");
   const { user } = useAuth();
   const selectedSport = useSelectedSport((state) => state.sport);
   const [listNowMs, setListNowMs] = useState(() => Date.now());
@@ -95,6 +97,26 @@ export default function OpenPlayPage() {
       return display === "open" || display === "started";
     });
   }, [filtered, listNowMs]);
+  const managedSessions = useMemo(() => {
+    const rows = hostedSessions.filter((session) => {
+      const display = openPlayDisplayStatus(
+        session,
+        listNowMs,
+        session.approved_join_count ?? 0,
+      );
+      if (managedFilter === "active") {
+        return display === "open" || display === "started";
+      }
+      return display === "closed" || display === "cancelled";
+    });
+    rows.sort((a, b) => {
+      const left = Date.parse(`${a.date}T${a.start_time}`);
+      const right = Date.parse(`${b.date}T${b.start_time}`);
+      if (!Number.isFinite(left) || !Number.isFinite(right)) return 0;
+      return managedSort === "latest" ? right - left : left - right;
+    });
+    return rows;
+  }, [hostedSessions, listNowMs, managedFilter, managedSort]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
@@ -119,11 +141,43 @@ export default function OpenPlayPage() {
       {user ? (
         <Card className="mb-8 border-border/50">
           <CardContent className="space-y-4 p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Settings2 className="h-5 w-5 text-muted-foreground" />
-              <h2 className="font-heading text-lg font-semibold text-foreground">
-                Manage open plays
-              </h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-5 w-5 text-muted-foreground" />
+                <h2 className="font-heading text-lg font-semibold text-foreground">
+                  Manage open plays
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={managedFilter}
+                  onValueChange={(value) =>
+                    setManagedFilter(value as "active" | "closed")
+                  }
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={managedSort}
+                  onValueChange={(value) =>
+                    setManagedSort(value as "latest" | "oldest")
+                  }
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="latest">Latest first</SelectItem>
+                    <SelectItem value="oldest">Oldest first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">
               Sessions you created from your bookings. Open a card to approve join
@@ -131,18 +185,27 @@ export default function OpenPlayPage() {
             </p>
             {loadingHosted ? (
               <Skeleton className="h-20 w-full rounded-lg" />
-            ) : hostedSessions.length === 0 ? (
+            ) : managedSessions.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                You do not have any open play sessions yet. Create one from a confirmed
-                booking on{" "}
-                <Link href="/my-bookings" className="text-primary underline-offset-4 hover:underline">
-                  My bookings
-                </Link>
-                .
+                {managedFilter === "active" ? (
+                  <>
+                    You do not have any active open play sessions yet. Create one from a
+                    confirmed booking on{" "}
+                    <Link
+                      href="/my-bookings"
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      My bookings
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  "You do not have any closed open play sessions."
+                )}
               </p>
             ) : (
               <ul className="space-y-2">
-                {hostedSessions.map((session) => {
+                {managedSessions.map((session) => {
                   const display = openPlayDisplayStatus(
                     session,
                     listNowMs,

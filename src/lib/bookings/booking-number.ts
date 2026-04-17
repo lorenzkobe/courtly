@@ -12,10 +12,10 @@ function yyMmDdFromDate(dateLike?: string | Date | null): string {
   } else {
     date = new Date();
   }
-  const y = String(date.getUTCFullYear()).slice(-2);
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(date.getUTCDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
+  const yearTwoDigits = String(date.getUTCFullYear()).slice(-2);
+  const monthTwoDigits = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dayTwoDigits = String(date.getUTCDate()).padStart(2, "0");
+  return `${yearTwoDigits}${monthTwoDigits}${dayTwoDigits}`;
 }
 
 export function randomBookingSuffix(length = 6): string {

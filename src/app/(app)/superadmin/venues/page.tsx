@@ -60,6 +60,7 @@ const emptyForm = {
   accepts_maya: false,
   maya_account_name: "",
   maya_account_number: "",
+  booking_fee_override: "",
 };
 
 const amenityOptions = [
@@ -97,6 +98,7 @@ export default function SuperadminVenuesPage() {
   const [confirmApproveRequestId, setConfirmApproveRequestId] = useState<string | null>(null);
   const [confirmRejectRequestId, setConfirmRejectRequestId] = useState<string | null>(null);
   const [confirmRequestUpdateRequestId, setConfirmRequestUpdateRequestId] = useState<string | null>(null);
+  const [bookingFeeInput, setBookingFeeInput] = useState("");
 
   const {
     data: directoryPages,
@@ -149,6 +151,35 @@ export default function SuperadminVenuesPage() {
   });
   const pendingRequests = requestData?.requests ?? [];
   const isRefreshing = isFetching || isFetchingRequests;
+  const { data: bookingFeeSetting } = useQuery({
+    queryKey: ["superadmin", "booking-fee-setting"],
+    queryFn: async () => {
+      const { data } = await courtlyApi.superadmin.bookingFee.get();
+      return data;
+    },
+  });
+  const saveBookingFeeSetting = useMutation({
+    mutationFn: async () => {
+      const parsed = Number.parseFloat(
+        bookingFeeInput || String(bookingFeeSetting?.default_booking_fee ?? 0),
+      );
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error("Enter a non-negative booking fee.");
+      }
+      await courtlyApi.superadmin.bookingFee.update(parsed);
+      return parsed;
+    },
+    onSuccess: (nextValue) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["superadmin", "booking-fee-setting"],
+      });
+      setBookingFeeInput(String(nextValue));
+      toast.success("Default booking fee updated.");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not update booking fee setting."));
+    },
+  });
   const selectedRequest =
     pendingRequests.find((request) => request.id === selectedRequestId) ?? null;
 
@@ -225,6 +256,9 @@ export default function SuperadminVenuesPage() {
         accepts_maya: form.accepts_maya,
         maya_account_name: form.maya_account_name.trim(),
         maya_account_number: form.maya_account_number.trim(),
+        booking_fee_override: form.booking_fee_override.trim()
+          ? Number.parseFloat(form.booking_fee_override)
+          : null,
         add_admin_user_ids,
         remove_admin_user_ids,
         ...mapBody,
@@ -359,6 +393,10 @@ export default function SuperadminVenuesPage() {
       accepts_maya: a.accepts_maya ?? false,
       maya_account_name: a.maya_account_name ?? "",
       maya_account_number: a.maya_account_number ?? "",
+      booking_fee_override:
+        (a as Venue & { booking_fee_override?: number | null }).booking_fee_override != null
+          ? String((a as Venue & { booking_fee_override?: number | null }).booking_fee_override)
+          : "",
     });
     setDialogOpen(true);
   };
@@ -479,6 +517,35 @@ export default function SuperadminVenuesPage() {
       </PageHeader>
 
       <div className="mb-8 grid gap-6 lg:grid-cols-3 lg:items-start">
+        <Card className="border-border/60 lg:col-span-3">
+          <CardContent className="flex flex-wrap items-end gap-3 p-5">
+            <div className="min-w-[220px] flex-1">
+              <Label htmlFor="superadmin-default-booking-fee">Default booking fee</Label>
+              <Input
+                id="superadmin-default-booking-fee"
+                type="number"
+                min={0}
+                step="0.01"
+                value={
+                  bookingFeeInput ||
+                  String(bookingFeeSetting?.default_booking_fee ?? 0)
+                }
+                onChange={(event) => setBookingFeeInput(event.target.value)}
+                className="mt-1.5"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Venue-level overrides still take precedence when set.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => saveBookingFeeSetting.mutate()}
+              disabled={saveBookingFeeSetting.isPending}
+            >
+              {saveBookingFeeSetting.isPending ? "Saving..." : "Save booking fee"}
+            </Button>
+          </CardContent>
+        </Card>
         <section className="space-y-3 lg:col-span-2">
           <h2 className="font-heading text-lg font-semibold">Active venues</h2>
           {isLoading ? (
@@ -825,6 +892,23 @@ export default function SuperadminVenuesPage() {
                 onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
                 placeholder="+63 9XX XXX XXXX or landline"
               />
+            </div>
+            <div>
+              <Label>Venue booking fee override</Label>
+              <Input
+                className="mt-1.5"
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.booking_fee_override}
+                onChange={(e) =>
+                  setForm({ ...form, booking_fee_override: e.target.value })
+                }
+                placeholder="Leave blank to use default booking fee"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Optional. When set, this venue-specific fee overrides the superadmin default.
+              </p>
             </div>
             <div>
               <Label>Facebook page link</Label>

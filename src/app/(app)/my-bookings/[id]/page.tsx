@@ -361,8 +361,11 @@ export default function BookingDetailPage() {
   const bookingGroupIdForOpenPlay = booking?.booking_group_id ?? booking?.id;
   const openPlayFromBookingEligible =
     Boolean(isMyBooking) &&
-    segments.length > 0 &&
-    segments.every((s) => s.status === "confirmed");
+    segments.some((s) => s.status === "confirmed");
+  const confirmedSegments = useMemo(
+    () => segments.filter((segment) => segment.status === "confirmed"),
+    [segments],
+  );
 
   const { data: groupOpenPlaySessions = [] } = useQuery({
     queryKey: queryKeys.openPlay.list({
@@ -388,13 +391,13 @@ export default function BookingDetailPage() {
 
   const distinctCourtsForOpenPlay = useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of segments) {
+    for (const s of confirmedSegments) {
       if (!m.has(s.court_id)) {
         m.set(s.court_id, (s.court_name ?? "").trim() || "Court");
       }
     }
     return [...m.entries()].map(([id, name]) => ({ id, name }));
-  }, [segments]);
+  }, [confirmedSegments]);
 
   const openPlaySelectableCourts = useMemo(() => {
     const existing = new Set(
@@ -405,6 +408,7 @@ export default function BookingDetailPage() {
     return distinctCourtsForOpenPlay.filter((c) => {
       if (existing.has(c.id)) return false;
       const courtSegs = segments
+        .filter((s) => s.status === "confirmed")
         .filter((s) => s.court_id === c.id)
         .sort((a, b) => a.start_time.localeCompare(b.start_time));
       const first = courtSegs[0];
@@ -427,6 +431,23 @@ export default function BookingDetailPage() {
   }, [openPlaySelectableCourts, optOutCourtIds]);
 
   const visitCompleted = sessionFullyCompletedForReview(segments, statusNowMs);
+  const dateLabels = useMemo(() => {
+    const labels = new Set<string>();
+    for (const segment of segments) {
+      if (!segment.date) continue;
+      labels.add(format(new Date(`${segment.date}T12:00:00`), "EEE, MMM d, yyyy"));
+    }
+    return [...labels];
+  }, [segments]);
+  const segmentsByDate = useMemo(() => {
+    const groups = new Map<string, Booking[]>();
+    for (const segment of segments) {
+      const key = segment.date || "Unknown date";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(segment);
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [segments]);
   const shouldFetchReviews =
     Boolean(isMyBooking) && Boolean(visitCompleted) && Boolean(court?.venue_id);
 
@@ -444,8 +465,8 @@ export default function BookingDetailPage() {
   const [openPlayTitle, setOpenPlayTitle] = useState("");
   const [openPlaySlots, setOpenPlaySlots] = useState("");
   const [openPlayPrice, setOpenPlayPrice] = useState("");
-  const [openPlayDuprMin, setOpenPlayDuprMin] = useState("");
-  const [openPlayDuprMax, setOpenPlayDuprMax] = useState("");
+  const [openPlayDuprMin, setOpenPlayDuprMin] = useState("2");
+  const [openPlayDuprMax, setOpenPlayDuprMax] = useState("8");
   const [openPlayDescription, setOpenPlayDescription] = useState("");
   const [openPlayAcceptsGcash, setOpenPlayAcceptsGcash] = useState(false);
   const [openPlayGcashAccountName, setOpenPlayGcashAccountName] = useState("");
@@ -470,8 +491,8 @@ export default function BookingDetailPage() {
       if (!Number.isInteger(parsedDuprMin) || !Number.isInteger(parsedDuprMax)) {
         throw new Error("DUPR range must use whole numbers.");
       }
-      if (parsedDuprMin < 0 || parsedDuprMax > 8 || parsedDuprMin > parsedDuprMax) {
-        throw new Error("DUPR range must be between 0 and 8.");
+      if (parsedDuprMin < 2 || parsedDuprMax > 8 || parsedDuprMin > parsedDuprMax) {
+        throw new Error("DUPR range must be between 2 and 8.");
       }
       if (
         parsedPrice > 0 &&
@@ -593,7 +614,7 @@ export default function BookingDetailPage() {
         title="Booking details"
         subtitle={
           multi
-            ? `${sessionCourts.labelsInOrder.join(", ")} — one checkout, ${segments.length} reserved time${segments.length === 1 ? "" : "s"}`
+            ? `${dateLabels.join(" • ")} — ${sessionCourts.labelsInOrder.join(", ")} • ${segments.length} reserved slot${segments.length === 1 ? "" : "s"}`
             : (booking.court_name ?? "Court reservation")
         }
       >
@@ -654,7 +675,15 @@ export default function BookingDetailPage() {
                 Reserved time{multi ? "s" : ""}
               </p>
               <ul className="space-y-3">
-                {segments.map((segment) => {
+                {segmentsByDate.map(([dateKey, dateSegments]) => (
+                  <li key={dateKey} className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {dateKey === "Unknown date"
+                        ? "Unknown date"
+                        : format(new Date(`${dateKey}T12:00:00`), "EEE, MMM d, yyyy")}
+                    </p>
+                    <ul className="space-y-2">
+                      {dateSegments.map((segment) => {
                   const hours = bookingDurationHours(segment);
                   const segmentCourtLabel =
                     (segment.court_name ?? "").trim() || "Court";
@@ -665,11 +694,11 @@ export default function BookingDetailPage() {
                   const openPlaySessionId = openPlaySessionIdByCourtId.get(
                     segment.court_id,
                   );
-                  return (
-                    <li
-                      key={segment.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 p-3"
-                    >
+                        return (
+                          <li
+                            key={segment.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 p-3"
+                          >
                       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 flex-col gap-1">
                           {sessionCourts.multiple ? (
@@ -713,9 +742,12 @@ export default function BookingDetailPage() {
                           </span>
                         </div>
                       </div>
-                    </li>
-                  );
-                })}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </li>
+                ))}
               </ul>
             </div>
 

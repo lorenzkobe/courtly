@@ -1,6 +1,7 @@
 import { http } from "@/lib/http-client";
 import type {
   AdminVenueWorkspaceResponse,
+  BookingAdminNote,
   Booking,
   BookingCheckoutResponse,
   BookingDetailContextResponse,
@@ -226,6 +227,11 @@ export const courtlyApi = {
         `/api/bookings/${id}/submit-proof`,
         body,
       ),
+    cancelPending: (body: { booking_id?: string; booking_group_id?: string }) =>
+      http.post<{ ok: boolean; cancelled_booking_ids: string[] }>(
+        "/api/bookings/cancel-pending",
+        body,
+      ),
     update: (id: string, data: Partial<Booking>) =>
       http.patch<Booking>(`/api/bookings/${id}`, data),
     setAdminNote: (
@@ -385,12 +391,30 @@ export const courtlyApi = {
     ) => http.post<{ ok: boolean }>(`/api/admin/venues/${venueId}/closures/bulk`, body),
   },
 
+  adminBookings: {
+    bulkStatus: (updates: Array<{ id: string; status: Booking["status"] }>) =>
+      http.patch<{ updates: Booking[] }>("/api/admin/bookings/bulk-status", { updates }),
+    listNotes: (bookingId: string) =>
+      http.get<{ notes: BookingAdminNote[] }>(`/api/admin/bookings/${bookingId}/notes`),
+    addNote: (bookingId: string, note: string) =>
+      http.post<{ note: BookingAdminNote }>(`/api/admin/bookings/${bookingId}/notes`, { note }),
+  },
+
   superadmin: {
     directory: (params?: {
       users_cursor?: string | null;
       venues_cursor?: string | null;
       limit?: number;
     }) => http.get<SuperadminDirectoryPagedResponse>("/api/superadmin/directory", { params }),
+    bookingFee: {
+      get: () =>
+        http.get<{ default_booking_fee: number }>("/api/superadmin/settings/booking-fee"),
+      update: (defaultBookingFee: number) =>
+        http.patch<{ ok: boolean; default_booking_fee: number }>(
+          "/api/superadmin/settings/booking-fee",
+          { default_booking_fee: defaultBookingFee },
+        ),
+    },
   },
 
   assignedVenues: {
@@ -445,6 +469,15 @@ export const courtlyApi = {
       http.get<NotificationsListResponse>("/api/notifications", { params }),
     markAllRead: () => http.patch<{ ok: boolean }>("/api/notifications"),
     markRead: (id: string) => http.patch<{ ok: boolean }>(`/api/notifications/${id}`),
+  },
+
+  favoriteVenues: {
+    list: () => http.get<{ venue_ids: string[] }>("/api/favorite-venues"),
+    set: (venueId: string, favorite: boolean) =>
+      http.patch<{ ok: boolean }>("/api/favorite-venues", {
+        venue_id: venueId,
+        favorite,
+      }),
   },
 
   dashboard: {

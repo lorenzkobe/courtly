@@ -24,6 +24,8 @@ function VenueRevenueInner() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
+  const [draftFrom, setDraftFrom] = useState(() => from);
+  const [draftTo, setDraftTo] = useState(() => to);
 
   const setRange = useCallback(
     (nextFrom: string, nextTo: string) => {
@@ -125,11 +127,13 @@ function VenueRevenueInner() {
 
       <div className="mb-6">
         <RevenueDateFilter
-          from={from}
-          to={to}
-          onFromChange={(v) => setRange(v, to)}
-          onToChange={(v) => setRange(from, v)}
+          from={draftFrom}
+          to={draftTo}
+          onFromChange={setDraftFrom}
+          onToChange={setDraftTo}
+          onApply={() => setRange(draftFrom, draftTo)}
           onClear={() => setRange("", "")}
+          applyDisabled={draftFrom === from && draftTo === to}
         />
         {from || to ? (
           <p className="mt-2 text-xs text-muted-foreground">

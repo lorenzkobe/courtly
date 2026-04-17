@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
-import { createOpenPlayComment, getOpenPlayById } from "@/lib/data/courtly-db";
+import {
+  createOpenPlayComment,
+  getOpenPlayById,
+  getOpenPlayJoinRequestByUser,
+} from "@/lib/data/courtly-db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -13,6 +17,17 @@ export async function POST(req: Request, ctx: Ctx) {
   const session = await getOpenPlayById(id);
   if (!session) {
     return NextResponse.json({ error: "Open play not found" }, { status: 404 });
+  }
+  const isHost = session.host_user_id === user.id;
+  if (!isHost) {
+    const myRequest = await getOpenPlayJoinRequestByUser(id, user.id);
+    const allowedStatuses = new Set(["pending_approval", "approved", "payment_locked"]);
+    if (!myRequest || !allowedStatuses.has(myRequest.status)) {
+      return NextResponse.json(
+        { error: "Only requested or accepted players can comment" },
+        { status: 403 },
+      );
+    }
   }
   const body = (await req.json()) as { comment?: string };
   const commentText = body.comment?.trim();

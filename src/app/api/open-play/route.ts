@@ -11,6 +11,7 @@ import {
   getOpenPlaySessionByBookingGroupAndCourt,
 } from "@/lib/data/courtly-db";
 import { bookingSegmentStartMs } from "@/lib/bookings/booking-time-display";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 import type { CourtSport } from "@/lib/types/courtly";
 
 export async function GET(req: Request) {
@@ -138,12 +139,12 @@ export async function POST(req: Request) {
   if (
     !Number.isInteger(duprMin) ||
     !Number.isInteger(duprMax) ||
-    duprMin < 0 ||
+    duprMin < 2 ||
     duprMax > 8 ||
     duprMin > duprMax
   ) {
     return NextResponse.json(
-      { error: "DUPR range must use whole numbers between 0 and 8" },
+      { error: "DUPR range must use whole numbers between 2 and 8" },
       { status: 400 },
     );
   }
@@ -159,9 +160,21 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (acceptsGcash && !isValidPhMobile(gcashAccountNumber)) {
+    return NextResponse.json(
+      { error: "GCash account number must be a valid PH mobile number" },
+      { status: 400 },
+    );
+  }
   if (acceptsMaya && (!mayaAccountName || !mayaAccountNumber)) {
     return NextResponse.json(
       { error: "Maya account name and number are required when enabled" },
+      { status: 400 },
+    );
+  }
+  if (acceptsMaya && !isValidPhMobile(mayaAccountNumber)) {
+    return NextResponse.json(
+      { error: "Maya account number must be a valid PH mobile number" },
       { status: 400 },
     );
   }
