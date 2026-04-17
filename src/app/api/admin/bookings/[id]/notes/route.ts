@@ -98,7 +98,7 @@ export async function POST(req: Request, ctx: Ctx) {
       author_user_id: user!.id,
       author_name: user!.full_name || user!.email,
       body: note,
-    })
+    } as never)
     .select("*")
     .single();
 

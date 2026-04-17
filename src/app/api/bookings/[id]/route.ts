@@ -322,16 +322,18 @@ export async function PATCH(req: Request, ctx: Ctx) {
   });
   if (patch.status === "confirmed" && booking.player_email?.trim()) {
     const admin = createSupabaseAdminClient();
-    await admin.from("outbound_emails").insert({
-      to_email: booking.player_email.trim(),
-      subject: "Your booking is confirmed",
-      body: `Hi ${booking.player_name ?? "there"}, your booking #${booking.booking_number ?? id} has been confirmed.`,
-      metadata: {
-        booking_id: id,
-        booking_number: booking.booking_number ?? null,
-      },
-      status: "queued",
-    });
+    await admin
+      .from("outbound_emails")
+      .insert({
+        to_email: booking.player_email.trim(),
+        subject: "Your booking is confirmed",
+        body: `Hi ${booking.player_name ?? "there"}, your booking #${booking.booking_number ?? id} has been confirmed.`,
+        metadata: {
+          booking_id: id,
+          booking_number: booking.booking_number ?? null,
+        },
+        status: "queued",
+      } as never);
   }
   return NextResponse.json(hydrateBooking(updated as Booking));
 }
