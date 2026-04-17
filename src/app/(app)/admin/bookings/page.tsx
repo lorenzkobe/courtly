@@ -575,9 +575,10 @@ export default function AdminBookingsPage() {
     return {
       ...detailBooking,
       admin_note: latestAdminNoteSegment.admin_note ?? "",
-      admin_note_updated_at: latestAdminNoteSegment.admin_note_updated_at ?? null,
-      admin_note_updated_by_name: latestAdminNoteSegment.admin_note_updated_by_name ?? null,
-      admin_note_updated_by_user_id: latestAdminNoteSegment.admin_note_updated_by_user_id ?? null,
+      admin_note_updated_at: latestAdminNoteSegment.admin_note_updated_at ?? undefined,
+      admin_note_updated_by_name: latestAdminNoteSegment.admin_note_updated_by_name ?? undefined,
+      admin_note_updated_by_user_id:
+        latestAdminNoteSegment.admin_note_updated_by_user_id ?? undefined,
     } satisfies Booking;
   }, [detailBooking, latestAdminNoteSegment]);
   const bookingNotes = bookingNotesPayload?.notes ?? [];
