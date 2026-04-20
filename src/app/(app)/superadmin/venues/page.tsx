@@ -161,9 +161,10 @@ export default function SuperadminVenuesPage() {
   });
   const saveBookingFeeSetting = useMutation({
     mutationFn: async () => {
-      const parsed = Number.parseFloat(
-        bookingFeeInput || String(bookingFeeSetting?.default_booking_fee ?? 0),
-      );
+      const raw =
+        bookingFeeInput.trim() ||
+        String(bookingFeeSetting?.default_booking_fee ?? 0);
+      const parsed = Number.parseInt(raw, 10);
       if (!Number.isFinite(parsed) || parsed < 0) {
         throw new Error("Enter a non-negative whole-number booking fee (pesos).");
       }
@@ -520,34 +521,39 @@ export default function SuperadminVenuesPage() {
 
       <div className="mb-8 grid gap-6 lg:grid-cols-3 lg:items-start">
         <Card className="border-border/60 lg:col-span-3">
-          <CardContent className="flex flex-wrap items-end gap-3 p-5">
-            <div className="min-w-[220px] flex-1">
-              <Label htmlFor="superadmin-default-booking-fee">Default booking fee</Label>
-              <Input
-                id="superadmin-default-booking-fee"
-                type="number"
-                min={0}
-                step={1}
-                inputMode="numeric"
-                value={
-                  bookingFeeInput ||
-                  String(bookingFeeSetting?.default_booking_fee ?? 0)
-                }
-                onChange={(event) => setBookingFeeInput(event.target.value)}
-                className="mt-1.5"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Venue-level overrides still take precedence when set.
-              </p>
+          <CardContent className="space-y-2 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label htmlFor="superadmin-default-booking-fee">Default booking fee</Label>
+                <Input
+                  id="superadmin-default-booking-fee"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={
+                    bookingFeeInput ||
+                    String(bookingFeeSetting?.default_booking_fee ?? 0)
+                  }
+                  onChange={(event) => {
+                    const digitsOnly = event.target.value.replace(/\D/g, "");
+                    setBookingFeeInput(digitsOnly);
+                  }}
+                  className="h-11 tabular-nums"
+                />
+              </div>
+              <Button
+                type="button"
+                className="h-11 w-full shrink-0 sm:w-auto"
+                onClick={() => saveBookingFeeSetting.mutate()}
+                disabled={saveBookingFeeSetting.isPending}
+              >
+                {saveBookingFeeSetting.isPending ? "Saving..." : "Save booking fee"}
+              </Button>
             </div>
-            <Button
-              type="button"
-              className="shrink-0"
-              onClick={() => saveBookingFeeSetting.mutate()}
-              disabled={saveBookingFeeSetting.isPending}
-            >
-              {saveBookingFeeSetting.isPending ? "Saving..." : "Save booking fee"}
-            </Button>
+            <p className="text-xs text-muted-foreground">
+              Venue-level overrides still take precedence when set.
+            </p>
           </CardContent>
         </Card>
         <section className="space-y-3 lg:col-span-2">

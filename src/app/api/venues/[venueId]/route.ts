@@ -46,6 +46,7 @@ function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
     "accepts_maya",
     "maya_account_name",
     "maya_account_number",
+    "booking_fee_override",
   ];
   const out: Partial<Venue> = {};
   for (const key of keys) {
@@ -168,12 +169,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
   applyVenueMapCoordsToPatch(venuePatch as Record<string, unknown>, mapParse);
 
   if (user.role === "superadmin") {
-    if (Object.prototype.hasOwnProperty.call(patchSansMap, "booking_fee_override")) {
-      const raw = patchSansMap.booking_fee_override;
-      if (raw === null || raw === "") {
+    if (Object.prototype.hasOwnProperty.call(venuePatch, "booking_fee_override")) {
+      const raw = venuePatch.booking_fee_override as unknown;
+      if (
+        raw == null ||
+        (typeof raw === "string" && raw.trim() === "")
+      ) {
         venuePatch.booking_fee_override = null;
       } else {
-        const n = Number(raw);
+        const n = typeof raw === "number" ? raw : Number(raw);
         if (!Number.isFinite(n) || n < 0) {
           return NextResponse.json(
             { error: "booking_fee_override must be a non-negative number when set." },
@@ -183,6 +187,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
         venuePatch.booking_fee_override = normalizeBookingFee(n);
       }
     }
+  } else {
+    delete venuePatch.booking_fee_override;
   }
 
   if (venuePatch.hourly_rate_windows !== undefined) {

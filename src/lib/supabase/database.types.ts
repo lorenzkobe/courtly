@@ -44,6 +44,23 @@ export type Database = {
           created_at?: string;
         };
       };
+      platform_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value: Json;
+          updated_at?: string;
+        };
+        Update: {
+          key?: string;
+          value?: Json;
+          updated_at?: string;
+        };
+      };
       [key: string]: {
         Row: Record<string, unknown>;
         Insert: Record<string, unknown>;

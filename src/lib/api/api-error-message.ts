@@ -6,7 +6,13 @@ function messageFromResponseData(data: unknown): string | undefined {
   if (!data || typeof data !== "object") return undefined;
   const d = data as Record<string, unknown>;
   const err = d.error;
-  if (typeof err === "string" && err.trim()) return err.trim();
+  const details = d.details;
+  if (typeof err === "string" && err.trim()) {
+    if (typeof details === "string" && details.trim()) {
+      return `${err.trim()}: ${details.trim()}`;
+    }
+    return err.trim();
+  }
   if (err && typeof err === "object" && "message" in err) {
     const nested = (err as { message?: unknown }).message;
     if (typeof nested === "string" && nested.trim()) return nested.trim();
