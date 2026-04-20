@@ -230,6 +230,86 @@ export async function emitBookingLifecycleNotifications(params: {
   }
 }
 
+/** One digest notification per booker for admin bulk status changes (not per court row). */
+export async function emitBulkBookingLifecycleNotifications(
+  items: Array<{ prev: Booking; nextRow: Record<string, unknown>; bookingId: string }>,
+): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const completedTransitions = items.filter((item) => {
+      const prev = snapshotFromBooking(item.prev);
+      const next = snapshotFromBookingRow(item.nextRow, prev);
+      return next.status === "completed" && prev.status !== "completed";
+    });
+    for (const item of completedTransitions) {
+      await emitBookingLifecycleNotifications({
+        prev: item.prev,
+        nextRow: item.nextRow,
+        bookingId: item.bookingId,
+        skipReviewReminder: false,
+      });
+    }
+
+    const digestItems = items.filter((item) => {
+      const prev = snapshotFromBooking(item.prev);
+      const next = snapshotFromBookingRow(item.nextRow, prev);
+      return !(next.status === "completed" && prev.status !== "completed");
+    });
+    if (digestItems.length === 0) return;
+
+    type Agg = { confirmed: number; cancelled: number; firstBookingId: string };
+    const byUser = new Map<string, Agg>();
+    for (const item of digestItems) {
+      const prev = snapshotFromBooking(item.prev);
+      const next = snapshotFromBookingRow(item.nextRow, prev);
+      let uid = next.user_id ?? prev.user_id;
+      if (!uid) {
+        uid = (await fetchBookingOwnerUserId(item.bookingId)) ?? null;
+      }
+      if (!uid) continue;
+      let agg = byUser.get(uid);
+      if (!agg) {
+        agg = { confirmed: 0, cancelled: 0, firstBookingId: item.bookingId };
+        byUser.set(uid, agg);
+      }
+      if (next.status === "confirmed" && prev.status !== "confirmed") {
+        agg.confirmed += 1;
+      } else if (next.status === "cancelled" && prev.status !== "cancelled") {
+        agg.cancelled += 1;
+      }
+    }
+
+    const inputs: EmitNotificationInput[] = [];
+    for (const [userId, agg] of byUser) {
+      const parts: string[] = [];
+      if (agg.confirmed > 0) {
+        parts.push(
+          `${agg.confirmed} booking${agg.confirmed > 1 ? "s" : ""} confirmed`,
+        );
+      }
+      if (agg.cancelled > 0) {
+        parts.push(
+          `${agg.cancelled} booking${agg.cancelled > 1 ? "s" : ""} cancelled`,
+        );
+      }
+      if (parts.length === 0) continue;
+      inputs.push({
+        user_id: userId,
+        type: "booking_changed",
+        title: "Bookings updated",
+        body: `The venue updated your reservations: ${parts.join("; ")}.`,
+        metadata: {
+          booking_id: agg.firstBookingId,
+          target_path: `/my-bookings/${agg.firstBookingId}`,
+        },
+      });
+    }
+    await safeEmitMany(inputs);
+  } catch (e) {
+    console.error("[courtly:notifications] bulk booking lifecycle", e);
+  }
+}
+
 async function emitBookingLifecycleNotificationsInner(params: {
   prev: Booking;
   nextRow: Record<string, unknown>;

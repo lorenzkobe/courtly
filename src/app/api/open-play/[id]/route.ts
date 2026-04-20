@@ -121,11 +121,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
     ? Number(patch.price_per_player)
     : Number(existing.price_per_player ?? existing.fee ?? 0);
   const nextDuprMin = Object.prototype.hasOwnProperty.call(patch, "dupr_min")
-    ? Number(patch.dupr_min)
-    : Number(existing.dupr_min ?? 2);
+    ? Math.round(Number(patch.dupr_min) * 100) / 100
+    : Math.round(Number(existing.dupr_min ?? 2) * 100) / 100;
   const nextDuprMax = Object.prototype.hasOwnProperty.call(patch, "dupr_max")
-    ? Number(patch.dupr_max)
-    : Number(existing.dupr_max ?? 8);
+    ? Math.round(Number(patch.dupr_max) * 100) / 100
+    : Math.round(Number(existing.dupr_max ?? 8) * 100) / 100;
   if (!nextTitle) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
@@ -142,14 +142,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
   if (
-    !Number.isInteger(nextDuprMin) ||
-    !Number.isInteger(nextDuprMax) ||
+    !Number.isFinite(nextDuprMin) ||
+    !Number.isFinite(nextDuprMax) ||
     nextDuprMin < 2 ||
     nextDuprMax > 8 ||
     nextDuprMin > nextDuprMax
   ) {
     return NextResponse.json(
-      { error: "DUPR range must use whole numbers between 2 and 8" },
+      { error: "DUPR range must be between 2.00 and 8.00 (decimals allowed)" },
       { status: 400 },
     );
   }

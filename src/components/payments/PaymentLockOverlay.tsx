@@ -76,9 +76,9 @@ export default function PaymentLockOverlay({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-md border-primary/25 shadow-2xl">
-        <CardContent className="space-y-5 p-6">
+    <div className="fixed inset-0 z-50 flex min-h-0 items-center justify-center bg-background/85 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-4">
+      <Card className="flex max-h-[min(100dvh-1.5rem,100svh-1.5rem)] w-full max-w-md min-h-0 flex-col border-primary/25 shadow-2xl">
+        <CardContent className="flex min-h-0 flex-1 flex-col space-y-5 overflow-y-auto overscroll-contain p-5 sm:p-6">
           <div className="space-y-1.5 text-center">
             <h2 className="font-heading text-xl font-semibold tracking-tight">
               Complete your payment

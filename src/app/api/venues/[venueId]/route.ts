@@ -22,6 +22,7 @@ import {
   validateVenuePriceRanges,
 } from "@/lib/venue-price-ranges";
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
+import { normalizeBookingFee } from "@/lib/platform-fee";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { isValidPhMobile, normalizePhMobile } from "@/lib/validation/person-fields";
 
@@ -165,6 +166,24 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const venuePatch = pickVenuePatch(patchSansMap) as Partial<Venue>;
   applyVenueMapCoordsToPatch(venuePatch as Record<string, unknown>, mapParse);
+
+  if (user.role === "superadmin") {
+    if (Object.prototype.hasOwnProperty.call(patchSansMap, "booking_fee_override")) {
+      const raw = patchSansMap.booking_fee_override;
+      if (raw === null || raw === "") {
+        venuePatch.booking_fee_override = null;
+      } else {
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0) {
+          return NextResponse.json(
+            { error: "booking_fee_override must be a non-negative number when set." },
+            { status: 400 },
+          );
+        }
+        venuePatch.booking_fee_override = normalizeBookingFee(n);
+      }
+    }
+  }
 
   if (venuePatch.hourly_rate_windows !== undefined) {
     const parsed = parseRateWindowsFromUnknown(venuePatch.hourly_rate_windows);

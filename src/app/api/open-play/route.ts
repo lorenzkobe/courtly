@@ -107,8 +107,8 @@ export async function POST(req: Request) {
   const body = (await req.json()) as CreateOpenPlayPayload;
   const bookingGroupId = body.booking_group_id?.trim();
   const title = body.title?.trim();
-  const duprMin = Number(body.dupr_min);
-  const duprMax = Number(body.dupr_max);
+  const duprMin = Math.round(Number(body.dupr_min) * 100) / 100;
+  const duprMax = Math.round(Number(body.dupr_max) * 100) / 100;
   const maxPlayers = Number(body.max_players);
   const pricePerPlayer = Number(body.price_per_player ?? 0);
   const acceptsGcash = Boolean(body.accepts_gcash);
@@ -137,14 +137,14 @@ export async function POST(req: Request) {
     );
   }
   if (
-    !Number.isInteger(duprMin) ||
-    !Number.isInteger(duprMax) ||
+    !Number.isFinite(duprMin) ||
+    !Number.isFinite(duprMax) ||
     duprMin < 2 ||
     duprMax > 8 ||
     duprMin > duprMax
   ) {
     return NextResponse.json(
-      { error: "DUPR range must use whole numbers between 2 and 8" },
+      { error: "DUPR range must be between 2.00 and 8.00 (decimals allowed)" },
       { status: 400 },
     );
   }
@@ -185,12 +185,6 @@ export async function POST(req: Request) {
   if (segments.length === 0) {
     return NextResponse.json({ error: "Booking group not found" }, { status: 404 });
   }
-  if (segments.some((segment) => segment.status !== "confirmed")) {
-    return NextResponse.json(
-      { error: "Only confirmed booking groups can create open play" },
-      { status: 409 },
-    );
-  }
   const ownsBooking = segments.some(
     (segment) =>
       segment.user_id === user.id ||
@@ -211,6 +205,27 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "court_ids must match courts in this booking" },
         { status: 400 },
+      );
+    }
+  }
+
+  for (const courtId of requestedCourtIds) {
+    const forCourt = segments.filter((s) => s.court_id === courtId);
+    if (forCourt.length === 0) {
+      return NextResponse.json(
+        { error: "No booking segments for one of the selected courts" },
+        { status: 400 },
+      );
+    }
+    const allowedSegment = new Set<typeof forCourt[number]["status"]>(["confirmed", "completed"]);
+    const allEligible = forCourt.every((s) => allowedSegment.has(s.status));
+    if (!allEligible) {
+      return NextResponse.json(
+        {
+          error:
+            "Each selected court must have only confirmed or completed booking segments to create open play (other courts in the checkout may be cancelled)",
+        },
+        { status: 409 },
       );
     }
   }

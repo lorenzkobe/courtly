@@ -6,7 +6,7 @@ import {
   listVenueAdminAssignmentsByAdminUser,
   updateRow,
 } from "@/lib/data/courtly-db";
-import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
+import { emitBulkBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
 import type { Booking } from "@/lib/types/courtly";
 
 type BulkStatusItem = {
@@ -35,6 +35,11 @@ export async function PATCH(req: Request) {
   const nowIso = new Date().toISOString();
   const actorName = user.full_name || user.email || "Unknown";
   const results: Booking[] = [];
+  const lifecycleItems: Array<{
+    prev: Booking;
+    nextRow: Record<string, unknown>;
+    bookingId: string;
+  }> = [];
 
   for (const update of updates) {
     const bookingId = update.id?.trim();
@@ -62,13 +67,15 @@ export async function PATCH(req: Request) {
       status_updated_by_name: actorName,
       status_updated_at: nowIso,
     });
-    await emitBookingLifecycleNotifications({
+    lifecycleItems.push({
       prev: booking,
       nextRow: updated as Record<string, unknown>,
       bookingId,
     });
     results.push(updated as Booking);
   }
+
+  await emitBulkBookingLifecycleNotifications(lifecycleItems);
 
   return NextResponse.json({ updates: results });
 }

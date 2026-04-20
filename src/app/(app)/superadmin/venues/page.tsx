@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { normalizeBookingFee } from "@/lib/platform-fee";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
@@ -164,10 +165,11 @@ export default function SuperadminVenuesPage() {
         bookingFeeInput || String(bookingFeeSetting?.default_booking_fee ?? 0),
       );
       if (!Number.isFinite(parsed) || parsed < 0) {
-        throw new Error("Enter a non-negative booking fee.");
+        throw new Error("Enter a non-negative whole-number booking fee (pesos).");
       }
-      await courtlyApi.superadmin.bookingFee.update(parsed);
-      return parsed;
+      const normalized = normalizeBookingFee(parsed);
+      await courtlyApi.superadmin.bookingFee.update(normalized);
+      return normalized;
     },
     onSuccess: (nextValue) => {
       void queryClient.invalidateQueries({
@@ -257,7 +259,7 @@ export default function SuperadminVenuesPage() {
         maya_account_name: form.maya_account_name.trim(),
         maya_account_number: form.maya_account_number.trim(),
         booking_fee_override: form.booking_fee_override.trim()
-          ? Number.parseFloat(form.booking_fee_override)
+          ? normalizeBookingFee(Number.parseFloat(form.booking_fee_override))
           : null,
         add_admin_user_ids,
         remove_admin_user_ids,
@@ -394,8 +396,8 @@ export default function SuperadminVenuesPage() {
       maya_account_name: a.maya_account_name ?? "",
       maya_account_number: a.maya_account_number ?? "",
       booking_fee_override:
-        (a as Venue & { booking_fee_override?: number | null }).booking_fee_override != null
-          ? String((a as Venue & { booking_fee_override?: number | null }).booking_fee_override)
+        a.booking_fee_override != null && a.booking_fee_override !== undefined
+          ? String(a.booking_fee_override)
           : "",
     });
     setDialogOpen(true);
@@ -525,7 +527,8 @@ export default function SuperadminVenuesPage() {
                 id="superadmin-default-booking-fee"
                 type="number"
                 min={0}
-                step="0.01"
+                step={1}
+                inputMode="numeric"
                 value={
                   bookingFeeInput ||
                   String(bookingFeeSetting?.default_booking_fee ?? 0)
@@ -539,6 +542,7 @@ export default function SuperadminVenuesPage() {
             </div>
             <Button
               type="button"
+              className="shrink-0"
               onClick={() => saveBookingFeeSetting.mutate()}
               disabled={saveBookingFeeSetting.isPending}
             >
@@ -899,7 +903,8 @@ export default function SuperadminVenuesPage() {
                 className="mt-1.5"
                 type="number"
                 min={0}
-                step="0.01"
+                step={1}
+                inputMode="numeric"
                 value={form.booking_fee_override}
                 onChange={(e) =>
                   setForm({ ...form, booking_fee_override: e.target.value })

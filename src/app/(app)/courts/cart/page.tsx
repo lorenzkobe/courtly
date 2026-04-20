@@ -267,6 +267,15 @@ export default function BookingCartPage() {
         booking_group_id: paymentOverlay.booking_group_id,
       });
     },
+    onMutate: () => {
+      const previous = paymentOverlay;
+      const previousProof = optimizedProof;
+      const previousMethod = selectedPaymentMethod;
+      setPaymentOverlay(null);
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      return { previousOverlay: previous, previousProof, previousMethod };
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
@@ -275,7 +284,12 @@ export default function BookingCartPage() {
       setSelectedPaymentMethod(null);
       toast.success("Pending booking cancelled. Slots are now available again.");
     },
-    onError: (error) => {
+    onError: (error, _vars, ctx) => {
+      if (ctx?.previousOverlay) {
+        setPaymentOverlay(ctx.previousOverlay);
+      }
+      setOptimizedProof(ctx?.previousProof ?? null);
+      setSelectedPaymentMethod(ctx?.previousMethod ?? null);
       toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
     },
   });

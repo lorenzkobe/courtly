@@ -45,8 +45,10 @@ import {
   sessionFullyCompletedForReview,
   sessionStatusLabel,
 } from "@/lib/bookings/session-display-status";
+import { isValidOpenPlayDuprRange, roundDuprBound } from "@/lib/open-play/dupr-range";
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 const statusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
@@ -359,11 +361,25 @@ export default function BookingDetailPage() {
     booking.player_email?.toLowerCase() === user.email.toLowerCase();
 
   const bookingGroupIdForOpenPlay = booking?.booking_group_id ?? booking?.id;
+
+  const segmentOkForOpenPlayHost = (status: Booking["status"]) =>
+    status === "confirmed" || status === "completed";
+
   const openPlayFromBookingEligible =
     Boolean(isMyBooking) &&
-    segments.some((s) => s.status === "confirmed");
-  const confirmedSegments = useMemo(
-    () => segments.filter((segment) => segment.status === "confirmed"),
+    (() => {
+      const courtIds = [...new Set(segments.map((s) => s.court_id))];
+      return courtIds.some((courtId) => {
+        const forCourt = segments.filter((s) => s.court_id === courtId);
+        return (
+          forCourt.length > 0 &&
+          forCourt.every((s) => segmentOkForOpenPlayHost(s.status))
+        );
+      });
+    })();
+
+  const eligibleSegmentsForOpenPlay = useMemo(
+    () => segments.filter((segment) => segmentOkForOpenPlayHost(segment.status)),
     [segments],
   );
 
@@ -391,13 +407,13 @@ export default function BookingDetailPage() {
 
   const distinctCourtsForOpenPlay = useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of confirmedSegments) {
+    for (const s of eligibleSegmentsForOpenPlay) {
       if (!m.has(s.court_id)) {
         m.set(s.court_id, (s.court_name ?? "").trim() || "Court");
       }
     }
     return [...m.entries()].map(([id, name]) => ({ id, name }));
-  }, [confirmedSegments]);
+  }, [eligibleSegmentsForOpenPlay]);
 
   const openPlaySelectableCourts = useMemo(() => {
     const existing = new Set(
@@ -408,7 +424,7 @@ export default function BookingDetailPage() {
     return distinctCourtsForOpenPlay.filter((c) => {
       if (existing.has(c.id)) return false;
       const courtSegs = segments
-        .filter((s) => s.status === "confirmed")
+        .filter((s) => segmentOkForOpenPlayHost(s.status))
         .filter((s) => s.court_id === c.id)
         .sort((a, b) => a.start_time.localeCompare(b.start_time));
       const first = courtSegs[0];
@@ -480,19 +496,22 @@ export default function BookingDetailPage() {
       if (!booking) throw new Error("Booking missing");
       const parsedSlots = Number.parseInt(openPlaySlots.trim(), 10);
       const parsedPrice = Number.parseInt(openPlayPrice.trim(), 10);
-      const parsedDuprMin = Number.parseInt(openPlayDuprMin.trim(), 10);
-      const parsedDuprMax = Number.parseInt(openPlayDuprMax.trim(), 10);
+      const parsedDuprMin = roundDuprBound(openPlayDuprMin);
+      const parsedDuprMax = roundDuprBound(openPlayDuprMax);
       if (!Number.isInteger(parsedSlots) || parsedSlots < 2) {
         throw new Error("Slots must be a whole number (minimum 2).");
       }
       if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
         throw new Error("Price per player must be a whole number (0 or higher).");
       }
-      if (!Number.isInteger(parsedDuprMin) || !Number.isInteger(parsedDuprMax)) {
-        throw new Error("DUPR range must use whole numbers.");
+      if (!isValidOpenPlayDuprRange(parsedDuprMin, parsedDuprMax)) {
+        throw new Error("DUPR range must be between 2.00 and 8.00 (decimals allowed).");
       }
-      if (parsedDuprMin < 2 || parsedDuprMax > 8 || parsedDuprMin > parsedDuprMax) {
-        throw new Error("DUPR range must be between 2 and 8.");
+      if (openPlayAcceptsGcash && !isValidPhMobile(openPlayGcashAccountNumber)) {
+        throw new Error("GCash account number must be a valid PH mobile number.");
+      }
+      if (openPlayAcceptsMaya && !isValidPhMobile(openPlayMayaAccountNumber)) {
+        throw new Error("Maya account number must be a valid PH mobile number.");
       }
       if (
         parsedPrice > 0 &&
@@ -543,6 +562,25 @@ export default function BookingDetailPage() {
       toast.error(apiErrorMessage(error, "Could not create open play"));
     },
   });
+
+  const openPlayDuprInputsValid = useMemo(() => {
+    if (!openPlayDuprMin.trim() || !openPlayDuprMax.trim()) return false;
+    return isValidOpenPlayDuprRange(
+      roundDuprBound(openPlayDuprMin),
+      roundDuprBound(openPlayDuprMax),
+    );
+  }, [openPlayDuprMin, openPlayDuprMax]);
+  const openPlayWalletPhonesValid = useMemo(
+    () =>
+      (!openPlayAcceptsGcash || isValidPhMobile(openPlayGcashAccountNumber)) &&
+      (!openPlayAcceptsMaya || isValidPhMobile(openPlayMayaAccountNumber)),
+    [
+      openPlayAcceptsGcash,
+      openPlayAcceptsMaya,
+      openPlayGcashAccountNumber,
+      openPlayMayaAccountNumber,
+    ],
+  );
 
   const hasMapPin =
     court &&
@@ -792,8 +830,10 @@ export default function BookingDetailPage() {
                 Create open play from this booking
               </h2>
               <p className="text-sm text-muted-foreground">
-                Turn this confirmed booking into open play lobbies. Each court you select
-                becomes its own session (same title, price, and settings).
+                Turn your confirmed (or completed) court reservations into open play lobbies.
+                Each court you select becomes its own session (same title, price, and settings).
+                Other courts in the same checkout can be cancelled without blocking eligible
+                courts.
               </p>
               {distinctCourtsForOpenPlay.length > 1 ? (
                 <div className="space-y-2">
@@ -915,9 +955,9 @@ export default function BookingDetailPage() {
                   <div className="flex gap-2">
                     <Input
                       type="number"
-                      min={0}
+                      min={2}
                       max={8}
-                      step={1}
+                      step={0.01}
                       value={openPlayDuprMin}
                       onChange={(event) => setOpenPlayDuprMin(event.target.value)}
                       placeholder="Min"
@@ -925,9 +965,9 @@ export default function BookingDetailPage() {
                     />
                     <Input
                       type="number"
-                      min={0}
+                      min={2}
                       max={8}
-                      step={1}
+                      step={0.01}
                       value={openPlayDuprMax}
                       onChange={(event) => setOpenPlayDuprMax(event.target.value)}
                       placeholder="Max"
@@ -1015,12 +1055,8 @@ export default function BookingDetailPage() {
                   (Number.parseInt(openPlayPrice.trim(), 10) || 0) < 0 ||
                   !Number.isInteger(Number.parseInt(openPlaySlots.trim(), 10)) ||
                   !Number.isInteger(Number.parseInt(openPlayPrice.trim(), 10)) ||
-                  !Number.isInteger(Number.parseInt(openPlayDuprMin.trim(), 10)) ||
-                  !Number.isInteger(Number.parseInt(openPlayDuprMax.trim(), 10)) ||
-                  (Number.parseInt(openPlayDuprMin.trim(), 10) || 0) >
-                    (Number.parseInt(openPlayDuprMax.trim(), 10) || 0) ||
-                  (Number.parseInt(openPlayDuprMin.trim(), 10) || 0) < 0 ||
-                  (Number.parseInt(openPlayDuprMax.trim(), 10) || 0) > 8 ||
+                  !openPlayDuprInputsValid ||
+                  !openPlayWalletPhonesValid ||
                   ((Number.parseInt(openPlayPrice.trim(), 10) || 0) > 0 &&
                     !openPlayAcceptsGcash &&
                     !openPlayAcceptsMaya) ||

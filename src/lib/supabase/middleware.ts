@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { getSupabasePublicEnv } from "@/lib/supabase/env";
 
 export async function updateSupabaseSession(request: NextRequest) {
-  const response = NextResponse.next({
+  let response = NextResponse.next({
     request,
   });
 
@@ -23,6 +23,23 @@ export async function updateSupabaseSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user?.id) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profile && profile.is_active === false) {
+      const login = new URL("/login", request.url);
+      login.searchParams.set("reason", "inactive");
+      response = NextResponse.redirect(login);
+      await supabase.auth.signOut();
+    }
+  }
+
   return response;
 }

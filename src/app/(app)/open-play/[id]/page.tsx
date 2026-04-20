@@ -49,6 +49,7 @@ import { formatTimeShort } from "@/lib/booking-range";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isValidOpenPlayDuprRange, roundDuprBound } from "@/lib/open-play/dupr-range";
 import { isOpenPlayCommentWithinEditWindow } from "@/lib/open-play/open-play-comment-edit";
 import {
   openPlayDisplayStatus,
@@ -64,6 +65,7 @@ import {
 import { queryKeys } from "@/lib/query/query-keys";
 import type { Court, OpenPlayDetailResponse } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 function StarRow({ rating, className }: { rating: number; className?: string }) {
   const filled = Math.round(rating);
@@ -222,8 +224,16 @@ export default function OpenPlayDetailPage() {
     setEditDescription(session.description ?? "");
     setEditMaxPlayers(String(session.max_players ?? ""));
     setEditPricePerPlayer(String(session.price_per_player ?? 0));
-    setEditDuprMin(String(session.dupr_min ?? 2));
-    setEditDuprMax(String(session.dupr_max ?? 8));
+    setEditDuprMin(
+      typeof session.dupr_min === "number" && Number.isFinite(session.dupr_min)
+        ? session.dupr_min.toFixed(2)
+        : "2.00",
+    );
+    setEditDuprMax(
+      typeof session.dupr_max === "number" && Number.isFinite(session.dupr_max)
+        ? session.dupr_max.toFixed(2)
+        : "8.00",
+    );
   }, [data?.session]);
 
   const venueId = data?.court?.venue_id;
@@ -403,8 +413,8 @@ export default function OpenPlayDetailPage() {
         description: editDescription.trim() || undefined,
         max_players: Number.parseInt(editMaxPlayers.trim(), 10),
         price_per_player: Number.parseInt(editPricePerPlayer.trim(), 10),
-        dupr_min: Number.parseInt(editDuprMin.trim(), 10),
-        dupr_max: Number.parseInt(editDuprMax.trim(), 10),
+        dupr_min: roundDuprBound(editDuprMin),
+        dupr_max: roundDuprBound(editDuprMax),
         accepts_gcash: hostAcceptsGcash,
         gcash_account_name: hostAcceptsGcash ? hostGcashAccountName.trim() : null,
         gcash_account_number: hostAcceptsGcash ? hostGcashAccountNumber.trim() : null,
@@ -477,16 +487,17 @@ export default function OpenPlayDetailPage() {
     Number.parseInt(editMaxPlayers.trim(), 10) < 2 ||
     !Number.isInteger(Number.parseInt(editPricePerPlayer.trim(), 10)) ||
     Number.parseInt(editPricePerPlayer.trim(), 10) < 0 ||
-    !Number.isInteger(Number.parseInt(editDuprMin.trim(), 10)) ||
-    !Number.isInteger(Number.parseInt(editDuprMax.trim(), 10)) ||
-    Number.parseInt(editDuprMin.trim(), 10) < 0 ||
-    Number.parseInt(editDuprMax.trim(), 10) > 8 ||
-    Number.parseInt(editDuprMin.trim(), 10) > Number.parseInt(editDuprMax.trim(), 10) ||
+    !isValidOpenPlayDuprRange(
+      roundDuprBound(editDuprMin),
+      roundDuprBound(editDuprMax),
+    ) ||
     ((Number.parseInt(editPricePerPlayer.trim(), 10) || 0) > 0 &&
       !hostAcceptsGcash &&
       !hostAcceptsMaya) ||
     (hostAcceptsGcash && (!hostGcashAccountName.trim() || !hostGcashAccountNumber.trim())) ||
-    (hostAcceptsMaya && (!hostMayaAccountName.trim() || !hostMayaAccountNumber.trim()));
+    (hostAcceptsMaya && (!hostMayaAccountName.trim() || !hostMayaAccountNumber.trim())) ||
+    (hostAcceptsGcash && !isValidPhMobile(hostGcashAccountNumber)) ||
+    (hostAcceptsMaya && !isValidPhMobile(hostMayaAccountNumber));
   const mapOpenHref = courtMapHref(court);
   const hasMapPin = Boolean(
     court &&
@@ -553,18 +564,18 @@ export default function OpenPlayDetailPage() {
               <div className="flex gap-2">
                 <Input
                   type="number"
-                  min={0}
+                  min={2}
                   max={8}
-                  step={1}
+                  step={0.01}
                   value={editDuprMin}
                   onChange={(event) => setEditDuprMin(event.target.value)}
                   placeholder="Min"
                 />
                 <Input
                   type="number"
-                  min={0}
+                  min={2}
                   max={8}
-                  step={1}
+                  step={0.01}
                   value={editDuprMax}
                   onChange={(event) => setEditDuprMax(event.target.value)}
                   placeholder="Max"

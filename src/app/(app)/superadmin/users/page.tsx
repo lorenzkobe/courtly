@@ -3,6 +3,7 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -91,6 +92,18 @@ function roleBadgeClass(role: ManagedUser["role"]) {
     default:
       return "bg-muted text-muted-foreground";
   }
+}
+
+function humanizeAuditFieldKey(key: string) {
+  return key.replace(/_/g, " ");
+}
+
+function summarizeAuditFields(
+  changed: Record<string, { before: unknown; after: unknown }>,
+) {
+  const keys = Object.keys(changed);
+  if (keys.length === 0) return "Account updated";
+  return keys.map(humanizeAuditFieldKey).join(", ");
 }
 
 type UserSort =
@@ -194,6 +207,15 @@ export default function SuperadminUsersPage() {
     return list;
   }, [users, roleFilter, sortBy]);
 
+  const { data: auditData, isLoading: auditsLoading } = useQuery({
+    queryKey: ["managed-user-audits", editing?.id],
+    queryFn: async () => {
+      const { data } = await courtlyApi.managedUsers.audits(editing!.id, { limit: 30 });
+      return data;
+    },
+    enabled: Boolean(dialogOpen && editing?.id),
+  });
+
   const saveUser = useMutation({
     mutationFn: async () => {
       const body = {
@@ -215,6 +237,9 @@ export default function SuperadminUsersPage() {
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
+      if (editing?.id) {
+        void queryClient.invalidateQueries({ queryKey: ["managed-user-audits", editing.id] });
+      }
       if (result.mode === "create") {
         toast.success(
           "Invitation sent. The user will get an email with a link to set their password.",
@@ -476,7 +501,7 @@ export default function SuperadminUsersPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
-          className="max-h-[90vh] max-w-md"
+          className={cn("max-h-[90vh]", editing ? "max-w-lg" : "max-w-md")}
           contentClassName="min-w-0"
         >
           <DialogHeader>
@@ -656,6 +681,50 @@ export default function SuperadminUsersPage() {
                     );
                   })}
                 </div>
+              </div>
+            ) : null}
+            {editing ? (
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+                <p className="text-sm font-semibold text-foreground">Account history</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Recent superadmin changes (including email-only updates).
+                </p>
+                {auditsLoading ? (
+                  <Skeleton className="mt-3 h-20 w-full rounded-lg" />
+                ) : !auditData?.items.length ? (
+                  <p className="mt-2 text-xs text-muted-foreground">No audit entries yet.</p>
+                ) : (
+                  <ul className="mt-3 max-h-52 space-y-2 overflow-auto text-xs">
+                    {auditData.items.map((row) => (
+                      <li
+                        key={row.id}
+                        className="rounded-lg border border-border/40 bg-background/80 p-2.5"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="font-medium text-foreground">
+                            {summarizeAuditFields(row.changed_fields)}
+                          </span>
+                          <time
+                            className="shrink-0 text-muted-foreground"
+                            dateTime={row.created_at}
+                          >
+                            {format(new Date(row.created_at), "MMM d, yyyy h:mm a")}
+                          </time>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">
+                          Actor:{" "}
+                          <span className="font-mono text-[11px]">{row.actor_user_id}</span>
+                        </p>
+                        <details className="mt-1.5">
+                          <summary className="cursor-pointer text-primary">View diff</summary>
+                          <pre className="mt-1 max-h-36 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[10px] leading-relaxed">
+                            {JSON.stringify(row.changed_fields, null, 2)}
+                          </pre>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ) : null}
           </div>

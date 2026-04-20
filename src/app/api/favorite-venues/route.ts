@@ -45,7 +45,12 @@ export async function PATCH(req: Request) {
           user_id: user.id,
           venue_id: venueId,
         },
-        { onConflict: "user_id,venue_id" },
+        {
+          onConflict: "user_id,venue_id",
+          // Favoriting the same venue twice should remain a no-op instead of
+          // requiring an UPDATE policy on the conflict path.
+          ignoreDuplicates: true,
+        },
       );
     if (error) {
       return NextResponse.json({ error: "Could not save favorite" }, { status: 500 });

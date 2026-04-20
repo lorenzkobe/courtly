@@ -33,7 +33,7 @@ export function buildBookingPayloads(
       court_subtotal,
       booking_fee,
       total_cost,
-      notes: ctx.notes || undefined,
+      notes: ctx.notes?.trim() ? ctx.notes.trim() : undefined,
       status: "confirmed" as const,
     };
   });

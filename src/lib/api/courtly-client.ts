@@ -228,7 +228,7 @@ export const courtlyApi = {
         body,
       ),
     cancelPending: (body: { booking_id?: string; booking_group_id?: string }) =>
-      http.post<{ ok: boolean; cancelled_booking_ids: string[] }>(
+      http.post<{ ok: boolean; deleted_booking_ids: string[] }>(
         "/api/bookings/cancel-pending",
         body,
       ),
@@ -428,6 +428,26 @@ export const courtlyApi = {
       http.post<ManagedUser>("/api/admin/managed-users", data),
     update: (id: string, data: Partial<ManagedUser>) =>
       http.patch<ManagedUser>(`/api/admin/managed-users/${id}`, data),
+    audits: (
+      id: string,
+      params?: { cursor?: string | null; limit?: number | null },
+    ) =>
+      http.get<{
+        items: Array<{
+          id: string;
+          actor_user_id: string;
+          target_user_id: string;
+          changed_fields: Record<string, { before: unknown; after: unknown }>;
+          created_at: string;
+        }>;
+        has_more: boolean;
+        next_cursor: string | null;
+      }>(`/api/admin/managed-users/${id}/audits`, {
+        params: {
+          ...(params?.cursor ? { cursor: params.cursor } : {}),
+          ...(params?.limit != null ? { limit: String(params.limit) } : {}),
+        },
+      }),
     remove: (id: string) => http.delete(`/api/admin/managed-users/${id}`),
     resendInvite: (id: string) =>
       http.post<{

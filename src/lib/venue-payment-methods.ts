@@ -2,6 +2,7 @@ import type {
   Venue,
   VenuePaymentMethodDetails,
 } from "@/lib/types/courtly";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 export type VenuePaymentSettings = Pick<
   Venue,
@@ -49,6 +50,26 @@ export function validateVenuePaymentSettings(
     return {
       ok: false,
       error: "Maya account name and account number are required when Maya is enabled.",
+    };
+  }
+  if (
+    value.accepts_gcash &&
+    value.gcash_account_number &&
+    !isValidPhMobile(value.gcash_account_number)
+  ) {
+    return {
+      ok: false,
+      error: "GCash account number must be a valid PH mobile (e.g. 09171234567 or +639171234567).",
+    };
+  }
+  if (
+    value.accepts_maya &&
+    value.maya_account_number &&
+    !isValidPhMobile(value.maya_account_number)
+  ) {
+    return {
+      ok: false,
+      error: "Maya account number must be a valid PH mobile (e.g. 09171234567 or +639171234567).",
     };
   }
   return { ok: true, value };

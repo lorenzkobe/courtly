@@ -73,7 +73,7 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
   const map = new Map<string, Booking[]>();
   for (const booking of list) {
     const key = booking.booking_group_id
-      ? `grp:${booking.booking_group_id}`
+      ? `grp:${booking.booking_group_id}\0${booking.date}`
       : `day:${booking.court_id}\0${booking.date}`;
     const arr = map.get(key);
     if (arr) arr.push(booking);
@@ -344,6 +344,19 @@ export default function MyBookingsPage() {
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                 <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
                                   <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  {booking.date ? (
+                                    <>
+                                      <span className="text-muted-foreground">
+                                        {format(
+                                          new Date(`${booking.date}T12:00:00`),
+                                          "EEE, MMM d",
+                                        )}
+                                      </span>
+                                      <span className="text-muted-foreground" aria-hidden>
+                                        ·
+                                      </span>
+                                    </>
+                                  ) : null}
                                   {formatTimeShort(booking.start_time)} –{" "}
                                   {formatTimeShort(booking.end_time)}
                                 </span>

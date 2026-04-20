@@ -51,6 +51,7 @@ export async function GET(req: Request) {
   const bookingGroupId = searchParams.get("booking_group_id");
   const cursorRaw = searchParams.get("cursor");
   const limitRaw = searchParams.get("limit");
+  const cursorProvided = cursorRaw != null || limitRaw != null;
 
   let allowedCourtIds: string[] | undefined;
   let manageableViewer: Awaited<ReturnType<typeof readSessionUser>> = null;
@@ -65,16 +66,23 @@ export async function GET(req: Request) {
       const assignments = await listVenueAdminAssignmentsByAdminUser(user.id);
       const venueIds = [...new Set(assignments.map((assignment) => assignment.venue_id))];
       if (venueIds.length === 0) {
+        const emptyPage = { items: [], has_more: false, next_cursor: null };
+        if (cursorProvided) {
+          return NextResponse.json(emptyPage);
+        }
         return NextResponse.json([]);
       }
       allowedCourtIds = await listCourtIdsByVenueIds(venueIds);
       if (allowedCourtIds.length === 0) {
+        const emptyPage = { items: [], has_more: false, next_cursor: null };
+        if (cursorProvided) {
+          return NextResponse.json(emptyPage);
+        }
         return NextResponse.json([]);
       }
     }
   }
 
-  const cursorProvided = cursorRaw != null || limitRaw != null;
   const viewerForMobile = manageable ? manageableViewer : null;
   if (cursorProvided) {
     const limit = parseLimit(limitRaw);

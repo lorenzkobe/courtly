@@ -127,6 +127,10 @@ export default function AdminVenuesPage() {
       if (!parsed.ok) {
         throw new Error(parsed.error);
       }
+      const payCheck = validateVenuePaymentSettings(form, { requireAtLeastOne: true });
+      if (!payCheck.ok) {
+        throw new Error(payCheck.error);
+      }
       const body = {
         name: form.name.trim(),
         location: form.location.trim(),

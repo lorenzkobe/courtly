@@ -93,6 +93,8 @@ export type Venue = {
   accepts_maya: boolean;
   maya_account_name?: string;
   maya_account_number?: string;
+  /** When set, overrides the platform default booking fee for this venue. */
+  booking_fee_override?: number | null;
 };
 
 export type VenueAdminAssignment = {

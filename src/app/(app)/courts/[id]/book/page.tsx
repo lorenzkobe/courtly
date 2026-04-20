@@ -291,15 +291,10 @@ export default function BookCourtPage() {
       }),
     [user?.email],
   );
-  useBookingsRealtime({
-    filter: activeCourtId ? `court_id=eq.${activeCourtId}` : null,
-    enabled: !!activeCourtId,
-    queryKeysToInvalidate: [bookingSurfaceKey, myPendingBookingsQueryKey],
-  });
-
   const {
     data: bookingSurface,
     isLoading: isLoadingBookingSurface,
+    isFetching: isFetchingBookingSurface,
     isError: isBookingSurfaceError,
     error: bookingSurfaceError,
   } = useQuery({
@@ -370,6 +365,46 @@ export default function BookCourtPage() {
       enabled: !!item.courtId,
     })),
   });
+
+  const matrixBookingSurfaceKeys = useMemo(() => {
+    if (matrixCourts.length > 0) {
+      return matrixCourts.map((c) => queryKeys.bookingSurface.courtDay(c.id, dateIso));
+    }
+    if (activeCourtId) {
+      return [queryKeys.bookingSurface.courtDay(activeCourtId, dateIso)];
+    }
+    return [];
+  }, [matrixCourts, activeCourtId, dateIso]);
+
+  const cartBookingSurfaceKeys = useMemo(
+    () =>
+      cartItems.map((item) => queryKeys.bookingSurface.courtDay(item.courtId, item.date)),
+    [cartItems],
+  );
+
+  const bookingsRealtimeKeys = useMemo(
+    () => [...matrixBookingSurfaceKeys, ...cartBookingSurfaceKeys, myPendingBookingsQueryKey],
+    [matrixBookingSurfaceKeys, cartBookingSurfaceKeys, myPendingBookingsQueryKey],
+  );
+
+  const bookingCourtRealtimeFilter = useMemo(() => {
+    const ids = matrixCourts.map((c) => c.id).filter(Boolean);
+    const idList = ids.length > 0 ? ids : activeCourtId ? [activeCourtId] : [];
+    if (idList.length === 0) return null;
+    if (idList.length === 1) return `court_id=eq.${idList[0]}`;
+    return `court_id=in.(${idList.join(",")})`;
+  }, [matrixCourts, activeCourtId]);
+
+  useBookingsRealtime({
+    filter: bookingCourtRealtimeFilter,
+    enabled: Boolean(activeCourtId && bookingCourtRealtimeFilter),
+    queryKeysToInvalidate: bookingsRealtimeKeys,
+  });
+
+  const isSlotMatrixFetching =
+    (!isLoadingBookingSurface && isFetchingBookingSurface) ||
+    matrixSurfaceQueries.some((q) => q.isFetching || q.isLoading);
+
   const isLoading = isLoadingBookingSurface;
 
   const courtReviews = useMemo(
@@ -602,6 +637,15 @@ export default function BookCourtPage() {
         booking_group_id: paymentOverlay.booking_group_id,
       });
     },
+    onMutate: () => {
+      const previous = paymentOverlay;
+      const previousProof = optimizedProof;
+      const previousMethod = selectedPaymentMethod;
+      setPaymentOverlay(null);
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      return { previousOverlay: previous, previousProof, previousMethod };
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
@@ -610,7 +654,12 @@ export default function BookCourtPage() {
       setSelectedPaymentMethod(null);
       toast.success("Pending booking cancelled. Slots are now available again.");
     },
-    onError: (error) => {
+    onError: (error, _vars, ctx) => {
+      if (ctx?.previousOverlay) {
+        setPaymentOverlay(ctx.previousOverlay);
+      }
+      setOptimizedProof(ctx?.previousProof ?? null);
+      setSelectedPaymentMethod(ctx?.previousMethod ?? null);
       toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
     },
   });
@@ -780,12 +829,13 @@ export default function BookCourtPage() {
         ? crypto.randomUUID()
         : `grp-${Date.now()}`;
     const displayName = user.full_name?.trim() || user.email;
+    const venueMessage = notes.trim() || "";
     const payloads = cartLines.flatMap((line) =>
       buildBookingPayloads(line.segments, line.court!, {
         date: line.item.date,
         playerName: displayName,
         playerEmail: user.email,
-        notes: line.item.notes ?? "",
+        notes: venueMessage || (line.item.notes?.trim() ?? ""),
         bookingGroupId,
       }),
     );
@@ -858,7 +908,7 @@ export default function BookCourtPage() {
       sport: matrixCourt.sport,
       date: dateIso,
       slots: normalizedSlots,
-      notes: existingLine?.notes ?? notes,
+      notes: notes.trim() || existingLine?.notes?.trim() || "",
     });
     if (!outcome.ok) {
       toast.error(outcome.reason);
@@ -1425,7 +1475,18 @@ export default function BookCourtPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-            <div className="max-h-[min(46vh,22rem)] overflow-auto rounded-xl border border-border/60">
+            <div className="relative max-h-[min(46vh,22rem)] overflow-auto rounded-xl border border-border/60">
+              {isSlotMatrixFetching ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-background/55 backdrop-blur-[1px]"
+                  aria-busy
+                  aria-label="Updating availability"
+                >
+                  <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+                    Updating slots…
+                  </span>
+                </div>
+              ) : null}
               <table className="min-w-full text-xs">
                 <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
                   <tr>

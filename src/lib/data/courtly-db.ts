@@ -840,6 +840,20 @@ export async function deleteExpiredPendingPaymentBookings(params?: {
   return (data ?? []).length;
 }
 
+/** Hard-delete specific booking rows while they are still `pending_payment` (player cancel / cleanup). */
+export async function deletePendingPaymentBookingsByIds(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .delete()
+    .in("id", ids)
+    .eq("status", "pending_payment")
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).map((row) => (row as { id: string }).id);
+}
+
 type ListRevenueBookingsParams = {
   courtIds?: string[];
   dateFrom?: string | null;
@@ -1146,6 +1160,58 @@ export async function markBookingsCompletedByIds(
     court_id: string;
     user_id: string | null;
   }>;
+}
+
+export type PendingConfirmationDeclineSeedRow = {
+  id: string;
+  booking_group_id: string | null;
+  court_id: string;
+  user_id: string | null;
+  player_email: string | null;
+  date: string;
+  start_time: string;
+};
+
+export async function listPendingConfirmationBookingsForAutoDecline(params: {
+  upToDate: string;
+  limit: number;
+}): Promise<PendingConfirmationDeclineSeedRow[]> {
+  const supabase = createSupabaseAdminClient();
+  const safeLimit = Math.max(1, Math.min(params.limit, 1000));
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("id, booking_group_id, court_id, user_id, player_email, date, start_time")
+    .eq("status", "pending_confirmation")
+    .lte("date", params.upToDate)
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(safeLimit);
+  if (error) throw error;
+  return (data ?? []) as PendingConfirmationDeclineSeedRow[];
+}
+
+export async function markBookingsAutoDeclinedPendingConfirmationByIds(
+  bookingIds: string[],
+  cancelReason: string,
+): Promise<Array<{ id: string }>> {
+  if (bookingIds.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("bookings")
+    .update({
+      status: "cancelled",
+      cancel_reason: cancelReason,
+      status_updated_by_user_id: null,
+      status_updated_by_name: "System",
+      status_updated_at: nowIso,
+    } as never)
+    .eq("status", "pending_confirmation")
+    .in("id", bookingIds)
+    .select("id");
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string }>;
 }
 
 export async function hasActiveConfirmedBookingsForCourt(courtId: string): Promise<boolean> {

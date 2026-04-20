@@ -35,6 +35,9 @@ export default function GlobalPendingPaymentGate() {
     height: number;
   } | null>(null);
   const [proofOptimizing, setProofOptimizing] = useState(false);
+  const [optimisticCancelBookingId, setOptimisticCancelBookingId] = useState<string | null>(
+    null,
+  );
 
   const disabledByRoute = shouldSkipGlobalPaymentGate(pathname);
   const { data: myPendingBookings = [] } = useQuery({
@@ -71,7 +74,15 @@ export default function GlobalPendingPaymentGate() {
     return candidates[0] ?? null;
   }, [myPendingBookings, countdownNow]);
 
-  const pendingPaymentCourtId = activePendingBooking?.court_id ?? null;
+  /** Hide overlay immediately after cancel tap until server confirms (or restore on error). */
+  const overlayPendingBooking =
+    activePendingBooking &&
+    optimisticCancelBookingId &&
+    activePendingBooking.id === optimisticCancelBookingId
+      ? null
+      : activePendingBooking;
+
+  const pendingPaymentCourtId = overlayPendingBooking?.court_id ?? null;
   const { data: pendingPaymentCourt } = useQuery({
     queryKey: pendingPaymentCourtId
       ? queryKeys.courts.detail(pendingPaymentCourtId)
@@ -89,26 +100,35 @@ export default function GlobalPendingPaymentGate() {
     () => venuePaymentMethodsForCheckout(pendingPaymentCourt ?? {}),
     [pendingPaymentCourt],
   );
-  const bookingGroupId = activePendingBooking
-    ? activePendingBooking.booking_group_id ?? activePendingBooking.id
+  const bookingGroupId = overlayPendingBooking
+    ? overlayPendingBooking.booking_group_id ?? overlayPendingBooking.id
     : null;
   const relatedPending = useMemo(
     () =>
-      activePendingBooking && bookingGroupId
+      overlayPendingBooking && bookingGroupId
         ? myPendingBookings.filter(
             (booking) =>
               (booking.booking_group_id === bookingGroupId ||
-                booking.id === activePendingBooking.id) &&
+                booking.id === overlayPendingBooking.id) &&
               booking.status === "pending_payment",
           )
         : [],
-    [activePendingBooking, bookingGroupId, myPendingBookings],
+    [overlayPendingBooking, bookingGroupId, myPendingBookings],
   );
   const overlayTotalDue = useMemo(
     () => relatedPending.reduce((sum, booking) => sum + Number(booking.total_cost ?? 0), 0),
     [relatedPending],
   );
-  const remainingSeconds = activePendingBooking?.hold_expires_at
+  const overlayRemainingSeconds = overlayPendingBooking?.hold_expires_at
+    ? Math.max(
+        0,
+        Math.ceil(
+          (new Date(overlayPendingBooking.hold_expires_at).getTime() - countdownNow) / 1000,
+        ),
+      )
+    : 0;
+
+  const activeHoldRemainingSeconds = activePendingBooking?.hold_expires_at
     ? Math.max(
         0,
         Math.ceil(
@@ -131,9 +151,9 @@ export default function GlobalPendingPaymentGate() {
 
   useEffect(() => {
     if (!activePendingBooking) return;
-    if (remainingSeconds > 0) return;
+    if (activeHoldRemainingSeconds > 0) return;
     window.location.reload();
-  }, [activePendingBooking, remainingSeconds]);
+  }, [activePendingBooking, activeHoldRemainingSeconds]);
 
   const processProofFile = async (file: File) => {
     const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
@@ -157,10 +177,10 @@ export default function GlobalPendingPaymentGate() {
 
   const submitPaymentProof = useMutation({
     mutationFn: async () => {
-      if (!activePendingBooking) throw new Error("No active booking hold.");
+      if (!overlayPendingBooking) throw new Error("No active booking hold.");
       if (!selectedPaymentMethod) throw new Error("Select a payment method.");
       if (!optimizedProof) throw new Error("Upload a payment screenshot first.");
-      await courtlyApi.bookings.submitPaymentProof(activePendingBooking.id, {
+      await courtlyApi.bookings.submitPaymentProof(overlayPendingBooking.id, {
         payment_method: selectedPaymentMethod,
         payment_proof_data_url: optimizedProof.dataUrl,
         payment_proof_mime_type: optimizedProof.mimeType,
@@ -188,24 +208,31 @@ export default function GlobalPendingPaymentGate() {
         booking_group_id: activePendingBooking.booking_group_id ?? undefined,
       });
     },
+    onMutate: () => {
+      if (activePendingBooking) {
+        setOptimisticCancelBookingId(activePendingBooking.id);
+      }
+    },
     onSuccess: () => {
+      setOptimisticCancelBookingId(null);
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       toast.success("Pending booking cancelled. Slots are now available again.");
     },
     onError: (error) => {
+      setOptimisticCancelBookingId(null);
       toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
     },
   });
 
   if (disabledByRoute) return null;
-  if (!activePendingBooking || paymentMethods.length === 0) return null;
+  if (!overlayPendingBooking || paymentMethods.length === 0) return null;
 
   return (
     <PaymentLockOverlay
       description="Send the amount to the account below, then upload a clear payment screenshot."
-      remainingSeconds={remainingSeconds}
+      remainingSeconds={overlayRemainingSeconds}
       totalDue={overlayTotalDue}
       paymentMethods={paymentMethods}
       selectedPaymentMethod={selectedPaymentMethod}

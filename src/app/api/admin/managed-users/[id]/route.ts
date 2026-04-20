@@ -51,6 +51,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
     birthdate?: string;
     mobileNumber?: string;
   };
+
+  const adminClient = createSupabaseAdminClient();
+  const { data: authBefore } = await adminClient.auth.admin.getUserById(id);
+  const previousEmail = (authBefore.user?.email ?? "").trim().toLowerCase();
+
   let role = current.role;
   if (patch.role === "user" || patch.role === "admin" || patch.role === "superadmin") {
     role = patch.role;
@@ -116,13 +121,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
     .eq("id", id);
 
   if (typeof patch.email === "string" && EMAIL_REGEX.test(patch.email.trim().toLowerCase())) {
-    const admin = createSupabaseAdminClient();
-    await admin.auth.admin.updateUserById(id, {
+    await adminClient.auth.admin.updateUserById(id, {
       email: patch.email.trim().toLowerCase(),
     });
   }
 
-  const adminClient = createSupabaseAdminClient();
   const { data: authUser } = await adminClient.auth.admin.getUserById(id);
   const email = authUser.user?.email ?? "";
 
@@ -173,6 +176,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     (assignment: { venue_id: string }) => assignment.venue_id,
   );
   setDiff("venue_ids", previousVenueIds, nextVenueIds);
+  setDiff("email", previousEmail, email.trim().toLowerCase());
   if (Object.keys(changedFields).length > 0) {
     await supabase.from("user_change_audits").insert({
       actor_user_id: user.id,

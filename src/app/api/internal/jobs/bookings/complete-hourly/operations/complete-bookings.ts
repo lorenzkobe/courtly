@@ -3,6 +3,8 @@ import {
   listBookingsByIdsAdmin,
   listConfirmedBookingsByGroupIds,
   listConfirmedBookingsForAutoCompletion,
+  listPendingConfirmationBookingsForAutoDecline,
+  markBookingsAutoDeclinedPendingConfirmationByIds,
   markBookingsCompletedByIds,
 } from "@/lib/data/courtly-db";
 import {
@@ -62,6 +64,17 @@ function hasReachedEnd(
   return endTime <= nowTime;
 }
 
+function hasReachedStart(
+  date: string,
+  startTime: string,
+  nowDate: string,
+  nowTime: string,
+): boolean {
+  if (date < nowDate) return true;
+  if (date > nowDate) return false;
+  return startTime <= nowTime;
+}
+
 function pickEntityBatch(
   entities: CompletionEntity[],
   rowLimit: number,
@@ -84,6 +97,7 @@ export async function runCompleteBookingsJob(): Promise<{
   now_manila_date: string;
   now_manila_time: string;
   expired_pending_deleted: number;
+  pending_confirmation_declined: number;
   seed_count: number;
   candidate_entities: number;
   selected_entities: number;
@@ -109,6 +123,44 @@ export async function runCompleteBookingsJob(): Promise<{
       DEFAULT_SEED_LIMIT,
     batchLimit * 2,
   );
+
+  const AUTO_DECLINE_CANCEL_REASON =
+    "auto_declined_pending_confirmation_at_slot_start" as const;
+
+  const pendingConfirmationSeed = await listPendingConfirmationBookingsForAutoDecline({
+    upToDate: nowDate,
+    limit: seedLimit,
+  });
+  const pendingDeclineCandidates = pendingConfirmationSeed.filter((row) =>
+    hasReachedStart(row.date, row.start_time, nowDate, nowTime),
+  );
+  const pendingDeclineIds = pendingDeclineCandidates
+    .slice(0, batchLimit)
+    .map((row) => row.id);
+  const prevDeclineBookings =
+    pendingDeclineIds.length > 0 ? await listBookingsByIdsAdmin(pendingDeclineIds) : [];
+  const prevDeclineById = new Map(prevDeclineBookings.map((booking) => [booking.id, booking]));
+  const declinedRows =
+    pendingDeclineIds.length > 0
+      ? await markBookingsAutoDeclinedPendingConfirmationByIds(
+          pendingDeclineIds,
+          AUTO_DECLINE_CANCEL_REASON,
+        )
+      : [];
+  const declinedIdSet = new Set(declinedRows.map((row) => row.id));
+  for (const bookingId of declinedIdSet) {
+    const prev = prevDeclineById.get(bookingId);
+    if (!prev) continue;
+    await emitBookingLifecycleNotifications({
+      prev,
+      nextRow: {
+        ...prev,
+        status: "cancelled",
+        cancel_reason: AUTO_DECLINE_CANCEL_REASON,
+      },
+      bookingId,
+    });
+  }
 
   const seedRows = await listConfirmedBookingsForAutoCompletion({
     upToDate: nowDate,
@@ -209,6 +261,7 @@ export async function runCompleteBookingsJob(): Promise<{
     now_manila_date: nowDate,
     now_manila_time: nowTime,
     expired_pending_deleted: expiredPendingDeleted,
+    pending_confirmation_declined: declinedIdSet.size,
     seed_count: seedRows.length,
     candidate_entities: entities.length,
     selected_entities: selected.length,

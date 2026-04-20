@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
+  deletePendingPaymentBookingsByIds,
   getBookingById,
   listBookingsFiltered,
-  updateRow,
 } from "@/lib/data/courtly-db";
-import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
 import type { Booking } from "@/lib/types/courtly";
 
 type CancelPendingBody = {
@@ -62,32 +61,12 @@ export async function POST(req: Request) {
 
   const cancellable = ownerRows.filter((row) => row.status === "pending_payment");
   if (cancellable.length === 0) {
-    return NextResponse.json(
-      { error: "No pending-payment booking to cancel." },
-      { status: 409 },
-    );
+    return NextResponse.json({ ok: true, deleted_booking_ids: [] as string[] });
   }
 
-  const nowIso = new Date().toISOString();
-  const actorName = user.full_name || user.email;
-  const cancelledIds: string[] = [];
+  const ids = cancellable.map((row) => row.id);
+  const deletedIds = await deletePendingPaymentBookingsByIds(ids);
 
-  for (const booking of cancellable) {
-    const updated = await updateRow("bookings", booking.id, {
-      status: "cancelled",
-      cancel_reason: "player_cancelled_pending_payment",
-      status_updated_by_user_id: user.id,
-      status_updated_by_name: actorName,
-      status_updated_at: nowIso,
-    });
-    await emitBookingLifecycleNotifications({
-      prev: booking,
-      nextRow: updated as Record<string, unknown>,
-      bookingId: booking.id,
-    });
-    cancelledIds.push(booking.id);
-  }
-
-  return NextResponse.json({ ok: true, cancelled_booking_ids: cancelledIds });
+  return NextResponse.json({ ok: true, deleted_booking_ids: deletedIds });
 }
 
