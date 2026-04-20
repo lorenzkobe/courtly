@@ -12,13 +12,15 @@ export function buildBookingPayloads(
     playerEmail: string;
     notes: string;
     bookingGroupId: string;
+    /** Per venue: platform default or venue override (matches booking-surface `flat_booking_fee`). */
+    flatBookingFeePhp: number;
   },
 ): Partial<Booking>[] {
   return segments.map((seg) => {
     const court_subtotal = segmentTotalCost(court, seg);
     const { booking_fee, total_cost } = splitBookingAmounts(
       court_subtotal,
-      undefined,
+      ctx.flatBookingFeePhp,
     );
     return {
       court_id: court.id,

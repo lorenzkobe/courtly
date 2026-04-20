@@ -172,7 +172,8 @@ export default function BookingCartPage() {
       const billableHours = totalBillableHours(segments);
       const requestedHours = item.slots.length;
       const subtotal = court ? segmentsTotalCost(court, segments) : 0;
-      const totals = splitBookingAmounts(subtotal, undefined);
+      const flatFee = surface?.flat_booking_fee;
+      const totals = splitBookingAmounts(subtotal, flatFee);
 
       return {
         item,
@@ -183,6 +184,7 @@ export default function BookingCartPage() {
         unavailableSlots,
         billableHours,
         requestedHours,
+        flatBookingFeePhp: flatFee ?? 0,
         totals,
       };
     });
@@ -401,6 +403,7 @@ export default function BookingCartPage() {
         playerEmail: user.email,
         notes: line.item.notes ?? "",
         bookingGroupId,
+        flatBookingFeePhp: line.flatBookingFeePhp,
       }),
     );
     trackBookingCartEvent("cart_checkout_started", {

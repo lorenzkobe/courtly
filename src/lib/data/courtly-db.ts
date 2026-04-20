@@ -475,6 +475,16 @@ export async function listVenuesByIds(venueIds: string[]): Promise<Venue[]> {
   });
 }
 
+export async function getPlatformDefaultBookingFeeAmount(): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value")
+    .eq("key", "booking_fee_default")
+    .maybeSingle();
+  return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
+}
+
 export async function getVenueById(venueId: string): Promise<Venue | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase

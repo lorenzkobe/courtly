@@ -1,7 +1,6 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import { hourFromTime } from "@/lib/booking-range";
 import { trackBookingCartEvent } from "@/lib/bookings/booking-cart-analytics";
 import type { CourtSport } from "@/lib/types/courtly";
@@ -37,9 +36,7 @@ function normalizeSlots(slots: string[]): string[] {
   return Array.from(new Set(slots)).sort((a, b) => hourFromTime(a) - hourFromTime(b));
 }
 
-export const useBookingCart = create<BookingCartState>()(
-  persist(
-    (set, get) => ({
+export const useBookingCart = create<BookingCartState>()((set, get) => ({
       venueId: null,
       venueName: null,
       items: [],
@@ -132,7 +129,4 @@ export const useBookingCart = create<BookingCartState>()(
         set({ venueId: null, venueName: null, items: [] });
         trackBookingCartEvent("cart_cleared", {});
       },
-    }),
-    { name: "courtly-booking-cart-v1" },
-  ),
-);
+}));

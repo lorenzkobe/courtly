@@ -494,12 +494,14 @@ export default function BookCourtPage() {
       });
       const unavailableSlots = item.slots.filter((slot) => occupiedForLine.has(slot));
       const subtotal = lineCourt ? segmentsTotalCost(lineCourt, lineSegments) : 0;
+      const flatFee = surface?.flat_booking_fee;
       return {
         item,
         court: lineCourt,
         segments: lineSegments,
         unavailableSlots,
-        totals: splitBookingAmounts(subtotal, undefined),
+        flatBookingFeePhp: flatFee ?? 0,
+        totals: splitBookingAmounts(subtotal, flatFee),
       };
     });
   }, [cartItems, cartSurfaceQueries]);
@@ -837,6 +839,7 @@ export default function BookCourtPage() {
         playerEmail: user.email,
         notes: venueMessage || (line.item.notes?.trim() ?? ""),
         bookingGroupId,
+        flatBookingFeePhp: line.flatBookingFeePhp,
       }),
     );
     createBookings.mutate(payloads);

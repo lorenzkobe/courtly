@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { effectiveFlatBookingFeePhp } from "@/lib/booking-fee-effective";
 import {
   getCourtWithReviewSummary,
+  getPlatformDefaultBookingFeeAmount,
+  getVenueById,
   listBlockingBookingsByCourtOnDate,
   listCourtClosuresByCourt,
   listCourtReviewsByVenue,
@@ -23,18 +26,25 @@ export async function GET(req: Request, ctx: Ctx) {
   const court = await getCourtWithReviewSummary(courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [siblingCourts, bookings, courtClosures, venueClosures, reviews] =
+  const [siblingCourts, bookings, courtClosures, venueClosures, reviews, venue, defaultFee] =
     await Promise.all([
       listCourtsByVenue(court.venue_id),
       listBlockingBookingsByCourtOnDate(courtId, date),
       listCourtClosuresByCourt(courtId, date),
       listVenueClosuresByVenue(court.venue_id, date),
       listCourtReviewsByVenue(court.venue_id),
+      getVenueById(court.venue_id),
+      getPlatformDefaultBookingFeeAmount(),
     ]);
+  const flat_booking_fee = effectiveFlatBookingFeePhp(
+    defaultFee,
+    venue?.booking_fee_override,
+  );
 
   const body: CourtBookingSurfaceResponse = {
     court,
     sibling_courts: siblingCourts.sort((a, b) => a.name.localeCompare(b.name)),
+    flat_booking_fee,
     availability: {
       bookings,
       court_closures: courtClosures,

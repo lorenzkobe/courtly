@@ -100,6 +100,7 @@ export default function SuperadminVenuesPage() {
   const [confirmRejectRequestId, setConfirmRejectRequestId] = useState<string | null>(null);
   const [confirmRequestUpdateRequestId, setConfirmRequestUpdateRequestId] = useState<string | null>(null);
   const [bookingFeeInput, setBookingFeeInput] = useState("");
+  const [bookingFeeTouched, setBookingFeeTouched] = useState(false);
 
   const {
     data: directoryPages,
@@ -152,17 +153,27 @@ export default function SuperadminVenuesPage() {
   });
   const pendingRequests = requestData?.requests ?? [];
   const isRefreshing = isFetching || isFetchingRequests;
-  const { data: bookingFeeSetting } = useQuery({
+  const { data: bookingFeeSetting, isLoading: isLoadingBookingFee } = useQuery({
     queryKey: ["superadmin", "booking-fee-setting"],
     queryFn: async () => {
       const { data } = await courtlyApi.superadmin.bookingFee.get();
       return data;
     },
   });
+
+  const serverBookingFeeStr = useMemo(() => {
+    if (bookingFeeSetting == null) return "";
+    const d = bookingFeeSetting.default_booking_fee ?? 0;
+    return d === 0 ? "" : String(d);
+  }, [bookingFeeSetting]);
+
+  const bookingFeeFieldValue = bookingFeeTouched ? bookingFeeInput : serverBookingFeeStr;
+
   const saveBookingFeeSetting = useMutation({
     mutationFn: async () => {
+      const displayForSave = bookingFeeTouched ? bookingFeeInput : serverBookingFeeStr;
       const raw =
-        bookingFeeInput.trim() ||
+        displayForSave.trim() ||
         String(bookingFeeSetting?.default_booking_fee ?? 0);
       const parsed = Number.parseInt(raw, 10);
       if (!Number.isFinite(parsed) || parsed < 0) {
@@ -172,11 +183,12 @@ export default function SuperadminVenuesPage() {
       await courtlyApi.superadmin.bookingFee.update(normalized);
       return normalized;
     },
-    onSuccess: (nextValue) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["superadmin", "booking-fee-setting"],
       });
-      setBookingFeeInput(String(nextValue));
+      setBookingFeeTouched(false);
+      setBookingFeeInput("");
       toast.success("Default booking fee updated.");
     },
     onError: (error: unknown) => {
@@ -266,10 +278,12 @@ export default function SuperadminVenuesPage() {
         remove_admin_user_ids,
         ...mapBody,
       };
-      await courtlyApi.venues.update(editingVenue!.id, body);
+      return courtlyApi.venues.update(editingVenue!.id, body);
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({
+        queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+      });
       toast.success("Venue updated");
       setDialogOpen(false);
       setEditingVenue(null);
@@ -525,28 +539,31 @@ export default function SuperadminVenuesPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
               <div className="min-w-0 flex-1 space-y-1.5">
                 <Label htmlFor="superadmin-default-booking-fee">Default booking fee</Label>
-                <Input
-                  id="superadmin-default-booking-fee"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={
-                    bookingFeeInput ||
-                    String(bookingFeeSetting?.default_booking_fee ?? 0)
-                  }
-                  onChange={(event) => {
-                    const digitsOnly = event.target.value.replace(/\D/g, "");
-                    setBookingFeeInput(digitsOnly);
-                  }}
-                  className="h-11 tabular-nums"
-                />
+                {isLoadingBookingFee ? (
+                  <Skeleton className="h-11 w-full rounded-md" />
+                ) : (
+                  <Input
+                    id="superadmin-default-booking-fee"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="0"
+                    value={bookingFeeFieldValue}
+                    onChange={(event) => {
+                      setBookingFeeTouched(true);
+                      const digitsOnly = event.target.value.replace(/\D/g, "");
+                      setBookingFeeInput(digitsOnly);
+                    }}
+                    className="h-11 tabular-nums"
+                  />
+                )}
               </div>
               <Button
                 type="button"
                 className="h-11 w-full shrink-0 sm:w-auto"
                 onClick={() => saveBookingFeeSetting.mutate()}
-                disabled={saveBookingFeeSetting.isPending}
+                disabled={saveBookingFeeSetting.isPending || isLoadingBookingFee}
               >
                 {saveBookingFeeSetting.isPending ? "Saving..." : "Save booking fee"}
               </Button>

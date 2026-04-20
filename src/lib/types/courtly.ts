@@ -530,6 +530,8 @@ export type CourtDayAvailability = {
 export type CourtBookingSurfaceResponse = {
   court: Court;
   sibling_courts: Court[];
+  /** Effective flat booking fee (PHP) for this venue: platform default or venue override. */
+  flat_booking_fee: number;
   availability: CourtDayAvailability;
   reviews: CourtReview[];
 };
