@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { CalendarIcon, Copy, Plus, Send, Trash2 } from "lucide-react";
+import { CalendarIcon, Copy, History, Plus, Send, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -130,6 +131,8 @@ export default function SuperadminUsersPage() {
     "all",
   );
   const [sortBy, setSortBy] = useState<UserSort>("name_asc");
+  const [accountHistoryOpen, setAccountHistoryOpen] = useState(false);
+  const [accountHistoryUserId, setAccountHistoryUserId] = useState<string | null>(null);
 
   const {
     data: directoryPages,
@@ -207,14 +210,28 @@ export default function SuperadminUsersPage() {
     return list;
   }, [users, roleFilter, sortBy]);
 
-  const { data: auditData, isLoading: auditsLoading } = useQuery({
-    queryKey: ["managed-user-audits", editing?.id],
+  const { data: accountHistoryData, isLoading: accountHistoryLoading } = useQuery({
+    queryKey: ["managed-user-audits", accountHistoryUserId],
     queryFn: async () => {
-      const { data } = await courtlyApi.managedUsers.audits(editing!.id, { limit: 30 });
+      const { data } = await courtlyApi.managedUsers.audits(accountHistoryUserId!, {
+        limit: 100,
+      });
       return data;
     },
-    enabled: Boolean(dialogOpen && editing?.id),
+    enabled: Boolean(accountHistoryOpen && accountHistoryUserId),
   });
+
+  const accountHistoryChronological = useMemo(() => {
+    const items = accountHistoryData?.items ?? [];
+    return [...items].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+  }, [accountHistoryData?.items]);
+
+  const accountHistorySubject = useMemo(
+    () => users.find((u) => u.id === accountHistoryUserId) ?? null,
+    [users, accountHistoryUserId],
+  );
 
   const saveUser = useMutation({
     mutationFn: async () => {
@@ -500,14 +517,28 @@ export default function SuperadminUsersPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent
-          className={cn("max-h-[90vh]", editing ? "max-w-lg" : "max-w-md")}
-          contentClassName="min-w-0"
-        >
+        <DialogContent className="max-h-[90vh] max-w-md" contentClassName="min-w-0">
           <DialogHeader>
-            <DialogTitle className="font-heading">
-              {editing ? "Edit user" : "New user"}
-            </DialogTitle>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <DialogTitle className="font-heading">
+                {editing ? "Edit user" : "New user"}
+              </DialogTitle>
+              {editing ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  onClick={() => {
+                    setAccountHistoryUserId(editing.id);
+                    setAccountHistoryOpen(true);
+                  }}
+                >
+                  <History className="h-4 w-4" aria-hidden />
+                  Account history
+                </Button>
+              ) : null}
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -683,50 +714,6 @@ export default function SuperadminUsersPage() {
                 </div>
               </div>
             ) : null}
-            {editing ? (
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-                <p className="text-sm font-semibold text-foreground">Account history</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Recent superadmin changes (including email-only updates).
-                </p>
-                {auditsLoading ? (
-                  <Skeleton className="mt-3 h-20 w-full rounded-lg" />
-                ) : !auditData?.items.length ? (
-                  <p className="mt-2 text-xs text-muted-foreground">No audit entries yet.</p>
-                ) : (
-                  <ul className="mt-3 max-h-52 space-y-2 overflow-auto text-xs">
-                    {auditData.items.map((row) => (
-                      <li
-                        key={row.id}
-                        className="rounded-lg border border-border/40 bg-background/80 p-2.5"
-                      >
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="font-medium text-foreground">
-                            {summarizeAuditFields(row.changed_fields)}
-                          </span>
-                          <time
-                            className="shrink-0 text-muted-foreground"
-                            dateTime={row.created_at}
-                          >
-                            {format(new Date(row.created_at), "MMM d, yyyy h:mm a")}
-                          </time>
-                        </div>
-                        <p className="mt-1 text-muted-foreground">
-                          Actor:{" "}
-                          <span className="font-mono text-[11px]">{row.actor_user_id}</span>
-                        </p>
-                        <details className="mt-1.5">
-                          <summary className="cursor-pointer text-primary">View diff</summary>
-                          <pre className="mt-1 max-h-36 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[10px] leading-relaxed">
-                            {JSON.stringify(row.changed_fields, null, 2)}
-                          </pre>
-                        </details>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
           </div>
           <div
             role="group"
@@ -762,6 +749,86 @@ export default function SuperadminUsersPage() {
               onClick={() => saveUser.mutate()}
             >
               {saveUser.isPending ? "Saving…" : editing ? "Save" : "Create"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={accountHistoryOpen}
+        onOpenChange={(open) => {
+          setAccountHistoryOpen(open);
+          if (!open) setAccountHistoryUserId(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/60 px-6 py-4 text-left">
+            <DialogTitle className="font-heading">Account history</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              {accountHistorySubject ? (
+                <>
+                  {userDisplayName(accountHistorySubject)} · {accountHistorySubject.email}
+                </>
+              ) : accountHistoryUserId ? (
+                <>
+                  User ID:{" "}
+                  <span className="font-mono text-xs">{accountHistoryUserId}</span>
+                </>
+              ) : (
+                "Profile and access changes by superadmins, oldest first."
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {accountHistoryLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 w-full rounded-lg" />
+                <Skeleton className="h-16 w-full rounded-lg" />
+              </div>
+            ) : accountHistoryChronological.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No audit entries yet.</p>
+            ) : (
+              <ol className="space-y-3">
+                {accountHistoryChronological.map((row) => (
+                  <li
+                    key={row.id}
+                    className="rounded-lg border border-border/60 bg-muted/10 p-3"
+                  >
+                    <p className="text-xs text-muted-foreground">
+                      <time dateTime={row.created_at}>
+                        {format(new Date(row.created_at), "MMM d, yyyy · h:mm a")}
+                      </time>
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-foreground">
+                      {summarizeAuditFields(row.changed_fields)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      By <span className="font-mono">{row.actor_user_id}</span>
+                    </p>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-medium text-primary">
+                        Field diff (JSON)
+                      </summary>
+                      <pre className="mt-2 max-h-40 overflow-auto rounded-md border border-border/60 bg-muted/40 p-2 font-mono text-[10px] leading-relaxed">
+                        {JSON.stringify(row.changed_fields, null, 2)}
+                      </pre>
+                    </details>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+          <div className="border-t border-border/60 px-6 py-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                setAccountHistoryOpen(false);
+                setAccountHistoryUserId(null);
+              }}
+            >
+              Close
             </Button>
           </div>
         </DialogContent>

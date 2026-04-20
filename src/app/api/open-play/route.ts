@@ -217,13 +217,12 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const allowedSegment = new Set<typeof forCourt[number]["status"]>(["confirmed", "completed"]);
-    const allEligible = forCourt.every((s) => allowedSegment.has(s.status));
-    if (!allEligible) {
+    const allConfirmedForCourt = forCourt.every((s) => s.status === "confirmed");
+    if (!allConfirmedForCourt) {
       return NextResponse.json(
         {
           error:
-            "Each selected court must have only confirmed or completed booking segments to create open play (other courts in the checkout may be cancelled)",
+            "Each selected court must have only confirmed booking segments to create open play. Other courts in the same checkout may still be pending or cancelled—only the courts you pick must be fully confirmed.",
         },
         { status: 409 },
       );

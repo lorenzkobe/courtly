@@ -5,7 +5,7 @@ import { decodeOffsetCursor, encodeOffsetCursor, parseLimit } from "@/lib/pagina
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export type UserChangeAuditRow = {
+type UserChangeAuditRow = {
   id: string;
   actor_user_id: string;
   target_user_id: string;

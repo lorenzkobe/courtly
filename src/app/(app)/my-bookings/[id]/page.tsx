@@ -362,9 +362,6 @@ export default function BookingDetailPage() {
 
   const bookingGroupIdForOpenPlay = booking?.booking_group_id ?? booking?.id;
 
-  const segmentOkForOpenPlayHost = (status: Booking["status"]) =>
-    status === "confirmed" || status === "completed";
-
   const openPlayFromBookingEligible =
     Boolean(isMyBooking) &&
     (() => {
@@ -373,13 +370,13 @@ export default function BookingDetailPage() {
         const forCourt = segments.filter((s) => s.court_id === courtId);
         return (
           forCourt.length > 0 &&
-          forCourt.every((s) => segmentOkForOpenPlayHost(s.status))
+          forCourt.every((s) => s.status === "confirmed")
         );
       });
     })();
 
   const eligibleSegmentsForOpenPlay = useMemo(
-    () => segments.filter((segment) => segmentOkForOpenPlayHost(segment.status)),
+    () => segments.filter((segment) => segment.status === "confirmed"),
     [segments],
   );
 
@@ -424,7 +421,7 @@ export default function BookingDetailPage() {
     return distinctCourtsForOpenPlay.filter((c) => {
       if (existing.has(c.id)) return false;
       const courtSegs = segments
-        .filter((s) => segmentOkForOpenPlayHost(s.status))
+        .filter((s) => s.status === "confirmed")
         .filter((s) => s.court_id === c.id)
         .sort((a, b) => a.start_time.localeCompare(b.start_time));
       const first = courtSegs[0];
@@ -830,10 +827,12 @@ export default function BookingDetailPage() {
                 Create open play from this booking
               </h2>
               <p className="text-sm text-muted-foreground">
-                Turn your confirmed (or completed) court reservations into open play lobbies.
-                Each court you select becomes its own session (same title, price, and settings).
-                Other courts in the same checkout can be cancelled without blocking eligible
-                courts.
+                Turn each <strong className="font-medium text-foreground">confirmed</strong>{" "}
+                court reservation into an open play lobby before play starts. Each court you
+                select becomes its own session (same title, price, and settings). If this
+                checkout has multiple courts, only the courts that are fully confirmed count—
+                other courts can be cancelled or still pending without blocking a confirmed
+                court.
               </p>
               {distinctCourtsForOpenPlay.length > 1 ? (
                 <div className="space-y-2">
