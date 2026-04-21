@@ -519,26 +519,9 @@ export default function SuperadminUsersPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-md" contentClassName="min-w-0">
           <DialogHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <DialogTitle className="font-heading">
-                {editing ? "Edit user" : "New user"}
-              </DialogTitle>
-              {editing ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-1.5"
-                  onClick={() => {
-                    setAccountHistoryUserId(editing.id);
-                    setAccountHistoryOpen(true);
-                  }}
-                >
-                  <History className="h-4 w-4" aria-hidden />
-                  Account history
-                </Button>
-              ) : null}
-            </div>
+            <DialogTitle className="font-heading">
+              {editing ? "Edit user" : "New user"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -686,6 +669,21 @@ export default function SuperadminUsersPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 Inactive users cannot log in.
               </p>
+              {editing ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 w-full gap-1.5 sm:w-auto"
+                  onClick={() => {
+                    setAccountHistoryUserId(editing.id);
+                    setAccountHistoryOpen(true);
+                  }}
+                >
+                  <History className="h-4 w-4" aria-hidden />
+                  Account history
+                </Button>
+              ) : null}
             </div>
             {form.role === "admin" ? (
               <div>
