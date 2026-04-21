@@ -65,9 +65,10 @@ function Calendar({
       reverseYears={resolvedReverseYears}
       className={cn("p-2 sm:p-2.5", className)}
       classNames={{
-        root: rdp("root", "w-full max-w-full"),
-        months: rdp("months", "relative flex w-full flex-col gap-2"),
-        month: rdp("month", "relative flex w-full min-w-0 flex-col gap-2"),
+        /* w-fit: popover hugs grid width (see globals.css .rdp-root theme vars) */
+        root: rdp("root", "w-fit min-w-0 max-w-full"),
+        months: rdp("months", "relative flex w-fit max-w-full flex-col gap-2"),
+        month: rdp("month", "relative flex w-fit min-w-0 max-w-full flex-col gap-2"),
         month_caption: rdp(
           "month_caption",
           "relative mb-0.5 flex min-h-9 w-full flex-nowrap items-center justify-center px-0.5 sm:px-0",
@@ -114,12 +115,13 @@ function Calendar({
         day_button: cn(
           rdp("day_button"),
           buttonVariants({ variant: "ghost" }),
-          "size-8 max-w-full p-0 font-medium text-foreground aria-selected:opacity-100",
+          "size-8 max-w-full p-0 font-medium text-foreground aria-selected:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-0",
         ),
-        selected: rdp(
-          "selected",
-          "[&_button]:!bg-primary [&_button]:!text-primary-foreground [&_button]:shadow-sm [&_button]:hover:!bg-primary [&_button]:hover:!text-primary-foreground",
-        ),
+        /* Range + selected fills: globals.css (avoids Tailwind/!important order issues) */
+        selected: rdp("selected", "[&]:text-sm [&_.rdp-day_button]:text-[0.8125rem]"),
+        range_start: rdp("range_start"),
+        range_end: rdp("range_end"),
+        range_middle: rdp("range_middle"),
         today: rdp(
           "today",
           "[&_button]:bg-accent/70 [&_button]:font-semibold [&_button]:text-accent-foreground",

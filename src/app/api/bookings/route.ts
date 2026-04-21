@@ -13,6 +13,7 @@ import {
   listCourtIdsByVenueIds,
   insertRow,
   insertRows,
+  getPlatformDefaultBookingFeeAmount,
   listCourts,
   listVenueAdminAssignmentsByAdminUser,
   listVenues,
@@ -20,7 +21,6 @@ import {
 import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { logApiMetrics, payloadBytesOf } from "@/lib/observability/api-metrics";
 import { decodeOffsetCursor, encodeOffsetCursor, parseLimit } from "@/lib/pagination/cursor";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Booking, CourtSport } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -166,15 +166,7 @@ export async function POST(req: Request) {
   const [courts, venues, defaultFeeSetting] = await Promise.all([
     listCourts(),
     listVenues(),
-    (async () => {
-      const supabase = await createSupabaseServerClient();
-      const { data } = await supabase
-        .from("platform_settings")
-        .select("value")
-        .eq("key", "booking_fee_default")
-        .maybeSingle();
-      return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
-    })(),
+    getPlatformDefaultBookingFeeAmount(),
   ]);
   const bookings: Booking[] = [];
   const bookingVenuePairs: Array<{ venueId: string; venueName: string; courtName: string }> = [];

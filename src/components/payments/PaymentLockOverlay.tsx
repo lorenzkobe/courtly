@@ -78,7 +78,8 @@ export default function PaymentLockOverlay({
   return (
     <div className="fixed inset-0 z-50 flex min-h-0 items-center justify-center bg-background/85 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-4">
       <Card className="flex max-h-[min(100dvh-1.5rem,100svh-1.5rem)] w-full max-w-md min-h-0 flex-col border-primary/25 shadow-2xl">
-        <CardContent className="flex min-h-0 flex-1 flex-col space-y-5 overflow-y-auto overscroll-contain p-5 sm:p-6">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-5 sm:p-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
           <div className="space-y-1.5 text-center">
             <h2 className="font-heading text-xl font-semibold tracking-tight">
               Complete your payment
@@ -235,10 +236,12 @@ export default function PaymentLockOverlay({
               </label>
             )}
           </div>
+          </div>
+          <div className="shrink-0 space-y-3 border-t border-border/60 bg-card pt-4">
           <Button
             type="button"
             size="lg"
-            className="w-full font-heading font-semibold"
+            className="h-12 w-full shrink-0 font-heading font-semibold"
             onClick={onSubmit}
             disabled={submitDisabled}
           >
@@ -255,7 +258,8 @@ export default function PaymentLockOverlay({
             <Button
               type="button"
               variant="outline"
-              className="w-full"
+              size="lg"
+              className="h-12 w-full shrink-0"
               onClick={onCancel}
               disabled={cancelDisabled || cancelPending}
             >
@@ -272,6 +276,7 @@ export default function PaymentLockOverlay({
           <p className="text-center text-xs text-muted-foreground leading-relaxed">
             This window closes when the timer ends or after you submit.
           </p>
+          </div>
         </CardContent>
       </Card>
     </div>

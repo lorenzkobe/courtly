@@ -201,17 +201,14 @@ export default function GlobalPendingPaymentGate() {
   });
 
   const cancelPendingBooking = useMutation({
-    mutationFn: async () => {
-      if (!activePendingBooking) throw new Error("No active booking hold.");
+    mutationFn: async (payload: { booking_id: string; booking_group_id: string }) => {
       await courtlyApi.bookings.cancelPending({
-        booking_id: activePendingBooking.id,
-        booking_group_id: activePendingBooking.booking_group_id ?? undefined,
+        booking_id: payload.booking_id,
+        booking_group_id: payload.booking_group_id,
       });
     },
-    onMutate: () => {
-      if (activePendingBooking) {
-        setOptimisticCancelBookingId(activePendingBooking.id);
-      }
+    onMutate: (payload: { booking_id: string; booking_group_id: string }) => {
+      setOptimisticCancelBookingId(payload.booking_id);
     },
     onSuccess: () => {
       setOptimisticCancelBookingId(null);
@@ -249,7 +246,14 @@ export default function GlobalPendingPaymentGate() {
         !optimizedProof
       }
       submitPending={submitPaymentProof.isPending}
-      onCancel={() => cancelPendingBooking.mutate()}
+      onCancel={() => {
+        if (!activePendingBooking) return;
+        cancelPendingBooking.mutate({
+          booking_id: activePendingBooking.id,
+          booking_group_id:
+            activePendingBooking.booking_group_id ?? activePendingBooking.id,
+        });
+      }}
       cancelDisabled={submitPaymentProof.isPending}
       cancelPending={cancelPendingBooking.isPending}
     />

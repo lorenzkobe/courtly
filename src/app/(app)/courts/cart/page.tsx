@@ -262,21 +262,19 @@ export default function BookingCartPage() {
     },
   });
   const cancelPendingPayment = useMutation({
-    mutationFn: async () => {
-      if (!paymentOverlay) throw new Error("No active booking hold.");
+    mutationFn: async (overlay: PaymentOverlayState) => {
       await courtlyApi.bookings.cancelPending({
-        booking_id: paymentOverlay.booking_id,
-        booking_group_id: paymentOverlay.booking_group_id,
+        booking_id: overlay.booking_id,
+        booking_group_id: overlay.booking_group_id,
       });
     },
-    onMutate: () => {
-      const previous = paymentOverlay;
+    onMutate: (overlay: PaymentOverlayState) => {
       const previousProof = optimizedProof;
       const previousMethod = selectedPaymentMethod;
       setPaymentOverlay(null);
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
-      return { previousOverlay: previous, previousProof, previousMethod };
+      return { previousOverlay: overlay, previousProof, previousMethod };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
@@ -576,7 +574,10 @@ export default function BookingCartPage() {
             !optimizedProof
           }
           submitPending={submitPaymentProof.isPending}
-          onCancel={() => cancelPendingPayment.mutate()}
+          onCancel={() => {
+            if (!paymentOverlay) return;
+            cancelPendingPayment.mutate(paymentOverlay);
+          }}
           cancelDisabled={submitPaymentProof.isPending}
           cancelPending={cancelPendingPayment.isPending}
         />

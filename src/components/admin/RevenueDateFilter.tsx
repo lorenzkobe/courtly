@@ -60,6 +60,14 @@ export function RevenueDateFilter({
     return "Select date range";
   }, [fromDate, toDate]);
 
+  const hasDateFilter = Boolean(from?.trim() || to?.trim());
+
+  const handleClear = () => {
+    onFromChange("");
+    onToChange("");
+    onClear();
+  };
+
   return (
     <div
       className={cn(
@@ -87,13 +95,14 @@ export function RevenueDateFilter({
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            className="w-auto overflow-hidden border-border/80 p-0 shadow-xl"
+            className="w-fit! max-w-[min(100vw-1.5rem,22rem)] overflow-hidden border-border/80 p-0 shadow-xl"
             align="start"
           >
             <Calendar
               mode="range"
-              numberOfMonths={2}
+              numberOfMonths={1}
               pagedNavigation
+              className="w-fit"
               selected={selectedRange}
               defaultMonth={fromDate ?? toDate ?? new Date()}
               onSelect={(range) => {
@@ -131,14 +140,16 @@ export function RevenueDateFilter({
       >
         Apply
       </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        className="h-11 shrink-0 rounded-xl font-medium"
-        onClick={onClear}
-      >
-        All dates
-      </Button>
+      {hasDateFilter ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-11 shrink-0 rounded-xl font-medium"
+          onClick={handleClear}
+        >
+          Clear filter
+        </Button>
+      ) : null}
     </div>
   );
 }

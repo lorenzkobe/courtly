@@ -4,8 +4,8 @@ import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
 import { splitBookingAmounts } from "@/lib/platform-fee";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
+  getPlatformDefaultBookingFeeAmount,
   hasBlockingBookingConflictForCourt,
   listCourts,
   listVenues,
@@ -36,15 +36,7 @@ export async function POST(req: Request) {
   const [courts, venues, defaultFeeSetting] = await Promise.all([
     listCourts(),
     listVenues(),
-    (async () => {
-      const supabase = await createSupabaseServerClient();
-      const { data } = await supabase
-        .from("platform_settings")
-        .select("value")
-        .eq("key", "booking_fee_default")
-        .maybeSingle();
-      return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
-    })(),
+    getPlatformDefaultBookingFeeAmount(),
   ]);
   const holdExpiresAt = holdExpiresAtFrom();
   const bookingGroupId = crypto.randomUUID();

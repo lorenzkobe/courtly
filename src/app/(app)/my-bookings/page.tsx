@@ -63,17 +63,57 @@ function remainingTimeLabel(holdExpiresAt: string | null | undefined, nowMs: num
 type CourtDateGroup = {
   key: string;
   courtName: string;
+  /** Representative date for sorting (latest calendar day in the group). */
   date: string;
   items: Booking[];
   /** Use for /my-bookings/[id] so split segments open one combined detail. */
   detailBookingId: string;
 };
 
+/** Distinct calendar days in a session (unknown date is its own bucket). */
+function distinctSortedDateKeys(items: Booking[]): string[] {
+  const set = new Set<string>();
+  for (const b of items) {
+    set.add(b.date?.trim() || "Unknown date");
+  }
+  const known = Array.from(set)
+    .filter((d) => d !== "Unknown date")
+    .sort((a, b) => a.localeCompare(b));
+  if (set.has("Unknown date")) known.push("Unknown date");
+  return known;
+}
+
+/** Earliest or latest ISO date in the group (ignores unknown bucket) for list sorting. */
+function sortableCalendarKey(
+  group: CourtDateGroup,
+  mode: "recent" | "oldest",
+): string {
+  const keys = distinctSortedDateKeys(group.items).filter((d) => d !== "Unknown date");
+  if (keys.length === 0) return group.date;
+  return mode === "oldest" ? keys[0]! : keys[keys.length - 1]!;
+}
+
+function formatSessionHeaderDates(dateKeys: string[]): string | null {
+  if (dateKeys.length === 0) return null;
+  const knownIso = dateKeys.filter((d) => d !== "Unknown date");
+  if (knownIso.length === 0) return "Date unknown";
+  if (knownIso.length === 1 && dateKeys.length === 1) {
+    return format(new Date(`${knownIso[0]}T12:00:00`), "EEE, MMM d, yyyy");
+  }
+  const first = knownIso[0]!;
+  const last = knownIso[knownIso.length - 1]!;
+  const range = `${format(new Date(`${first}T12:00:00`), "EEE, MMM d, yyyy")} – ${format(
+    new Date(`${last}T12:00:00`),
+    "EEE, MMM d, yyyy",
+  )}`;
+  return dateKeys.includes("Unknown date") ? `${range} · undated row` : range;
+}
+
 function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
   const map = new Map<string, Booking[]>();
   for (const booking of list) {
     const key = booking.booking_group_id
-      ? `grp:${booking.booking_group_id}\0${booking.date}`
+      ? `grp:${booking.booking_group_id}`
       : `day:${booking.court_id}\0${booking.date}`;
     const arr = map.get(key);
     if (arr) arr.push(booking);
@@ -81,14 +121,19 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
   }
   const groups: CourtDateGroup[] = [];
   for (const [key, items] of map) {
-    items.sort((left, right) =>
-      left.start_time.localeCompare(right.start_time),
-    );
+    items.sort((left, right) => {
+      const byDate = left.date.localeCompare(right.date);
+      if (byDate !== 0) return byDate;
+      return left.start_time.localeCompare(right.start_time);
+    });
     const first = items[0];
+    const dates = distinctSortedDateKeys(items).filter((d) => d !== "Unknown date");
+    const representativeDate =
+      dates.length > 0 ? dates[dates.length - 1]! : (first?.date ?? "");
     groups.push({
       key,
       courtName: first?.establishment_name ?? first?.court_name ?? "Court",
-      date: first?.date ?? "",
+      date: representativeDate,
       items,
       detailBookingId: first?.id ?? "",
     });
@@ -99,6 +144,55 @@ function groupCourtBookings(list: Booking[]): CourtDateGroup[] {
     return a.courtName.localeCompare(b.courtName);
   });
   return groups;
+}
+
+/** Group segment rows by court for compact list display (shared date lives in the card header). */
+function bookingsByCourtForDisplay(items: Booking[]): Array<{
+  courtKey: string;
+  courtLabel: string;
+  bookings: Booking[];
+}> {
+  const m = new Map<string, Booking[]>();
+  for (const b of items) {
+    const key = (b.court_id ?? b.court_name ?? b.id).trim() || b.id;
+    const arr = m.get(key);
+    if (arr) arr.push(b);
+    else m.set(key, [b]);
+  }
+  for (const arr of m.values()) {
+    arr.sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }
+  return Array.from(m.entries())
+    .map(([courtKey, bookings]) => ({
+      courtKey,
+      courtLabel: (bookings[0]?.court_name ?? "").trim() || "Court",
+      bookings,
+    }))
+    .sort((a, b) => a.courtLabel.localeCompare(b.courtLabel));
+}
+
+/** One preview section per calendar day; courts are nested under each date. */
+function itemsGroupedByDateThenCourt(items: Booking[]): Array<{
+  dateKey: string;
+  courtBlocks: ReturnType<typeof bookingsByCourtForDisplay>;
+}> {
+  const byDate = new Map<string, Booking[]>();
+  for (const b of items) {
+    const d = b.date?.trim() || "Unknown date";
+    const arr = byDate.get(d);
+    if (arr) arr.push(b);
+    else byDate.set(d, [b]);
+  }
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => {
+      if (a === "Unknown date") return 1;
+      if (b === "Unknown date") return -1;
+      return a.localeCompare(b);
+    })
+    .map(([dateKey, dayItems]) => ({
+      dateKey,
+      courtBlocks: bookingsByCourtForDisplay(dayItems),
+    }));
 }
 
 export default function MyBookingsPage() {
@@ -173,9 +267,13 @@ export default function MyBookingsPage() {
     const groups = groupCourtBookings(filtered);
     groups.sort((a, b) => {
       if (sortBy === "court") return a.courtName.localeCompare(b.courtName);
-      if (sortBy === "oldest") return a.date.localeCompare(b.date);
-      // default: most recent first
-      return b.date.localeCompare(a.date);
+      if (sortBy === "oldest")
+        return sortableCalendarKey(a, "oldest").localeCompare(
+          sortableCalendarKey(b, "oldest"),
+        );
+      return sortableCalendarKey(b, "recent").localeCompare(
+        sortableCalendarKey(a, "recent"),
+      );
     });
     return groups;
   }, [bookings, query, sortBy, statusFilter]);
@@ -286,6 +384,9 @@ export default function MyBookingsPage() {
                 description="Try changing search, status, or sort options."
               />
             ) : bookingGroups.map((group) => {
+              const sessionDateKeys = distinctSortedDateKeys(group.items);
+              const dateSections = itemsGroupedByDateThenCourt(group.items);
+              const multiDaySession = sessionDateKeys.length > 1;
               const sessionTotal = group.items.reduce(
                 (sum, booking) => sum + (booking.total_cost ?? 0),
                 0,
@@ -306,18 +407,16 @@ export default function MyBookingsPage() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                           <span className="inline-flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 shrink-0" />
-                            {group.date &&
-                              format(
-                                new Date(`${group.date}T12:00:00`),
-                                "EEE, MMM d, yyyy",
-                              )}
+                            {formatSessionHeaderDates(sessionDateKeys)}
                           </span>
                         </div>
                         {group.items.length > 1 ? (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {group.items[0]?.booking_group_id
-                              ? "One booking with multiple reserved times (unavailable hours in between were skipped)."
-                              : `${group.items.length} reserved times on this day.`}
+                            {multiDaySession
+                              ? "One booking across multiple days — times are grouped by date below."
+                              : group.items[0]?.booking_group_id
+                                ? "One booking with multiple reserved times (unavailable hours in between were skipped)."
+                                : `${group.items.length} reserved times on this day.`}
                           </p>
                         ) : null}
                       </div>
@@ -328,68 +427,113 @@ export default function MyBookingsPage() {
                       </Button>
                     </div>
 
-                    <ul className="divide-y divide-border/60 border-t border-border/60">
-                      {group.items.map((booking) => {
-                        const hours = bookingDurationHours(booking);
-                        const displayStatus = segmentStatusForDisplay(
-                          booking,
-                          countdownNow,
-                        );
+                    <div className="space-y-0 border-t border-border/60">
+                      {dateSections.map(({ dateKey, courtBlocks }, sectionIdx) => {
+                        const showDateHeading = multiDaySession || dateKey === "Unknown date";
                         return (
-                          <li
-                            key={booking.id}
-                            className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                          <div
+                            key={dateKey}
+                            className={sectionIdx > 0 ? "border-t border-border/60" : ""}
                           >
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                  {booking.date ? (
-                                    <>
-                                      <span className="text-muted-foreground">
-                                        {format(
-                                          new Date(`${booking.date}T12:00:00`),
-                                          "EEE, MMM d",
-                                        )}
-                                      </span>
-                                      <span className="text-muted-foreground" aria-hidden>
-                                        ·
-                                      </span>
-                                    </>
-                                  ) : null}
-                                  {formatTimeShort(booking.start_time)} –{" "}
-                                  {formatTimeShort(booking.end_time)}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  ({hours} {hours === 1 ? "hr" : "hrs"} booked)
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className={statusStyles[displayStatus] ?? ""}
-                                >
-                                  {formatBookingStatusLabel(displayStatus)}
-                                </Badge>
-                                {booking.status === "pending_payment" ? (
-                                  <span className="text-xs text-muted-foreground">
-                                    Time left: {remainingTimeLabel(booking.hold_expires_at, countdownNow)}
-                                  </span>
-                                ) : null}
-                                <span className="text-sm font-semibold text-foreground tabular-nums">
-                                  {formatPhp(booking.total_cost ?? 0)}
-                                </span>
-                              </div>
-                              {booking.status === "pending_confirmation" ? (
-                                <p className="pt-1 text-xs text-muted-foreground">
-                                  Payment proof submitted. Waiting for venue confirmation.
-                                </p>
-                              ) : null}
-                            </div>
-                          </li>
+                            {showDateHeading ? (
+                              <p className="bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {dateKey === "Unknown date"
+                                  ? "Date unknown"
+                                  : format(
+                                      new Date(`${dateKey}T12:00:00`),
+                                      "EEE, MMM d, yyyy",
+                                    )}
+                              </p>
+                            ) : null}
+                            <ul className="divide-y divide-border/60">
+                              {courtBlocks.map((courtBlock) => {
+                                const showCourtHeading =
+                                  courtBlock.bookings.length > 1 ||
+                                  courtBlocks.length > 1;
+                                return (
+                                  <li key={courtBlock.courtKey} className="py-3 first:pt-3">
+                                    {showCourtHeading ? (
+                                      <p className="mb-2 text-sm font-medium text-foreground">
+                                        {courtBlock.courtLabel}
+                                      </p>
+                                    ) : null}
+                                    <ul className="space-y-3">
+                                      {courtBlock.bookings.map((booking) => {
+                                        const hours = bookingDurationHours(booking);
+                                        const displayStatus = segmentStatusForDisplay(
+                                          booking,
+                                          countdownNow,
+                                        );
+                                        return (
+                                          <li
+                                            key={booking.id}
+                                            className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                                          >
+                                            <div className="min-w-0 flex-1 space-y-1">
+                                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm font-medium text-foreground">
+                                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                  <span>
+                                                    {formatTimeShort(booking.start_time)} –{" "}
+                                                    {formatTimeShort(booking.end_time)}
+                                                  </span>
+                                                  {!showCourtHeading && booking.court_name ? (
+                                                    <>
+                                                      <span
+                                                        className="text-muted-foreground"
+                                                        aria-hidden
+                                                      >
+                                                        ·
+                                                      </span>
+                                                      <span className="font-medium text-foreground">
+                                                        {booking.court_name}
+                                                      </span>
+                                                    </>
+                                                  ) : null}
+                                                </span>
+                                                <span className="text-sm text-muted-foreground">
+                                                  ({hours} {hours === 1 ? "hr" : "hrs"} booked)
+                                                </span>
+                                              </div>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <Badge
+                                                  variant="outline"
+                                                  className={statusStyles[displayStatus] ?? ""}
+                                                >
+                                                  {formatBookingStatusLabel(displayStatus)}
+                                                </Badge>
+                                                {booking.status === "pending_payment" ? (
+                                                  <span className="text-xs text-muted-foreground">
+                                                    Time left:{" "}
+                                                    {remainingTimeLabel(
+                                                      booking.hold_expires_at,
+                                                      countdownNow,
+                                                    )}
+                                                  </span>
+                                                ) : null}
+                                                <span className="text-sm font-semibold text-foreground tabular-nums">
+                                                  {formatPhp(booking.total_cost ?? 0)}
+                                                </span>
+                                              </div>
+                                              {booking.status === "pending_confirmation" ? (
+                                                <p className="pt-1 text-xs text-muted-foreground">
+                                                  Payment proof submitted. Waiting for venue
+                                                  confirmation.
+                                                </p>
+                                              ) : null}
+                                            </div>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
                         );
                       })}
-                    </ul>
+                    </div>
 
                     {showSessionTotal ? (
                       <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-sm">

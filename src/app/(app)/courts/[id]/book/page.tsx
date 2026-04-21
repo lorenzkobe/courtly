@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  keepPreviousData,
   useMutation,
   useQueries,
   useQuery,
@@ -293,7 +294,7 @@ export default function BookCourtPage() {
   );
   const {
     data: bookingSurface,
-    isLoading: isLoadingBookingSurface,
+    isPending: isBookingSurfacePending,
     isFetching: isFetchingBookingSurface,
     isError: isBookingSurfaceError,
     error: bookingSurfaceError,
@@ -307,6 +308,7 @@ export default function BookCourtPage() {
     },
     enabled: !!activeCourtId,
     staleTime: 15_000,
+    placeholderData: keepPreviousData,
   });
 
   const { data: myPendingBookings = [] } = useQuery({
@@ -322,7 +324,7 @@ export default function BookCourtPage() {
   });
   const court = bookingSurface?.court;
   const missingCourt =
-    !isLoadingBookingSurface &&
+    !isBookingSurfacePending &&
     !court &&
     (!isBookingSurfaceError || httpStatusOf(bookingSurfaceError) === 404);
   useEffect(() => {
@@ -350,6 +352,7 @@ export default function BookCourtPage() {
       },
       staleTime: 15_000,
       enabled: !!matrixCourt.id,
+      placeholderData: keepPreviousData,
     })),
   });
   const cartSurfaceQueries = useQueries({
@@ -402,16 +405,21 @@ export default function BookCourtPage() {
   });
 
   const isSlotMatrixFetching =
-    (!isLoadingBookingSurface && isFetchingBookingSurface) ||
-    matrixSurfaceQueries.some((q) => q.isFetching || q.isLoading);
+    isFetchingBookingSurface ||
+    matrixSurfaceQueries.some((q) => q.isFetching);
 
-  const isLoading = isLoadingBookingSurface;
+  useEffect(() => {
+    if (isSlotMatrixFetching) setDatePickerOpen(false);
+  }, [isSlotMatrixFetching]);
+
+  /** Full-page skeleton only on first load; date changes keep the page and reload the slot block only. */
+  const isLoading = isBookingSurfacePending;
 
   const courtReviews = useMemo(
     () => bookingSurface?.reviews ?? [],
     [bookingSurface?.reviews],
   );
-  const isLoadingReviews = isLoadingBookingSurface;
+  const isLoadingReviews = isBookingSurfacePending;
 
   const reviewsNewestFirst = useMemo(
     () =>
@@ -632,21 +640,19 @@ export default function BookCourtPage() {
     },
   });
   const cancelPendingPayment = useMutation({
-    mutationFn: async () => {
-      if (!paymentOverlay) throw new Error("No active booking hold.");
+    mutationFn: async (overlay: PaymentOverlayState) => {
       await courtlyApi.bookings.cancelPending({
-        booking_id: paymentOverlay.booking_id,
-        booking_group_id: paymentOverlay.booking_group_id,
+        booking_id: overlay.booking_id,
+        booking_group_id: overlay.booking_group_id,
       });
     },
-    onMutate: () => {
-      const previous = paymentOverlay;
+    onMutate: (overlay: PaymentOverlayState) => {
       const previousProof = optimizedProof;
       const previousMethod = selectedPaymentMethod;
       setPaymentOverlay(null);
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
-      return { previousOverlay: previous, previousProof, previousMethod };
+      return { previousOverlay: overlay, previousProof, previousMethod };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
@@ -1422,6 +1428,41 @@ export default function BookCourtPage() {
             <CardTitle className="font-heading text-lg">Choose your slots</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isSlotMatrixFetching ? (
+              <div
+                className="space-y-3"
+                aria-busy
+                aria-label="Loading availability for the selected date"
+              >
+                <Skeleton className="h-11 w-full rounded-xl" />
+                <div className="max-h-[min(46vh,22rem)] space-y-2 overflow-hidden rounded-xl border border-border/60 bg-muted/10 p-3">
+                  {Array.from({
+                    length: Math.min(14, Math.max(8, timeSlots.length)),
+                  }).map((_, rowIdx) => (
+                    <div
+                      key={rowIdx}
+                      className="flex items-center gap-2"
+                    >
+                      <Skeleton className="h-10 w-36 shrink-0 rounded-md" />
+                      <div className="flex min-w-0 flex-1 gap-1.5">
+                        {Array.from({
+                          length: Math.max(1, matrixCourts.length),
+                        }).map((__, colIdx) => (
+                          <Skeleton
+                            key={colIdx}
+                            className="h-10 min-w-0 flex-1 rounded-md"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Loading availability for this date…
+                </p>
+              </div>
+            ) : (
+              <>
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-2">
               <Button
                 type="button"
@@ -1479,17 +1520,6 @@ export default function BookCourtPage() {
               </Button>
             </div>
             <div className="relative max-h-[min(46vh,22rem)] overflow-auto rounded-xl border border-border/60">
-              {isSlotMatrixFetching ? (
-                <div
-                  className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-background/55 backdrop-blur-[1px]"
-                  aria-busy
-                  aria-label="Updating availability"
-                >
-                  <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
-                    Updating slots…
-                  </span>
-                </div>
-              ) : null}
               <table className="min-w-full text-xs">
                 <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
                   <tr>
@@ -1571,6 +1601,8 @@ export default function BookCourtPage() {
               Tap cells to build your booking across courts. Selected cells are added
               to the inline summary below.
             </p>
+              </>
+            )}
           </CardContent>
         </Card>
           <Card className="border-border/50">
@@ -1722,7 +1754,10 @@ export default function BookCourtPage() {
             !optimizedProof
           }
           submitPending={submitPaymentProof.isPending}
-          onCancel={() => cancelPendingPayment.mutate()}
+          onCancel={() => {
+            if (!paymentOverlay) return;
+            cancelPendingPayment.mutate(paymentOverlay);
+          }}
           cancelDisabled={submitPaymentProof.isPending}
           cancelPending={cancelPendingPayment.isPending}
         />

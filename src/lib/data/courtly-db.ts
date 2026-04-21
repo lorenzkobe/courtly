@@ -475,14 +475,35 @@ export async function listVenuesByIds(venueIds: string[]): Promise<Venue[]> {
   });
 }
 
+/** Parse `platform_settings.value` jsonb — matches superadmin booking-fee API shape `{ amount: number }`. */
+function amountFromPlatformSettingsJson(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "object" && value !== null && "amount" in value) {
+    const n = Number((value as { amount?: unknown }).amount);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Reads `booking_fee_default` with the service role (same access as superadmin settings).
+ * Typed `from("platform_settings")` can fail silently in some builds; mirror the superadmin route.
+ */
 export async function getPlatformDefaultBookingFeeAmount(): Promise<number> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
     .from("platform_settings")
     .select("value")
     .eq("key", "booking_fee_default")
     .maybeSingle();
-  return Number((data?.value as { amount?: unknown } | undefined)?.amount ?? 0);
+  if (error) {
+    console.error("[courtly] getPlatformDefaultBookingFeeAmount", error.message);
+    return 0;
+  }
+  return amountFromPlatformSettingsJson(data?.value);
 }
 
 export async function getVenueById(venueId: string): Promise<Venue | null> {
