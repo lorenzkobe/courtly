@@ -184,6 +184,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   return NextResponse.json({
     ...next,
     email,
+    email_confirmed_at: authUser.user?.email_confirmed_at ?? null,
     venue_ids: nextVenueIds,
   });
 }

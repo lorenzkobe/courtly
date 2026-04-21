@@ -5,6 +5,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type InfiniteData,
 } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarIcon, Copy, History, Plus, Send, Trash2 } from "lucide-react";
@@ -41,7 +42,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
-import type { ManagedUser } from "@/lib/types/courtly";
+import type { ManagedUser, SuperadminDirectoryPagedResponse } from "@/lib/types/courtly";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import {
   EMAIL_REGEX,
@@ -246,16 +247,39 @@ export default function SuperadminUsersPage() {
         venue_ids: form.role === "admin" ? form.venue_ids : [],
       };
       if (editing) {
-        await courtlyApi.managedUsers.update(editing.id, body);
-        return { mode: "edit" as const };
+        const { data: updated } = await courtlyApi.managedUsers.update(editing.id, body);
+        return { mode: "edit" as const, updated, editedId: editing.id };
       }
       await courtlyApi.managedUsers.create(body);
       return { mode: "create" as const };
     },
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
-      if (editing?.id) {
-        void queryClient.invalidateQueries({ queryKey: ["managed-user-audits", editing.id] });
+      if (result.mode === "edit") {
+        const updated = result.updated as ManagedUser & { venue_ids?: string[] };
+        queryClient.setQueryData<InfiniteData<SuperadminDirectoryPagedResponse>>(
+          queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+          (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page) => ({
+                ...page,
+                managed_users: {
+                  ...page.managed_users,
+                  items: page.managed_users.items.map((u) =>
+                    u.id === updated.id ? { ...u, ...updated } : u,
+                  ),
+                },
+              })),
+            };
+          },
+        );
+      }
+      if (result.mode === "create") {
+        void queryClient.invalidateQueries({ queryKey: ["superadmin", "directory", "paged"] });
+      }
+      if (result.mode === "edit") {
+        void queryClient.invalidateQueries({ queryKey: ["managed-user-audits", result.editedId] });
       }
       if (result.mode === "create") {
         toast.success(
