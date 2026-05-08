@@ -36,7 +36,8 @@ import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
-import { formatTimeShort } from "@/lib/booking-range";
+import { formatTimeShort, hourFromTime, formatHourToken } from "@/lib/booking-range";
+import { segmentPricingTiers } from "@/lib/court-pricing";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
 import type { Booking, BookingAdminNote } from "@/lib/types/courtly";
@@ -463,9 +464,9 @@ export default function AdminBookingsPage() {
     isError: isDetailError,
     error: detailError,
   } = useQuery({
-    queryKey: ["admin-booking-detail", activeDetailId, "with-group"],
+    queryKey: ["admin-booking-detail", activeDetailId, "with-context"],
     queryFn: async () => {
-      const { data } = await courtlyApi.bookings.getWithGroup(activeDetailId!);
+      const { data } = await courtlyApi.bookings.getDetailContext(activeDetailId!);
       return data;
     },
     enabled: !!activeDetailId,
@@ -515,6 +516,7 @@ export default function AdminBookingsPage() {
   }, [activeDetailId]);
   const detailBooking = detailPayload?.booking;
   const detailGroup = detailPayload?.group_segments;
+  const detailCourt = detailPayload?.court;
 
   const detailSegments = useMemo(() => {
     if (!detailBooking) return [];
@@ -1273,6 +1275,15 @@ export default function AdminBookingsPage() {
                     ) : null}
                     <ul className="space-y-3">
                       {detailSegments.map((segment) => {
+                        const segNumHours = hourFromTime(segment.end_time) - hourFromTime(segment.start_time);
+                        const segTiers =
+                          detailCourt && segment.court_id === detailCourt.id
+                            ? segmentPricingTiers(detailCourt, segment)
+                            : [];
+                        const feePerHour =
+                          segNumHours > 0 && typeof segment.booking_fee === "number"
+                            ? segment.booking_fee / segNumHours
+                            : null;
                         return (
                           <li
                             key={segment.id}
@@ -1290,10 +1301,22 @@ export default function AdminBookingsPage() {
                                   · {formatTimeShort(segment.start_time)} –{" "}
                                   {formatTimeShort(segment.end_time)}
                                 </p>
-                                {segment.notes?.trim() ? (
-                                  <p className="pt-1 text-xs text-muted-foreground">
-                                    Note: {segment.notes.trim()}
-                                  </p>
+                                {segTiers.length > 0 ? (
+                                  <div className="mt-1.5 space-y-0.5">
+                                    {segTiers.map((tier) => (
+                                      <p key={tier.startHour} className="text-xs text-muted-foreground tabular-nums">
+                                        {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
+                                        {" · "}{formatPhp(tier.ratePerHour)}/hr · {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
+                                        {" = "}{formatPhp(tier.subtotal)}
+                                      </p>
+                                    ))}
+                                    {feePerHour !== null ? (
+                                      <p className="text-xs text-muted-foreground tabular-nums">
+                                        Booking fee · {formatPhp(feePerHour)}/hr · {segNumHours} {segNumHours === 1 ? "hr" : "hrs"}
+                                        {" = "}{formatPhp(segment.booking_fee ?? 0)}
+                                      </p>
+                                    ) : null}
+                                  </div>
                                 ) : null}
                               </div>
                               <div className="shrink-0 space-y-1 text-right">

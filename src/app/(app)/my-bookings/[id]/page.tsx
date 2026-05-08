@@ -33,7 +33,9 @@ import { formatPhp } from "@/lib/format-currency";
 import {
   bookingDurationHours,
   formatTimeShort,
+  formatHourToken,
 } from "@/lib/booking-range";
+import { segmentPricingTiers } from "@/lib/court-pricing";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
@@ -729,12 +731,20 @@ export default function BookingDetailPage() {
                   const openPlaySessionId = openPlaySessionIdByCourtId.get(
                     segment.court_id,
                   );
+                  const segTiers =
+                    court && segment.court_id === court.id
+                      ? segmentPricingTiers(court, segment)
+                      : [];
+                  const feePerHour =
+                    hours > 0 && typeof segment.booking_fee === "number"
+                      ? segment.booking_fee / hours
+                      : null;
                         return (
                           <li
                             key={segment.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 p-3"
+                            className="rounded-lg border border-border/50 bg-muted/20 p-3"
                           >
-                      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                         <div className="flex min-w-0 flex-col gap-1">
                           {sessionCourts.multiple ? (
                             <span className="text-sm font-medium text-foreground">
@@ -749,6 +759,23 @@ export default function BookingDetailPage() {
                               ({hours} {hours === 1 ? "hr" : "hrs"})
                             </span>
                           </div>
+                          {segTiers.length > 0 ? (
+                            <div className="mt-1 space-y-0.5">
+                              {segTiers.map((tier) => (
+                                <p key={tier.startHour} className="text-xs text-muted-foreground tabular-nums">
+                                  {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
+                                  {" · "}{formatPhp(tier.ratePerHour)}/hr · {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
+                                  {" = "}{formatPhp(tier.subtotal)}
+                                </p>
+                              ))}
+                              {feePerHour !== null ? (
+                                <p className="text-xs text-muted-foreground tabular-nums">
+                                  Booking fee · {formatPhp(feePerHour)}/hr · {hours} {hours === 1 ? "hr" : "hrs"}
+                                  {" = "}{formatPhp(segment.booking_fee ?? 0)}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {openPlaySessionId ? (
                             <Button
                               variant="link"

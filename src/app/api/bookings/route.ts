@@ -5,7 +5,8 @@ import {
 } from "@/lib/booking-player-mobile";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { generateBookingNumber } from "@/lib/bookings/booking-number";
-import { splitBookingAmounts } from "@/lib/platform-fee";
+import { splitBookingAmounts, bookingFeeForCourt } from "@/lib/platform-fee";
+import { hourFromTime } from "@/lib/booking-range";
 import {
   deleteExpiredPendingPaymentBookings,
   listBookingsFiltered,
@@ -200,15 +201,17 @@ export async function POST(req: Request) {
       typeof total_cost === "number";
 
     if (!hasFullSplit) {
+      const numHours = Math.max(1,
+        hourFromTime(body.end_time as string) - hourFromTime(body.start_time as string)
+      );
       if (typeof court_subtotal === "number") {
-        const split = splitBookingAmounts(court_subtotal, courtBookingFee);
+        const split = splitBookingAmounts(court_subtotal, courtBookingFee, numHours);
         booking_fee = split.booking_fee;
         total_cost = split.total_cost;
       } else if (typeof total_cost === "number") {
-        const normalizedFee =
-          typeof courtBookingFee === "number" ? Math.max(0, Math.trunc(courtBookingFee)) : 0;
-        const subtotalFromTotal = Math.max(0, total_cost - normalizedFee);
-        const split = splitBookingAmounts(subtotalFromTotal, courtBookingFee);
+        const feeRate = bookingFeeForCourt(courtBookingFee);
+        const subtotalFromTotal = Math.max(0, total_cost - feeRate * numHours);
+        const split = splitBookingAmounts(subtotalFromTotal, courtBookingFee, numHours);
         court_subtotal = split.court_subtotal;
         booking_fee = split.booking_fee;
         total_cost = split.total_cost;

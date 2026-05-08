@@ -1,5 +1,6 @@
 import { segmentTotalCost } from "@/lib/court-pricing";
 import { splitBookingAmounts } from "@/lib/platform-fee";
+import { hourFromTime } from "@/lib/booking-range";
 import type { BookingSegment } from "@/lib/booking-range";
 import type { Booking, Court } from "@/lib/types/courtly";
 
@@ -18,9 +19,11 @@ export function buildBookingPayloads(
 ): Partial<Booking>[] {
   return segments.map((seg) => {
     const court_subtotal = segmentTotalCost(court, seg);
+    const numHours = hourFromTime(seg.end_time) - hourFromTime(seg.start_time);
     const { booking_fee, total_cost } = splitBookingAmounts(
       court_subtotal,
       ctx.flatBookingFeePhp,
+      numHours,
     );
     return {
       court_id: court.id,

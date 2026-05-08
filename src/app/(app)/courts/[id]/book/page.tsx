@@ -503,13 +503,17 @@ export default function BookCourtPage() {
       const unavailableSlots = item.slots.filter((slot) => occupiedForLine.has(slot));
       const subtotal = lineCourt ? segmentsTotalCost(lineCourt, lineSegments) : 0;
       const flatFee = surface?.flat_booking_fee;
+      const numHours = lineSegments.reduce(
+        (sum, seg) => sum + hourFromTime(seg.end_time) - hourFromTime(seg.start_time),
+        0,
+      );
       return {
         item,
         court: lineCourt,
         segments: lineSegments,
         unavailableSlots,
         flatBookingFeePhp: flatFee ?? 0,
-        totals: splitBookingAmounts(subtotal, flatFee),
+        totals: splitBookingAmounts(subtotal, flatFee, numHours),
       };
     });
   }, [cartItems, cartSurfaceQueries]);

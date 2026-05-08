@@ -50,6 +50,46 @@ export function courtRateRange(court: Court): { min: number; max: number } {
   };
 }
 
+export type PricingTier = {
+  startHour: number;
+  endHour: number;
+  hours: number;
+  ratePerHour: number;
+  subtotal: number;
+};
+
+/** Groups consecutive hours with the same rate into display tiers. */
+export function segmentPricingTiers(
+  court: Court,
+  seg: { start_time: string; end_time: string },
+): PricingTier[] {
+  const sh = hourFromTime(seg.start_time);
+  const eh = hourFromTime(seg.end_time);
+  if (sh >= eh) return [];
+
+  const tiers: PricingTier[] = [];
+  let tierStart = sh;
+  let currentRate = hourlyRateForHourStart(court, formatHourToken(sh));
+
+  for (let h = sh + 1; h <= eh; h++) {
+    const isEnd = h === eh;
+    const rate = isEnd ? NaN : hourlyRateForHourStart(court, formatHourToken(h));
+    if (isEnd || rate !== currentRate) {
+      tiers.push({
+        startHour: tierStart,
+        endHour: h,
+        hours: h - tierStart,
+        ratePerHour: currentRate,
+        subtotal: currentRate * (h - tierStart),
+      });
+      tierStart = h;
+      currentRate = rate;
+    }
+  }
+
+  return tiers;
+}
+
 /** Short label for cards (e.g. "₱40–55/hr" or "₱45/hr"). */
 export function formatCourtRateSummary(court: Court): string {
   const windows = court.hourly_rate_windows ?? [];

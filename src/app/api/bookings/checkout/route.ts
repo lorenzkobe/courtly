@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { generateBookingNumber } from "@/lib/bookings/booking-number";
 import { holdExpiresAtFrom } from "@/lib/bookings/payment-hold";
-import { splitBookingAmounts } from "@/lib/platform-fee";
+import { splitBookingAmounts, bookingFeeForCourt } from "@/lib/platform-fee";
+import { hourFromTime } from "@/lib/booking-range";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getPlatformDefaultBookingFeeAmount,
@@ -97,13 +98,17 @@ export async function POST(req: Request) {
       typeof bookingFee === "number" &&
       typeof itemTotal === "number";
     if (!hasFullSplit) {
+      const numHours = Math.max(1,
+        hourFromTime(body.end_time) - hourFromTime(body.start_time)
+      );
       if (typeof courtSubtotal === "number") {
-        const split = splitBookingAmounts(courtSubtotal, bookingFeeForVenue);
+        const split = splitBookingAmounts(courtSubtotal, bookingFeeForVenue, numHours);
         bookingFee = split.booking_fee;
         itemTotal = split.total_cost;
       } else if (typeof itemTotal === "number") {
-        const subtotalFromTotal = Math.max(0, itemTotal);
-        const split = splitBookingAmounts(subtotalFromTotal, bookingFeeForVenue);
+        const feeRate = bookingFeeForCourt(bookingFeeForVenue);
+        const subtotalFromTotal = Math.max(0, itemTotal - feeRate * numHours);
+        const split = splitBookingAmounts(subtotalFromTotal, bookingFeeForVenue, numHours);
         courtSubtotal = split.court_subtotal;
         bookingFee = split.booking_fee;
         itemTotal = split.total_cost;

@@ -25,8 +25,10 @@ export function customerTotalFromCourtSubtotal(
 export function splitBookingAmounts(
   courtSubtotal: number,
   courtBookingFee: number | undefined,
+  numHours: number,
 ) {
-  const booking_fee = bookingFeeForCourt(courtBookingFee);
+  const fee_rate = bookingFeeForCourt(courtBookingFee);
+  const booking_fee = fee_rate * numHours;
   const total_cost = round2(courtSubtotal + booking_fee);
   return {
     court_subtotal: round2(courtSubtotal),
