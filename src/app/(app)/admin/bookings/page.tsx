@@ -1359,8 +1359,8 @@ export default function AdminBookingsPage() {
                                     <SelectValue placeholder="Select action" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="completed">Complete slot</SelectItem>
                                     <SelectItem value="skip">No action</SelectItem>
+                                    <SelectItem value="completed">Complete slot</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
