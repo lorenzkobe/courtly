@@ -36,7 +36,7 @@ import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { timeRangesOverlap } from "@/lib/booking-overlap";
 import { formatPhp } from "@/lib/format-currency";
-import { formatTimeShort, hourFromTime, formatHourToken } from "@/lib/booking-range";
+import { formatTimeShort, formatHourToken } from "@/lib/booking-range";
 import { segmentPricingTiers } from "@/lib/court-pricing";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isSuperadmin } from "@/lib/auth/management";
@@ -1275,7 +1275,6 @@ export default function AdminBookingsPage() {
                     ) : null}
                     <ul className="space-y-3">
                       {detailSegments.map((segment) => {
-                        const segNumHours = hourFromTime(segment.end_time) - hourFromTime(segment.start_time);
                         const segTiers =
                           detailCourt && segment.court_id === detailCourt.id
                             ? segmentPricingTiers(detailCourt, segment)
@@ -1285,8 +1284,8 @@ export default function AdminBookingsPage() {
                             key={segment.id}
                             className="rounded-lg border border-border/60 bg-muted/15 p-3"
                           >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
                                 <p className="font-medium text-foreground">
                                   {segment.court_name ?? "Court"}
                                 </p>
@@ -1297,48 +1296,46 @@ export default function AdminBookingsPage() {
                                   · {formatTimeShort(segment.start_time)} –{" "}
                                   {formatTimeShort(segment.end_time)}
                                 </p>
-                                {segTiers.length > 0 ? (
-                                  <div className="mt-1.5 space-y-1 text-xs tabular-nums">
-                                    {segTiers.map((tier) => (
-                                      <div key={tier.startHour} className="flex items-baseline justify-between gap-3">
-                                        <span className="text-muted-foreground">
-                                          {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
-                                          {" · "}{formatPhp(tier.ratePerHour)}/hr × {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
-                                        </span>
-                                        <span className="shrink-0 text-foreground/75">{formatPhp(tier.subtotal)}</span>
-                                      </div>
-                                    ))}
-                                    {typeof segment.booking_fee === "number" ? (
-                                      <div className="flex items-baseline justify-between gap-3 border-t border-border/40 pt-1">
-                                        <span className="text-muted-foreground">Booking fee</span>
-                                        <span className="shrink-0 text-foreground/75">{formatPhp(segment.booking_fee)}</span>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                ) : null}
                               </div>
-                              <div className="shrink-0 space-y-1 text-right">
-                                <div className="flex flex-wrap justify-end gap-1">
+                              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className={statusStyles[segment.status] ?? ""}
+                                >
+                                  {formatBookingStatusLabel(segment.status)}
+                                </Badge>
+                                {segment.refund_required ? (
                                   <Badge
                                     variant="outline"
-                                    className={statusStyles[segment.status] ?? ""}
+                                    className="border-amber-500/30 bg-amber-500/10 text-amber-700"
                                   >
-                                    {formatBookingStatusLabel(segment.status)}
+                                    Refund
                                   </Badge>
-                                  {segment.refund_required ? (
-                                    <Badge
-                                      variant="outline"
-                                      className="border-amber-500/30 bg-amber-500/10 text-amber-700"
-                                    >
-                                      Refund
-                                    </Badge>
-                                  ) : null}
-                                </div>
+                                ) : null}
                                 <p className="font-semibold tabular-nums text-foreground">
                                   {formatPhp(segment.total_cost ?? 0)}
                                 </p>
                               </div>
                             </div>
+                            {segTiers.length > 0 ? (
+                              <div className="mt-3 space-y-1 border-t border-border/50 pt-3 text-xs tabular-nums">
+                                {segTiers.map((tier) => (
+                                  <div key={tier.startHour} className="flex items-baseline justify-between gap-3">
+                                    <span className="text-muted-foreground">
+                                      {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
+                                      {" · "}{formatPhp(tier.ratePerHour)}/hr × {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
+                                    </span>
+                                    <span className="shrink-0 text-foreground/75">{formatPhp(tier.subtotal)}</span>
+                                  </div>
+                                ))}
+                                {typeof segment.booking_fee === "number" ? (
+                                  <div className="flex items-baseline justify-between gap-3 border-t border-border/40 pt-1">
+                                    <span className="text-muted-foreground">Booking fee</span>
+                                    <span className="shrink-0 text-foreground/75">{formatPhp(segment.booking_fee)}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {segment.status === "pending_confirmation" ? (
                               <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
                                 <Select

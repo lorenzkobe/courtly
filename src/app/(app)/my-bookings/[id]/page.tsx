@@ -740,14 +740,14 @@ export default function BookingDetailPage() {
                             key={segment.id}
                             className="rounded-lg border border-border/50 bg-muted/20 p-3"
                           >
-                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                        <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
                           {sessionCourts.multiple ? (
-                            <span className="text-sm font-medium text-foreground">
+                            <span className="block text-sm font-medium text-foreground">
                               {segmentCourtLabel}
                             </span>
                           ) : null}
-                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-foreground">
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
                             <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             {formatTimeShort(segment.start_time)} –{" "}
                             {formatTimeShort(segment.end_time)}
@@ -755,42 +755,8 @@ export default function BookingDetailPage() {
                               ({hours} {hours === 1 ? "hr" : "hrs"})
                             </span>
                           </div>
-                          {segTiers.length > 0 ? (
-                            <div className="mt-1.5 space-y-1 text-xs tabular-nums">
-                              {segTiers.map((tier) => (
-                                <div key={tier.startHour} className="flex items-baseline justify-between gap-3">
-                                  <span className="text-muted-foreground">
-                                    {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
-                                    {" · "}{formatPhp(tier.ratePerHour)}/hr × {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
-                                  </span>
-                                  <span className="shrink-0 text-foreground/75">{formatPhp(tier.subtotal)}</span>
-                                </div>
-                              ))}
-                              {typeof segment.booking_fee === "number" ? (
-                                <div className="flex items-baseline justify-between gap-3 border-t border-border/40 pt-1">
-                                  <span className="text-muted-foreground">Booking fee</span>
-                                  <span className="shrink-0 text-foreground/75">{formatPhp(segment.booking_fee)}</span>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {openPlaySessionId ? (
-                            <Button
-                              variant="link"
-                              className="h-auto min-h-0 justify-start p-0 text-xs font-medium text-primary"
-                              asChild
-                            >
-                              <Link href={`/open-play/${openPlaySessionId}`}>
-                                View open play
-                                <ExternalLink
-                                  className="ml-1 h-3.5 w-3.5 shrink-0"
-                                  aria-hidden
-                                />
-                              </Link>
-                            </Button>
-                          ) : null}
                         </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                           <Badge
                             variant="outline"
                             className={statusStyles[displayStatus] ?? ""}
@@ -802,6 +768,42 @@ export default function BookingDetailPage() {
                           </span>
                         </div>
                       </div>
+                      {segTiers.length > 0 ? (
+                        <div className="mt-3 space-y-1 border-t border-border/50 pt-3 text-xs tabular-nums">
+                          {segTiers.map((tier) => (
+                            <div key={tier.startHour} className="flex items-baseline justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
+                                {" · "}{formatPhp(tier.ratePerHour)}/hr × {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
+                              </span>
+                              <span className="shrink-0 text-foreground/75">{formatPhp(tier.subtotal)}</span>
+                            </div>
+                          ))}
+                          {typeof segment.booking_fee === "number" ? (
+                            <div className="flex items-baseline justify-between gap-3 border-t border-border/40 pt-1">
+                              <span className="text-muted-foreground">Booking fee</span>
+                              <span className="shrink-0 text-foreground/75">{formatPhp(segment.booking_fee)}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {openPlaySessionId ? (
+                        <div className="mt-2">
+                          <Button
+                            variant="link"
+                            className="h-auto min-h-0 justify-start p-0 text-xs font-medium text-primary"
+                            asChild
+                          >
+                            <Link href={`/open-play/${openPlaySessionId}`}>
+                              View open play
+                              <ExternalLink
+                                className="ml-1 h-3.5 w-3.5 shrink-0"
+                                aria-hidden
+                              />
+                            </Link>
+                          </Button>
+                        </div>
+                      ) : null}
                           </li>
                         );
                       })}
