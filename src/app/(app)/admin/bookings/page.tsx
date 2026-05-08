@@ -2,7 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, ListFilter, Loader2, Search, X } from "lucide-react";
+import { Calendar, ListFilter, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -1521,17 +1521,11 @@ export default function AdminBookingsPage() {
         <Button
           type="button"
           variant="outline"
+          size="icon"
           onClick={() => void refetchBookings()}
           disabled={isLoading || isRefetching}
         >
-          {isRefetching ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Refreshing...
-            </span>
-          ) : (
-            "Refresh"
-          )}
+          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
         </Button>
       </PageHeader>
 
@@ -1811,7 +1805,7 @@ export default function AdminBookingsPage() {
         </DialogContent>
       </Dialog>
 
-      {isLoading ? (
+      {(isLoading || isRefetching) ? (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-24 rounded-xl" />

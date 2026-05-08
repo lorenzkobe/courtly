@@ -607,3 +607,79 @@ export type AdminVenueRequestsResponse = {
 export type SuperadminVenueRequestsResponse = {
   requests: VenueRequest[];
 };
+
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+export type BillingCycleStatus = "unsettled" | "paid";
+
+export type VenueBillingCycle = {
+  id: string;
+  venue_id: string;
+  period_start: string;
+  period_end: string;
+  booking_count: number;
+  total_booking_fees: number;
+  status: BillingCycleStatus;
+  payment_method?: "gcash" | "maya" | null;
+  payment_proof_url?: string | null;
+  payment_proof_mime_type?: string | null;
+  payment_proof_bytes?: number | null;
+  payment_proof_width?: number | null;
+  payment_proof_height?: number | null;
+  payment_submitted_at?: string | null;
+  marked_paid_at?: string | null;
+  marked_paid_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BillingSummaryVenueRow = {
+  venue_id: string;
+  venue_name: string;
+  total_cycles: number;
+  unsettled_cycles: number;
+  paid_cycles: number;
+  total_fees_all_time: number;
+  total_fees_unsettled: number;
+  latest_cycle_status: BillingCycleStatus | null;
+};
+
+export type BillingSummaryResponse = {
+  venues: BillingSummaryVenueRow[];
+  platform_totals: {
+    total_fees_all_time: number;
+    total_fees_unsettled: number;
+    total_fees_paid: number;
+    unsettled_cycle_count: number;
+  };
+  venue_cycles?: VenueBillingCycle[];
+};
+
+export type BillingCycleBookingRow = {
+  booking_id: string;
+  booking_number?: string | null;
+  court_id: string;
+  court_name: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  player_name?: string | null;
+  booking_fee: number;
+};
+
+export type BillingCycleDetailResponse = {
+  cycle: VenueBillingCycle;
+  venue: { id: string; name: string };
+  bookings: BillingCycleBookingRow[];
+};
+
+export type AdminBillingListResponse = {
+  cycles: VenueBillingCycle[];
+  venue: { id: string; name: string };
+};
+
+export type GenerateBillingResult = {
+  generated: number;
+  skipped: number;
+  protected_paid: number;
+};

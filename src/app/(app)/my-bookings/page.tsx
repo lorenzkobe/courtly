@@ -6,6 +6,7 @@ import {
   Calendar,
   Clock,
   Loader2,
+  RefreshCw,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -278,7 +279,7 @@ export default function MyBookingsPage() {
     return groups;
   }, [bookings, query, sortBy, statusFilter]);
 
-  const tabLoading = isLoading && pages.length === 0;
+  const tabLoading = isLoading || isRefetching;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
@@ -289,17 +290,11 @@ export default function MyBookingsPage() {
         <Button
           type="button"
           variant="outline"
+          size="icon"
           onClick={() => void refetch()}
           disabled={isLoading || isRefetching}
         >
-          {isRefetching ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Refreshing...
-            </span>
-          ) : (
-            "Refresh"
-          )}
+          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
         </Button>
       </PageHeader>
 

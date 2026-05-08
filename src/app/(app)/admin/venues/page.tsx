@@ -227,13 +227,13 @@ export default function AdminVenuesPage() {
           <Button
             type="button"
             variant="outline"
+            size="icon"
             onClick={async () => {
               await Promise.all([refetchVenues(), refetchRequests()]);
             }}
             disabled={isRefreshing}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
           </Button>
           <Button
             onClick={() => {
@@ -251,7 +251,7 @@ export default function AdminVenuesPage() {
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
         <div className="space-y-6">
-          {isLoading ? (
+          {isFetchingVenues ? (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-48 rounded-xl" />
@@ -304,7 +304,7 @@ export default function AdminVenuesPage() {
             </div>
           )}
 
-          {!isLoading && venueCards.length === 0 ? (
+          {!isFetchingVenues && venueCards.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                 <Building2 className="h-8 w-8 text-muted-foreground" />
@@ -321,7 +321,7 @@ export default function AdminVenuesPage() {
             {!isLoadingRequests ? (
               <h2 className="font-heading text-lg font-semibold">Pending venue approval</h2>
             ) : null}
-            {isLoadingRequests ? (
+            {isFetchingRequests ? (
               <div className="space-y-3">
                 {[1, 2].map((idx) => (
                   <Skeleton key={idx} className="h-28 rounded-xl" />

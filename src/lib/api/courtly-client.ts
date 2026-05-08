@@ -513,4 +513,59 @@ export const courtlyApi = {
       limit?: number;
     }) => http.get<MyBookingsOverviewResponse>("/api/me/bookings-overview", { params }),
   },
+
+  superadminBilling: {
+    summary: (params?: { venue_id?: string }) =>
+      http.get<import("@/lib/types/courtly").BillingSummaryResponse>(
+        "/api/superadmin/billing/summary",
+        { params },
+      ),
+    generateMonthly: (body: {
+      year?: number;
+      month?: number;
+      mode: "backfill" | "replace_unsettled";
+    }) =>
+      http.post<import("@/lib/types/courtly").GenerateBillingResult>(
+        "/api/superadmin/billing/generate-monthly",
+        body,
+      ),
+    getCycleDetail: (cycleId: string) =>
+      http.get<import("@/lib/types/courtly").BillingCycleDetailResponse>(
+        `/api/superadmin/billing/cycles/${cycleId}`,
+      ),
+    markPaid: (cycleId: string) =>
+      http.post<{ ok: boolean }>(
+        `/api/superadmin/billing/cycles/${cycleId}/mark-paid`,
+        {},
+      ),
+    getProofUrl: (cycleId: string) =>
+      http.get<{ url: string }>(
+        `/api/superadmin/billing/cycles/${cycleId}/payment-proof-url`,
+      ),
+  },
+
+  adminBilling: {
+    list: (params?: { status?: string }) =>
+      http.get<import("@/lib/types/courtly").AdminBillingListResponse>(
+        "/api/admin/billing",
+        { params },
+      ),
+    getCycle: (cycleId: string) =>
+      http.get<import("@/lib/types/courtly").BillingCycleDetailResponse>(
+        `/api/admin/billing/${cycleId}`,
+      ),
+    submitProof: (
+      cycleId: string,
+      body: {
+        payment_method: "gcash" | "maya";
+        payment_proof_data_url: string;
+        payment_proof_mime_type: "image/jpeg";
+        payment_proof_bytes: number;
+        payment_proof_width: number;
+        payment_proof_height: number;
+      },
+    ) => http.post<{ ok: boolean }>(`/api/admin/billing/${cycleId}/submit-proof`, body),
+    getProofUrl: (cycleId: string) =>
+      http.get<{ url: string }>(`/api/admin/billing/${cycleId}/payment-proof-url`),
+  },
 };

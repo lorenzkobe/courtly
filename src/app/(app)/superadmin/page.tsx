@@ -3,7 +3,7 @@ import {
   ArrowRight,
   Building2,
   Flag,
-  PhilippinePeso,
+  Receipt,
   UserCog,
 } from "lucide-react";
 import PageHeader from "@/components/shared/PageHeader";
@@ -33,10 +33,10 @@ const links = [
   },
   {
     href: "/superadmin/revenue",
-    title: "Platform revenue",
+    title: "Billing",
     description:
-      "Filter by date, review income by court account, and drill into each account’s courts.",
-    icon: PhilippinePeso,
+      "Monthly booking fee statements per venue. Review payment proofs and mark cycles as paid.",
+    icon: Receipt,
   },
   {
     href: "/superadmin/moderation",
@@ -59,10 +59,10 @@ export default function SuperadminHomePage() {
         Onboard organizations under{" "}
         <strong className="font-medium text-foreground">Court accounts</strong>, manage people under{" "}
         <strong className="font-medium text-foreground">User accounts</strong>, and use{" "}
-        <strong className="font-medium text-foreground">Platform revenue</strong> for date-filtered
-        payouts and fees. Venue operators use{" "}
+        <strong className="font-medium text-foreground">Billing</strong> to collect monthly booking
+        fees from venues. Venue operators use{" "}
         <strong className="font-medium text-foreground">Revenue</strong> under their own admin login
-        for the same date filters on their courts.
+        for date-filtered court income.
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

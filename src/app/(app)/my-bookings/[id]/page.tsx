@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
+  RefreshCw,
   Star,
   Trash2,
 } from "lucide-react";
@@ -476,7 +477,7 @@ export default function BookingDetailPage() {
     ? undefined
     : reviews.find((review) => review.user_id === user.id);
 
-  const loading = loadingBooking;
+  const loading = loadingBooking || fetchingBooking;
   const [openPlayTitle, setOpenPlayTitle] = useState("");
   const [openPlaySlots, setOpenPlaySlots] = useState("");
   const [openPlayPrice, setOpenPlayPrice] = useState("");
@@ -658,17 +659,11 @@ export default function BookingDetailPage() {
         <Button
           type="button"
           variant="outline"
+          size="icon"
           disabled={fetchingBooking}
           onClick={() => void refetch()}
         >
-          {fetchingBooking ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Refreshing...
-            </span>
-          ) : (
-            "Refresh"
-          )}
+          <RefreshCw className={`h-4 w-4 ${fetchingBooking ? "animate-spin" : ""}`} />
         </Button>
       </PageHeader>
 

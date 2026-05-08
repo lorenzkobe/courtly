@@ -21,6 +21,8 @@ import type {
   VenueRequest,
   VenueClosure,
   PaymentTransaction,
+  VenueBillingCycle,
+  BillingCycleStatus,
 } from "@/lib/types/courtly";
 
 function toDateString(value: string | null): string {
@@ -2212,4 +2214,139 @@ export async function syncOpenPlayLifecycleStatuses(nowMs: number): Promise<{
     else throw upErr;
   }
   return { updated_count: updated };
+}
+
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+type BillingCycleRaw = {
+  id: string;
+  venue_id: string;
+  period_start: string;
+  period_end: string;
+  booking_count: number;
+  total_booking_fees: unknown;
+  status: string;
+  payment_method: string | null;
+  payment_proof_url: string | null;
+  payment_proof_mime_type: string | null;
+  payment_proof_bytes: number | null;
+  payment_proof_width: number | null;
+  payment_proof_height: number | null;
+  payment_submitted_at: string | null;
+  marked_paid_at: string | null;
+  marked_paid_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapBillingCycleRow(row: unknown): VenueBillingCycle {
+  const r = row as BillingCycleRaw;
+  const pm = r.payment_method;
+  return {
+    id: r.id,
+    venue_id: r.venue_id,
+    period_start: r.period_start,
+    period_end: r.period_end,
+    booking_count: r.booking_count,
+    total_booking_fees: Number(r.total_booking_fees ?? 0),
+    status: r.status === "paid" ? "paid" : "unsettled",
+    payment_method: pm === "gcash" || pm === "maya" ? pm : null,
+    payment_proof_url: r.payment_proof_url ?? null,
+    payment_proof_mime_type: r.payment_proof_mime_type ?? null,
+    payment_proof_bytes: r.payment_proof_bytes ?? null,
+    payment_proof_width: r.payment_proof_width ?? null,
+    payment_proof_height: r.payment_proof_height ?? null,
+    payment_submitted_at: r.payment_submitted_at ?? null,
+    marked_paid_at: r.marked_paid_at ?? null,
+    marked_paid_by_user_id: r.marked_paid_by_user_id ?? null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+export async function listBillingCyclesByVenue(
+  venueId: string,
+): Promise<VenueBillingCycle[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("venue_billing_cycles" as never)
+    .select("*")
+    .eq("venue_id", venueId)
+    .order("period_start", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).map(mapBillingCycleRow);
+}
+
+export async function getBillingCycleById(
+  id: string,
+): Promise<VenueBillingCycle | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("venue_billing_cycles" as never)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return mapBillingCycleRow(data);
+}
+
+export async function listAllBillingCycles(params?: {
+  status?: BillingCycleStatus;
+}): Promise<VenueBillingCycle[]> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from("venue_billing_cycles")
+    .select("*")
+    .order("period_start", { ascending: false });
+  if (params?.status) query = query.eq("status", params.status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).map(mapBillingCycleRow);
+}
+
+export async function updateBillingCycleProof(
+  id: string,
+  params: {
+    payment_method: "gcash" | "maya";
+    payment_proof_url: string;
+    payment_proof_mime_type: string;
+    payment_proof_bytes: number;
+    payment_proof_width: number;
+    payment_proof_height: number;
+  },
+): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("venue_billing_cycles" as never)
+    .update({
+      payment_method: params.payment_method,
+      payment_proof_url: params.payment_proof_url,
+      payment_proof_mime_type: params.payment_proof_mime_type,
+      payment_proof_bytes: params.payment_proof_bytes,
+      payment_proof_width: params.payment_proof_width,
+      payment_proof_height: params.payment_proof_height,
+      payment_submitted_at: new Date().toISOString(),
+    } as never)
+    .eq("id", id)
+    .eq("status", "unsettled");
+  if (error) throw error;
+}
+
+export async function markBillingCyclePaid(
+  id: string,
+  markedByUserId: string,
+): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("venue_billing_cycles" as never)
+    .update({
+      status: "paid",
+      marked_paid_at: new Date().toISOString(),
+      marked_paid_by_user_id: markedByUserId,
+    } as never)
+    .eq("id", id)
+    .eq("status", "unsettled");
+  if (error) throw error;
 }

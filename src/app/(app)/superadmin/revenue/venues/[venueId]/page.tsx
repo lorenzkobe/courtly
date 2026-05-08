@@ -1,15 +1,21 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, CheckCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, Suspense, useCallback, useMemo, useState } from "react";
-import { RevenueDateFilter } from "@/components/admin/RevenueDateFilter";
+import { use, useState } from "react";
+import { toast } from "sonner";
 import PageHeader from "@/components/shared/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -18,287 +24,423 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
+import type {
+  BillingCycleDetailResponse,
+  BillingCycleStatus,
+  VenueBillingCycle,
+} from "@/lib/types/courtly";
 
-function VenueRevenueInner() {
-  const params = useParams<{ venueId: string }>();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const venueRouteId = params.venueId;
-  const venueFilterParam =
-    venueRouteId === "unassigned" ? "unassigned" : (venueRouteId ?? "");
+type StatusFilter = "all" | BillingCycleStatus;
 
-  const from = searchParams.get("from") ?? "";
-  const to = searchParams.get("to") ?? "";
-  const [draftFrom, setDraftFrom] = useState(() => from);
-  const [draftTo, setDraftTo] = useState(() => to);
-
-  const setRange = useCallback(
-    (nextFrom: string, nextTo: string) => {
-      const p = new URLSearchParams(searchParams.toString());
-      if (nextFrom) p.set("from", nextFrom);
-      else p.delete("from");
-      if (nextTo) p.set("to", nextTo);
-      else p.delete("to");
-      const qs = p.toString();
-      router.replace(
-        `/superadmin/revenue/venues/${venueRouteId}${qs ? `?${qs}` : ""}`,
-      );
-    },
-    [router, searchParams, venueRouteId],
-  );
-
-  const queryParams = useMemo(
-    () => ({
-      from: from || undefined,
-      to: to || undefined,
-      venue_id: venueFilterParam,
-    }),
-    [from, to, venueFilterParam],
-  );
-
-  const backHref = useMemo(() => {
-    const p = new URLSearchParams();
-    if (from) p.set("from", from);
-    if (to) p.set("to", to);
-    const qs = p.toString();
-    return `/superadmin/revenue${qs ? `?${qs}` : ""}`;
-  }, [from, to]);
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: [
-      "revenue-summary",
-      "venue",
-      venueFilterParam,
-      queryParams.from,
-      queryParams.to,
-    ],
-    queryFn: async () => {
-      const { data: revenueSummary } =
-        await courtlyApi.revenue.summary(queryParams);
-      return revenueSummary;
-    },
-    enabled: !!venueFilterParam,
+function formatPeriod(periodStart: string): string {
+  const [year, month] = periodStart.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
   });
-  const [expandedCourts, setExpandedCourts] = useState<Record<string, boolean>>({});
-  const toggleCourtExpanded = useCallback((courtId: string) => {
-    setExpandedCourts((current) => ({ ...current, [courtId]: !current[courtId] }));
-  }, []);
+}
 
-  if (isLoading || !data) {
+function StatusBadge({ status }: { status: BillingCycleStatus }) {
+  if (status === "paid") {
     return (
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 md:px-10">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-24 w-full rounded-xl" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
-          ))}
-        </div>
-      </div>
+      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>
     );
   }
+  return (
+    <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Unsettled</Badge>
+  );
+}
 
-  if (isError) {
-    return (
-      <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
-        <p className="text-muted-foreground">Could not load revenue for this venue.</p>
-        <Button variant="outline" className="mt-4" asChild>
-          <Link href="/superadmin/revenue">Back to platform revenue</Link>
-        </Button>
-      </div>
-    );
+function CycleDetailDialog({
+  cycleId,
+  venueId,
+  open,
+  onOpenChange,
+}: {
+  cycleId: string | null;
+  venueId: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [loadingProof, setLoadingProof] = useState(false);
+
+  const { data, isLoading } = useQuery<BillingCycleDetailResponse>({
+    queryKey: ["superadmin", "billing", "cycle", cycleId],
+    queryFn: async () => {
+      const res = await courtlyApi.superadminBilling.getCycleDetail(cycleId!);
+      return res.data;
+    },
+    enabled: open && !!cycleId,
+    staleTime: 0,
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: () => courtlyApi.superadminBilling.markPaid(cycleId!),
+    onSuccess: () => {
+      toast.success("Billing cycle marked as paid.");
+      queryClient.invalidateQueries({ queryKey: ["superadmin", "billing"] });
+      onOpenChange(false);
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Something went wrong.")),
+  });
+
+  async function handleViewProof() {
+    if (!cycleId) return;
+    setLoadingProof(true);
+    try {
+      const res = await courtlyApi.superadminBilling.getProofUrl(cycleId);
+      setProofUrl(res.data.url);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Something went wrong."));
+    } finally {
+      setLoadingProof(false);
+    }
   }
 
-  const { totals, by_court, focus_venue } = data;
-  const title = focus_venue?.name ?? "Venue";
+  const cycle = data?.cycle;
+  const bookings = data?.bookings ?? [];
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) setProofUrl(null);
+      }}
+    >
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            {isLoading || !cycle ? (
+              "Loading…"
+            ) : (
+              <>
+                {formatPeriod(cycle.period_start)}
+                <StatusBadge status={cycle.status} />
+              </>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3 py-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-6 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ) : cycle ? (
+          <div className="space-y-5">
+            <div className="rounded-lg border border-border/60">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Court</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Player</TableHead>
+                    <TableHead className="text-right">Fee</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bookings.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="py-6 text-center text-sm text-muted-foreground"
+                      >
+                        No bookings found for this period.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    bookings.map((b) => (
+                      <TableRow key={b.booking_id}>
+                        <TableCell className="text-sm">{b.date}</TableCell>
+                        <TableCell className="text-sm">{b.court_name}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {b.start_time}–{b.end_time}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {b.player_name ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium">
+                          {formatPhp(b.booking_fee)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <div className="flex items-center justify-between border-t px-4 py-3">
+                <span className="text-sm font-medium">
+                  {cycle.booking_count} booking
+                  {cycle.booking_count !== 1 ? "s" : ""}
+                </span>
+                <span className="text-base font-semibold">
+                  {formatPhp(cycle.total_booking_fees)}
+                </span>
+              </div>
+            </div>
+
+            {cycle.payment_submitted_at && (
+              <div className="space-y-3 rounded-lg border border-border/60 p-4">
+                <p className="text-sm font-medium">Payment proof</p>
+                <p className="text-xs text-muted-foreground">
+                  Submitted{" "}
+                  {new Date(cycle.payment_submitted_at).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                  {cycle.payment_method
+                    ? ` via ${cycle.payment_method.toUpperCase()}`
+                    : ""}
+                </p>
+                {proofUrl ? (
+                  <img
+                    src={proofUrl}
+                    alt="Payment proof"
+                    className="max-h-64 rounded-lg border object-contain"
+                  />
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleViewProof}
+                    disabled={loadingProof}
+                  >
+                    {loadingProof ? "Loading…" : "View proof"}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {cycle.status === "paid" && cycle.marked_paid_at && (
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span>
+                  Marked as paid on{" "}
+                  {new Date(cycle.marked_paid_at).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          {cycle?.status === "unsettled" && (
+            <Button
+              onClick={() => markPaidMutation.mutate()}
+              disabled={markPaidMutation.isPending}
+            >
+              {markPaidMutation.isPending ? "Marking…" : "Mark as paid"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function VenueBillingDetailPage({
+  params,
+}: {
+  params: Promise<{ venueId: string }>;
+}) {
+  const { venueId } = use(params);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { data, isLoading, isRefetching, refetch } = useQuery({
+    queryKey: ["superadmin", "billing", "summary", venueId],
+    queryFn: async () => {
+      const res = await courtlyApi.superadminBilling.summary({ venue_id: venueId });
+      return res.data;
+    },
+    staleTime: 30_000,
+  });
+
+  const venueRow = data?.venues.find((v) => v.venue_id === venueId);
+  const venueName = venueRow?.venue_name ?? "Venue";
+  const allCycles = data?.venue_cycles ?? [];
+
+  const cycles = allCycles.filter((c: VenueBillingCycle) => {
+    if (statusFilter === "all") return true;
+    return c.status === statusFilter;
+  });
+
+  const totalGenerated = allCycles.reduce((s, c) => s + c.total_booking_fees, 0);
+  const totalUnsettled = allCycles
+    .filter((c) => c.status === "unsettled")
+    .reduce((s, c) => s + c.total_booking_fees, 0);
+  const totalPaid = allCycles
+    .filter((c) => c.status === "paid")
+    .reduce((s, c) => s + c.total_booking_fees, 0);
+
+  function openCycle(id: string) {
+    setSelectedCycleId(id);
+    setDialogOpen(true);
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 md:px-10">
-      <Button variant="ghost" className="mb-4 -ml-2" asChild>
-        <Link href={backHref}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Platform revenue
-        </Link>
-      </Button>
+      <Link
+        href="/superadmin/revenue"
+        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Billing
+      </Link>
 
       <PageHeader
-        title={title}
-        subtitle="Courts under this venue and booking income for the selected reservation dates."
-      />
+        title={(isLoading || isRefetching) ? "Billing" : venueName}
+        subtitle="Billing cycles"
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => void refetch()}
+          disabled={isLoading || isRefetching}
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+        </Button>
+      </PageHeader>
 
-      <div className="mb-6">
-        <RevenueDateFilter
-          from={draftFrom}
-          to={draftTo}
-          onFromChange={setDraftFrom}
-          onToChange={setDraftTo}
-          onApply={() => setRange(draftFrom, draftTo)}
-          onClear={() => setRange("", "")}
-          applyDisabled={draftFrom === from && draftTo === to}
-        />
-        {from || to ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Filter matches booking <strong className="font-medium text-foreground">reservation date</strong>{" "}
-            (not payment date).
-          </p>
-        ) : null}
-      </div>
-
-      <div className="mb-10 grid gap-4 sm:grid-cols-3">
-        <Card className="border-border/60">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Court net
+      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total fees generated
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-2xl font-bold text-foreground">
-              {formatPhp(totals.court_net)}
+            <p className="text-2xl font-heading font-bold">
+              {(isLoading || isRefetching) ? "—" : formatPhp(totalGenerated)}
             </p>
           </CardContent>
         </Card>
-        <Card className="border-primary/25 bg-primary/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Courtly booking fees
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Current payable
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-2xl font-bold text-primary">
-              {formatPhp(totals.booking_fees)}
+            <p className="text-2xl font-heading font-bold text-amber-600">
+              {(isLoading || isRefetching) ? "—" : formatPhp(totalUnsettled)}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">Flat fee per booking</p>
           </CardContent>
         </Card>
-        <Card className="border-border/60">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Customer total
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total paid
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-2xl font-bold text-foreground">
-              {formatPhp(totals.customer_total)}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {totals.booking_count} booking{totals.booking_count === 1 ? "" : "s"}
+            <p className="text-2xl font-heading font-bold text-green-600">
+              {(isLoading || isRefetching) ? "—" : formatPhp(totalPaid)}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-lg">Courts in this venue</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Filter:</span>
+        {(["all", "unsettled", "paid"] as StatusFilter[]).map((s) => (
+          <Button
+            key={s}
+            size="sm"
+            variant={statusFilter === s ? "default" : "outline"}
+            className="capitalize"
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === "all" ? "All" : s}
+          </Button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-border/60">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Period</TableHead>
+              <TableHead className="text-right">Bookings</TableHead>
+              <TableHead className="text-right">Total fees</TableHead>
+              <TableHead>Proof</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(isLoading || isRefetching) ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 5 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <div className="h-4 w-full animate-pulse rounded bg-muted" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : cycles.length === 0 ? (
               <TableRow>
-                <TableHead>Court</TableHead>
-                <TableHead className="text-right">Bookings</TableHead>
-                <TableHead className="text-right">Court net</TableHead>
-                <TableHead className="text-right">Courtly booking fee</TableHead>
-                <TableHead className="text-right">Customer total</TableHead>
+                <TableCell
+                  colSpan={5}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  No billing cycles found.
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {by_court.map((row) => {
-                const isExpanded = Boolean(expandedCourts[row.court_id]);
-                const hasBreakdown = (row.rate_breakdown?.length ?? 0) > 0;
-                return (
-                  <Fragment key={row.court_id}>
-                    <TableRow>
-                      <TableCell className="font-medium">
-                        <button
-                          type="button"
-                          onClick={() => toggleCourtExpanded(row.court_id)}
-                          className="inline-flex items-center gap-2 text-left hover:text-primary"
-                          aria-expanded={isExpanded}
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <span>{row.court_name}</span>
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.booking_count}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPhp(row.court_net)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-primary">
-                        {formatPhp(row.booking_fees)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPhp(row.customer_total)}
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="bg-muted/20">
-                          {hasBreakdown ? (
-                            <div className="space-y-2 py-1">
-                              <p className="text-xs text-muted-foreground">
-                                Price breakdown by booked hours
-                              </p>
-                              <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground">
-                                <span>Hourly rate</span>
-                                <span className="text-right">Hours booked</span>
-                                <span className="text-right">Subtotal</span>
-                              </div>
-                              {row.rate_breakdown!.map((rateRow) => (
-                                <div
-                                  key={`${row.court_id}-${rateRow.hourly_rate}`}
-                                  className="grid grid-cols-3 gap-2 text-sm"
-                                >
-                                  <span>{formatPhp(rateRow.hourly_rate)}/hr</span>
-                                  <span className="text-right tabular-nums">
-                                    {rateRow.hours_booked}
-                                  </span>
-                                  <span className="text-right tabular-nums">
-                                    {formatPhp(rateRow.court_subtotal)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="py-1 text-sm text-muted-foreground">
-                              No booked hours for the selected range.
-                            </p>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+            ) : (
+              cycles.map((c) => (
+                <TableRow
+                  key={c.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => openCycle(c.id)}
+                >
+                  <TableCell className="font-medium">
+                    {formatPeriod(c.period_start)}
+                  </TableCell>
+                  <TableCell className="text-right">{c.booking_count}</TableCell>
+                  <TableCell className="text-right font-medium">
+                    {formatPhp(c.total_booking_fees)}
+                  </TableCell>
+                  <TableCell>
+                    {c.payment_submitted_at ? (
+                      <span className="text-sm text-green-700">Uploaded</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-function Fallback() {
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 md:px-10">
-      <Skeleton className="h-10 w-56" />
-      <Skeleton className="h-24 w-full rounded-xl" />
+      <CycleDetailDialog
+        cycleId={selectedCycleId}
+        venueId={venueId}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
     </div>
-  );
-}
-
-export default function VenueRevenueDetailPage() {
-  return (
-    <Suspense fallback={<Fallback />}>
-      <VenueRevenueInner />
-    </Suspense>
   );
 }

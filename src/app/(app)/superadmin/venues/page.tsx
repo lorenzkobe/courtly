@@ -523,13 +523,13 @@ export default function SuperadminVenuesPage() {
         <Button
           type="button"
           variant="outline"
+          size="icon"
           onClick={async () => {
             await Promise.all([refetchDirectory(), refetchPendingRequests()]);
           }}
           disabled={isRefreshing}
         >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
         </Button>
       </PageHeader>
 
@@ -575,7 +575,7 @@ export default function SuperadminVenuesPage() {
         </Card>
         <section className="space-y-3 lg:col-span-2">
           <h2 className="font-heading text-lg font-semibold">Active venues</h2>
-          {isLoading ? (
+          {isFetching ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-24 rounded-xl" />
@@ -643,7 +643,7 @@ export default function SuperadminVenuesPage() {
 
         <aside className="space-y-3 lg:col-span-1">
           <h2 className="font-heading text-lg font-semibold">Pending venue requests</h2>
-          {isLoadingRequests ? (
+          {isFetchingRequests ? (
             <div className="space-y-3">
               {[1, 2].map((idx) => (
                 <Skeleton key={idx} className="h-28 rounded-xl" />

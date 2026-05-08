@@ -15,6 +15,7 @@ import {
   Layers,
   LogOut,
   Menu,
+  Receipt,
   Trophy,
   UserCog,
   Users,
@@ -49,6 +50,7 @@ function venueAdminNav(): NavEntry[] {
     { path: "/admin/venues", label: "Venues", icon: Layers },
     { path: "/admin/bookings", label: "Court bookings", icon: Calendar },
     { path: "/admin/revenue", label: "Revenue", icon: PhilippinePeso },
+    { path: "/admin/billing", label: "Billing", icon: Receipt },
   ];
 }
 
@@ -63,8 +65,8 @@ function platformSuperadminNav(): NavEntry[] {
     { path: "/superadmin/users", label: "Users", icon: UserCog },
     {
       path: "/superadmin/revenue",
-      label: "Platform revenue",
-      icon: PhilippinePeso,
+      label: "Billing",
+      icon: Receipt,
     },
     {
       path: "/superadmin/moderation",
