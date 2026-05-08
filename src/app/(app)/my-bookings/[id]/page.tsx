@@ -735,10 +735,6 @@ export default function BookingDetailPage() {
                     court && segment.court_id === court.id
                       ? segmentPricingTiers(court, segment)
                       : [];
-                  const feePerHour =
-                    hours > 0 && typeof segment.booking_fee === "number"
-                      ? segment.booking_fee / hours
-                      : null;
                         return (
                           <li
                             key={segment.id}
@@ -760,19 +756,21 @@ export default function BookingDetailPage() {
                             </span>
                           </div>
                           {segTiers.length > 0 ? (
-                            <div className="mt-1 space-y-0.5">
+                            <div className="mt-1.5 space-y-1 text-xs tabular-nums">
                               {segTiers.map((tier) => (
-                                <p key={tier.startHour} className="text-xs text-muted-foreground tabular-nums">
-                                  {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
-                                  {" · "}{formatPhp(tier.ratePerHour)}/hr · {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
-                                  {" = "}{formatPhp(tier.subtotal)}
-                                </p>
+                                <div key={tier.startHour} className="flex items-baseline justify-between gap-3">
+                                  <span className="text-muted-foreground">
+                                    {formatTimeShort(formatHourToken(tier.startHour))} – {formatTimeShort(formatHourToken(tier.endHour))}
+                                    {" · "}{formatPhp(tier.ratePerHour)}/hr × {tier.hours} {tier.hours === 1 ? "hr" : "hrs"}
+                                  </span>
+                                  <span className="shrink-0 text-foreground/75">{formatPhp(tier.subtotal)}</span>
+                                </div>
                               ))}
-                              {feePerHour !== null ? (
-                                <p className="text-xs text-muted-foreground tabular-nums">
-                                  Booking fee · {formatPhp(feePerHour)}/hr · {hours} {hours === 1 ? "hr" : "hrs"}
-                                  {" = "}{formatPhp(segment.booking_fee ?? 0)}
-                                </p>
+                              {typeof segment.booking_fee === "number" ? (
+                                <div className="flex items-baseline justify-between gap-3 border-t border-border/40 pt-1">
+                                  <span className="text-muted-foreground">Booking fee</span>
+                                  <span className="shrink-0 text-foreground/75">{formatPhp(segment.booking_fee)}</span>
+                                </div>
                               ) : null}
                             </div>
                           ) : null}
