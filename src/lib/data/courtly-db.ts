@@ -1946,7 +1946,7 @@ export async function submitOpenPlayJoinPaymentProof(params: {
   sessionId: string;
   userId: string;
   paymentMethod: "gcash" | "maya";
-  paymentProofDataUrl: string;
+  paymentProofUrl: string;
   paymentProofMimeType: "image/jpeg";
   paymentProofBytes: number;
   paymentProofWidth: number;
@@ -1960,7 +1960,7 @@ export async function submitOpenPlayJoinPaymentProof(params: {
     .update({
       status: "pending_approval",
       payment_method: params.paymentMethod,
-      payment_proof_url: params.paymentProofDataUrl,
+      payment_proof_url: params.paymentProofUrl,
       payment_proof_mime_type: params.paymentProofMimeType,
       payment_proof_bytes: params.paymentProofBytes,
       payment_proof_width: params.paymentProofWidth,

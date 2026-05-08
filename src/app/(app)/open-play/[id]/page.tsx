@@ -167,6 +167,7 @@ export default function OpenPlayDetailPage() {
     null,
   );
   const [paymentProofZoom, setPaymentProofZoom] = useState(1);
+  const [isLoadingProof, setIsLoadingProof] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editMaxPlayers, setEditMaxPlayers] = useState("");
@@ -669,6 +670,7 @@ export default function OpenPlayDetailPage() {
           if (!open) {
             setPaymentProofPreviewUrl(null);
             setPaymentProofZoom(1);
+            setIsLoadingProof(false);
           }
         }}
       >
@@ -723,7 +725,9 @@ export default function OpenPlayDetailPage() {
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/20 p-2">
-            {paymentProofPreviewUrl && isEmbedSafePaymentProofUrl(paymentProofPreviewUrl) ? (
+            {isLoadingProof ? (
+              <p className="p-4 text-sm text-muted-foreground">Loading proof...</p>
+            ) : paymentProofPreviewUrl && isEmbedSafePaymentProofUrl(paymentProofPreviewUrl) ? (
               <div className="inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element -- data URL or HTTPS proof URL */}
                 <img
@@ -1020,9 +1024,22 @@ export default function OpenPlayDetailPage() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => {
-                          setPaymentProofPreviewUrl(request.payment_proof_url ?? null);
+                        disabled={isLoadingProof}
+                        onClick={async () => {
                           setPaymentProofZoom(1);
+                          setPaymentProofPreviewUrl("__loading__");
+                          setIsLoadingProof(true);
+                          try {
+                            const res = await fetch(
+                              `/api/open-play/${params.id}/payment-proof-url?requestId=${request.id}`,
+                            );
+                            const json = (await res.json()) as { signedUrl?: string };
+                            setPaymentProofPreviewUrl(json.signedUrl ?? null);
+                          } catch {
+                            setPaymentProofPreviewUrl(null);
+                          } finally {
+                            setIsLoadingProof(false);
+                          }
                         }}
                       >
                         View payment proof

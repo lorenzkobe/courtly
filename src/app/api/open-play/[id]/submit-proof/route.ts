@@ -12,6 +12,7 @@ import {
   PAYMENT_PROOF_MIN_SHORT_EDGE_PX,
 } from "@/lib/payments/payment-proof-constraints";
 import { assertOpenPlayAllowsSubmitProof } from "@/lib/open-play/lifecycle";
+import { uploadPaymentProof } from "@/lib/supabase/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -77,11 +78,14 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Payment proof file is too large." }, { status: 400 });
   }
 
+  const storagePath = `open-play/${id}/${Date.now()}.jpg`;
+  const savedPath = await uploadPaymentProof(storagePath, body.payment_proof_data_url);
+
   const request = await submitOpenPlayJoinPaymentProof({
     sessionId: id,
     userId: user.id,
     paymentMethod: body.payment_method,
-    paymentProofDataUrl: body.payment_proof_data_url,
+    paymentProofUrl: savedPath,
     paymentProofMimeType: PAYMENT_PROOF_CANONICAL_MIME_TYPE,
     paymentProofBytes: bytes,
     paymentProofWidth: width,

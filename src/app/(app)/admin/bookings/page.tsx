@@ -380,9 +380,11 @@ export default function AdminBookingsPage() {
     Record<string, "completed">
   >({});
   const [paymentProofZoom, setPaymentProofZoom] = useState(1);
+  const [isLoadingProof, setIsLoadingProof] = useState(false);
   const dismissPaymentProofPreview = useCallback(() => {
     setPaymentProofPreviewUrl(null);
     setPaymentProofZoom(1);
+    setIsLoadingProof(false);
   }, []);
   const openAdminBookingDetail = useCallback(
     (id: string) => {
@@ -1103,7 +1105,9 @@ export default function AdminBookingsPage() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-muted/20 p-2">
-                {isEmbedSafePaymentProofUrl(paymentProofPreviewUrl) ? (
+                {isLoadingProof ? (
+                  <p className="p-4 text-sm text-muted-foreground">Loading proof...</p>
+                ) : isEmbedSafePaymentProofUrl(paymentProofPreviewUrl ?? "") ? (
                   <div className="inline-block">
                     {/* eslint-disable-next-line @next/next/no-img-element -- data URL or HTTPS proof URL */}
                     <img
@@ -1222,9 +1226,22 @@ export default function AdminBookingsPage() {
                               variant="outline"
                               size="sm"
                               className="shrink-0"
-                              onClick={() => {
+                              disabled={isLoadingProof}
+                              onClick={async () => {
                                 setPaymentProofZoom(1);
-                                setPaymentProofPreviewUrl(paymentDetailSegment.payment_proof_url!);
+                                setPaymentProofPreviewUrl("__loading__");
+                                setIsLoadingProof(true);
+                                try {
+                                  const res = await fetch(
+                                    `/api/bookings/${activeDetailId}/payment-proof-url`,
+                                  );
+                                  const json = (await res.json()) as { signedUrl?: string };
+                                  setPaymentProofPreviewUrl(json.signedUrl ?? null);
+                                } catch {
+                                  setPaymentProofPreviewUrl(null);
+                                } finally {
+                                  setIsLoadingProof(false);
+                                }
                               }}
                             >
                               View payment proof

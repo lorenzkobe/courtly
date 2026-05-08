@@ -8,6 +8,7 @@ import {
 } from "@/lib/data/courtly-db";
 import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { uploadPaymentProof } from "@/lib/supabase/storage";
 import {
   PAYMENT_PROOF_CANONICAL_MIME_TYPE,
   PAYMENT_PROOF_FINAL_MAX_BYTES,
@@ -116,13 +117,16 @@ export async function POST(req: Request, ctx: Ctx) {
     );
   }
 
+  const storagePath = `bookings/${id}/${Date.now()}.jpg`;
+  const savedPath = await uploadPaymentProof(storagePath, body.payment_proof_data_url);
+
   const supabase = createSupabaseAdminClient();
   const updatePayload = {
     status: "pending_confirmation",
     payment_provider: "manual",
     payment_submitted_method: body.payment_method,
     payment_submitted_at: new Date().toISOString(),
-    payment_proof_url: body.payment_proof_data_url,
+    payment_proof_url: savedPath,
     payment_proof_mime_type: PAYMENT_PROOF_CANONICAL_MIME_TYPE,
     payment_proof_bytes: bytes,
     payment_proof_width: width,
