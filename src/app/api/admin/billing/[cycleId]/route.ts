@@ -56,7 +56,17 @@ export async function GET(_req: Request, ctx: Ctx) {
 
   const response: BillingCycleDetailResponse = {
     cycle,
-    venue: { id: venue.id, name: venue.name },
+    venue: {
+      id: venue.id,
+      name: venue.name,
+      location: venue.location,
+      accepts_gcash: venue.accepts_gcash,
+      gcash_account_name: venue.gcash_account_name ?? null,
+      gcash_account_number: venue.gcash_account_number ?? null,
+      accepts_maya: venue.accepts_maya,
+      maya_account_name: venue.maya_account_name ?? null,
+      maya_account_number: venue.maya_account_number ?? null,
+    },
     bookings: bookingRows,
   };
 

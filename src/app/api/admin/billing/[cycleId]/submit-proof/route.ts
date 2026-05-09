@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
   getBillingCycleById,
+  getVenueById,
   listVenueAdminAssignmentsByAdminUser,
   updateBillingCycleProof,
 } from "@/lib/data/courtly-db";
+import { emitBillingProofSubmittedToSuperadmins } from "@/lib/notifications/emit-from-server";
 import { uploadPaymentProof } from "@/lib/supabase/storage";
 import {
   PAYMENT_PROOF_CANONICAL_MIME_TYPE,
@@ -93,6 +95,18 @@ export async function POST(req: Request, ctx: Ctx) {
     payment_proof_bytes: bytes,
     payment_proof_width: width,
     payment_proof_height: height,
+  });
+
+  const venue = await getVenueById(cycle.venue_id).catch(() => null);
+  const periodLabel = new Date(cycle.period_start + "T00:00:00").toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+  });
+  await emitBillingProofSubmittedToSuperadmins({
+    venueId: cycle.venue_id,
+    venueName: venue?.name ?? "Unknown venue",
+    cycleId,
+    period: periodLabel,
   });
 
   return NextResponse.json({ ok: true });

@@ -1,14 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle, Upload } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle, MapPin, Printer, Upload, XCircle } from "lucide-react";
 import Link from "next/link";
 import { use, useRef, useState } from "react";
 import { toast } from "sonner";
-import PageHeader from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -16,14 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatPhp } from "@/lib/format-currency";
@@ -39,15 +30,19 @@ function formatPeriod(periodStart: string): string {
   });
 }
 
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 function StatusBadge({ status }: { status: BillingCycleStatus }) {
   if (status === "paid") {
-    return (
-      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>
-    );
+    return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
   }
-  return (
-    <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Unsettled</Badge>
-  );
+  return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Unsettled</Badge>;
 }
 
 type OptimizedProof = {
@@ -80,6 +75,17 @@ export default function AdminBillingCyclePage({
     },
     staleTime: 30_000,
   });
+
+  const { data: methodsData } = useQuery({
+    queryKey: ["admin", "billing", "payment-methods"],
+    queryFn: async () => {
+      const res = await courtlyApi.adminBilling.getPaymentMethods();
+      return res.data;
+    },
+    staleTime: 60_000,
+  });
+
+  const platformMethods = methodsData?.methods ?? [];
 
   const submitMutation = useMutation({
     mutationFn: () => {
@@ -133,123 +139,204 @@ export default function AdminBillingCyclePage({
   }
 
   const cycle = data?.cycle;
+  const venue = data?.venue;
   const bookings = data?.bookings ?? [];
   const isPaid = cycle?.status === "paid";
-  const hasProof = !!cycle?.payment_submitted_at;
+  const hasSubmittedProof = !!cycle?.payment_submitted_at;
+  const isRejected = !!cycle?.payment_rejected_at;
+
+  const selectedMethod = platformMethods.find((m) => m.method === paymentMethod);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
-      <Link
-        href="/admin/billing"
-        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Billing
-      </Link>
-
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <PageHeader
-          title={isLoading || !cycle ? "Billing cycle" : formatPeriod(cycle.period_start)}
-          subtitle={data?.venue.name ?? ""}
-        />
-        {cycle && <StatusBadge status={cycle.status} />}
+      {/* Navigation — hidden when printing */}
+      <div className="mb-6 flex items-center justify-between print:hidden">
+        <Link
+          href="/admin/billing"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Billing
+        </Link>
+        <div className="flex items-center gap-2">
+          {cycle && <StatusBadge status={cycle.status} />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="gap-1.5"
+          >
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
+        </div>
       </div>
 
-      {/* Booking breakdown */}
-      <div className="mb-8 rounded-lg border border-border/60">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Court</TableHead>
-              <TableHead>Time</TableHead>
-              <TableHead>Player</TableHead>
-              <TableHead className="text-right">Fee</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 5 }).map((__, j) => (
-                    <TableCell key={j}>
-                      <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : bookings.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-6 text-center text-sm text-muted-foreground"
-                >
-                  No bookings for this period.
-                </TableCell>
-              </TableRow>
-            ) : (
-              bookings.map((b) => (
-                <TableRow key={b.booking_id}>
-                  <TableCell className="text-sm">{b.date}</TableCell>
-                  <TableCell className="text-sm">{b.court_name}</TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
-                    {b.start_time}–{b.end_time}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {b.player_name ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right text-sm font-medium">
-                    {formatPhp(b.booking_fee)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      {/* ── Document ── */}
+      <div className="rounded-xl border border-border bg-white shadow-sm print:shadow-none print:border-none">
+        {/* Document header */}
+        <div className="border-b border-border px-8 py-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Courtly</p>
+              <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+                Monthly Billing Statement
+              </h1>
+            </div>
+            <div className="text-right text-sm">
+              {cycle ? (
+                <>
+                  <p className="font-semibold">{formatPeriod(cycle.period_start)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Issued {formatDate(cycle.created_at)}
+                  </p>
+                </>
+              ) : (
+                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Billed to */}
+        <div className="border-b border-border px-8 py-5">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billed to</p>
+              {isLoading ? (
+                <div className="space-y-1.5">
+                  <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                  <div className="h-3.5 w-56 animate-pulse rounded bg-muted" />
+                </div>
+              ) : (
+                <>
+                  <p className="font-semibold">{venue?.name}</p>
+                  {venue?.location && (
+                    <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      {venue.location}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="sm:text-right">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billing period</p>
+              {isLoading || !cycle ? (
+                <div className="h-4 w-28 animate-pulse rounded bg-muted sm:ml-auto" />
+              ) : (
+                <p className="font-semibold">{formatPeriod(cycle.period_start)}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Booking table */}
+        <div className="px-8 py-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="py-3 text-left font-semibold text-muted-foreground">Date</th>
+                <th className="py-3 text-left font-semibold text-muted-foreground">Court</th>
+                <th className="py-3 text-left font-semibold text-muted-foreground whitespace-nowrap">Time</th>
+                <th className="py-3 text-left font-semibold text-muted-foreground">Player</th>
+                <th className="py-3 text-right font-semibold text-muted-foreground">Fee</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    {Array.from({ length: 5 }).map((__, j) => (
+                      <td key={j} className="py-3">
+                        <div className="h-4 w-full animate-pulse rounded bg-muted" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                    No bookings for this period.
+                  </td>
+                </tr>
+              ) : (
+                bookings.map((b) => (
+                  <tr key={b.booking_id} className="border-b border-border/40 last:border-0">
+                    <td className="py-3">{b.date}</td>
+                    <td className="py-3">{b.court_name}</td>
+                    <td className="py-3 whitespace-nowrap">{b.start_time}–{b.end_time}</td>
+                    <td className="py-3 text-muted-foreground">{b.player_name ?? "—"}</td>
+                    <td className="py-3 text-right font-medium">{formatPhp(b.booking_fee)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Total */}
         {cycle && (
-          <div className="flex items-center justify-between border-t px-4 py-3">
-            <span className="text-sm font-medium">
+          <div className="flex items-center justify-between border-t border-border bg-muted/30 px-8 py-4">
+            <span className="text-sm text-muted-foreground">
               {cycle.booking_count} booking{cycle.booking_count !== 1 ? "s" : ""}
             </span>
-            <span className="text-base font-semibold">
-              {formatPhp(cycle.total_booking_fees)}
-            </span>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-0.5">Total Due</p>
+              <p className="text-xl font-heading font-bold">{formatPhp(cycle.total_booking_fees)}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Print-only payment note */}
+        {cycle && !isPaid && (
+          <div className="hidden border-t border-border px-8 py-5 print:block">
+            <p className="text-xs text-muted-foreground">
+              Please settle this amount via your registered payment method and submit your proof of payment through the Courtly admin portal.
+            </p>
           </div>
         )}
       </div>
 
-      {/* Payment section */}
+      {/* ── Payment section — hidden when printing ── */}
       {cycle && (
-        <div className="rounded-lg border border-border/60 p-5 space-y-4">
-          <p className="font-medium">Payment</p>
+        <div className="mt-6 rounded-xl border border-border p-6 space-y-4 print:hidden">
+          <p className="font-semibold">Payment</p>
 
           {isPaid ? (
             <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
               <CheckCircle className="h-4 w-4 shrink-0" />
-              <span>
-                Paid on{" "}
-                {new Date(cycle.marked_paid_at!).toLocaleDateString("en-PH", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </span>
+              <span>Paid on {formatDate(cycle.marked_paid_at!)}</span>
             </div>
           ) : (
             <>
-              {hasProof && !optimizedProof && (
-                <div className="rounded-lg border border-border/60 p-4 space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Proof submitted on{" "}
-                    {new Date(cycle.payment_submitted_at!).toLocaleDateString("en-PH", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                    {cycle.payment_method
-                      ? ` via ${cycle.payment_method.toUpperCase()}`
-                      : ""}
+              {/* Rejection notice */}
+              {isRejected && !optimizedProof && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-red-800">
+                    <XCircle className="h-4 w-4 shrink-0" />
+                    Payment proof was rejected
+                  </div>
+                  {cycle.payment_rejection_note && (
+                    <p className="text-sm text-red-700 pl-6">{cycle.payment_rejection_note}</p>
+                  )}
+                  <p className="text-xs text-red-600 pl-6">
+                    Rejected on {formatDate(cycle.payment_rejected_at!)}. Please submit a new proof below.
                   </p>
+                </div>
+              )}
+
+              {/* Proof submitted (pending review) */}
+              {hasSubmittedProof && !optimizedProof && (
+                <div className="rounded-lg border border-border/60 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                    <span>
+                      Proof submitted on {formatDate(cycle.payment_submitted_at!)}
+                      {cycle.payment_method ? ` via ${cycle.payment_method.toUpperCase()}` : ""}
+                      {" — "}awaiting review
+                    </span>
+                  </div>
                   {proofUrl ? (
                     <img
                       src={proofUrl}
@@ -257,40 +344,59 @@ export default function AdminBillingCyclePage({
                       className="max-h-64 rounded-lg border object-contain"
                     />
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleViewProof}
-                      disabled={loadingProof}
-                    >
+                    <Button size="sm" variant="outline" onClick={handleViewProof} disabled={loadingProof}>
                       {loadingProof ? "Loading…" : "View proof"}
                     </Button>
                   )}
                 </div>
               )}
 
+              {/* Payment form */}
               <div className="space-y-4">
-                {hasProof && (
+                {(hasSubmittedProof || isRejected) && (
                   <p className="text-sm font-medium text-muted-foreground">
-                    Re-upload proof
+                    {hasSubmittedProof ? "Re-upload proof" : "Submit new proof"}
                   </p>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Payment method</Label>
-                  <Select
-                    value={paymentMethod}
-                    onValueChange={(v) => setPaymentMethod(v as "gcash" | "maya")}
-                  >
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gcash">GCash</SelectItem>
-                      <SelectItem value="maya">Maya</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {platformMethods.length === 0 ? (
+                  <p className="rounded-lg border border-border/60 px-4 py-3 text-sm text-muted-foreground">
+                    No payment methods configured yet. Contact your administrator.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Payment method</Label>
+                    <Select
+                      value={paymentMethod}
+                      onValueChange={(v) => setPaymentMethod(v as "gcash" | "maya")}
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {platformMethods.map((m) => (
+                          <SelectItem key={m.id} value={m.method}>
+                            {m.method === "gcash" ? "GCash" : "Maya"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {selectedMethod && (
+                  <div className={`rounded-lg border px-4 py-3 space-y-1 ${selectedMethod.method === "gcash" ? "border-blue-200 bg-blue-50" : "border-green-200 bg-green-50"}`}>
+                    <p className={`text-xs font-semibold uppercase tracking-wide ${selectedMethod.method === "gcash" ? "text-blue-600" : "text-green-600"}`}>
+                      {selectedMethod.method === "gcash" ? "GCash" : "Maya"} account
+                    </p>
+                    <p className={`text-sm font-medium ${selectedMethod.method === "gcash" ? "text-blue-900" : "text-green-900"}`}>
+                      {selectedMethod.account_name}
+                    </p>
+                    <p className={`text-sm font-mono ${selectedMethod.method === "gcash" ? "text-blue-800" : "text-green-800"}`}>
+                      {selectedMethod.account_number}
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Payment screenshot</Label>
@@ -301,35 +407,46 @@ export default function AdminBillingCyclePage({
                     className="hidden"
                     onChange={handleFileChange}
                   />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={optimizing}
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    {optimizing ? "Optimizing…" : optimizedProof ? "Change image" : "Upload screenshot"}
-                  </Button>
-                  {optimizedProof && (
-                    <div className="mt-3 space-y-2">
+                  {optimizedProof ? (
+                    <div className="relative overflow-hidden rounded-lg border border-border">
                       <img
                         src={optimizedProof.dataUrl}
                         alt="Preview"
-                        className="max-h-48 rounded-lg border object-contain"
+                        className="w-full max-h-64 object-contain bg-muted/30"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        {optimizedProof.width}×{optimizedProof.height}px ·{" "}
-                        {Math.round(optimizedProof.bytes / 1024)} KB
-                      </p>
+                      <div className="flex items-center justify-between border-t px-3 py-2 bg-background">
+                        <p className="text-xs text-muted-foreground">
+                          {optimizedProof.width}×{optimizedProof.height}px · {Math.round(optimizedProof.bytes / 1024)} KB
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={optimizing}
+                        >
+                          Change
+                        </Button>
+                      </div>
                     </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={optimizing}
+                      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-8 text-center transition-colors hover:border-foreground/30 hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Upload className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        {optimizing ? "Optimizing image…" : "Click to upload screenshot"}
+                      </span>
+                    </button>
                   )}
                 </div>
 
                 <Button
                   onClick={() => submitMutation.mutate()}
-                  disabled={
-                    !optimizedProof || !paymentMethod || submitMutation.isPending
-                  }
+                  disabled={!optimizedProof || !paymentMethod || submitMutation.isPending}
                 >
                   {submitMutation.isPending ? "Submitting…" : "Submit proof"}
                 </Button>

@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { emitNewBillingCycleToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import type { GenerateBillingResult } from "@/lib/types/courtly";
 
 export function isBillingGenerationDay(): boolean {
@@ -116,6 +117,30 @@ export async function runGenerateMonthlyBilling(params?: {
       skipped++;
     } else {
       generated++;
+      // Fire-and-forget: notify venue admins about the new billing cycle
+      const { data: newCycle } = await db
+        .from("venue_billing_cycles")
+        .select("id")
+        .eq("venue_id", venue.id)
+        .eq("period_start", periodStart)
+        .maybeSingle();
+      const { data: venueRow } = await db
+        .from("venues")
+        .select("name")
+        .eq("id", venue.id)
+        .maybeSingle();
+      if (newCycle?.id && venueRow?.name) {
+        const periodLabel = new Date(periodStart + "T00:00:00").toLocaleDateString("en-PH", {
+          year: "numeric",
+          month: "long",
+        });
+        emitNewBillingCycleToVenueAdmins({
+          venueId: venue.id,
+          venueName: venueRow.name as string,
+          cycleId: newCycle.id as string,
+          period: periodLabel,
+        }).catch(() => undefined);
+      }
     }
   }
 

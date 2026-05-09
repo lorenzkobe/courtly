@@ -1,4 +1,7 @@
-import { listVenueAdminAssignments } from "@/lib/data/courtly-db";
+import {
+  listVenueAdminAssignments,
+  listVenueAdminAssignmentsByVenue,
+} from "@/lib/data/courtly-db";
 import type { Booking, CourtReview } from "@/lib/types/courtly";
 import type { EmitNotificationInput } from "@/lib/notifications/repository";
 import { createNotificationRepository } from "@/lib/notifications/repository-factory";
@@ -623,6 +626,100 @@ export async function emitVenueRequestDecisionToRequester(params: {
       },
     },
   ]);
+}
+
+export async function emitBillingProofSubmittedToSuperadmins(params: {
+  venueId: string;
+  venueName: string;
+  cycleId: string;
+  period: string;
+}): Promise<void> {
+  const ids = await listSuperadminProfileIds();
+  await safeEmitMany(
+    ids.map((user_id) => ({
+      user_id,
+      type: "billing_proof_submitted_superadmin",
+      category: "platform",
+      title: "Payment proof received",
+      body: `${params.venueName} submitted payment proof for ${params.period}.`,
+      metadata: {
+        billing_cycle_id: params.cycleId,
+        venue_id: params.venueId,
+        target_path: `/superadmin/revenue/venues/${params.venueId}`,
+      },
+    })),
+  );
+}
+
+export async function emitBillingSettledToVenueAdmins(params: {
+  venueId: string;
+  venueName: string;
+  cycleId: string;
+  period: string;
+}): Promise<void> {
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  await safeEmitMany(
+    assignments.map((a) => ({
+      user_id: a.admin_user_id,
+      type: "billing_settled",
+      category: "platform",
+      title: "Billing settled",
+      body: `Your ${params.period} billing for ${params.venueName} has been marked as paid.`,
+      metadata: {
+        billing_cycle_id: params.cycleId,
+        venue_id: params.venueId,
+        target_path: `/admin/billing/${params.cycleId}`,
+      },
+    })),
+  );
+}
+
+export async function emitBillingProofRejectedToVenueAdmins(params: {
+  venueId: string;
+  venueName: string;
+  cycleId: string;
+  period: string;
+  note: string | null;
+}): Promise<void> {
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  const noteText = params.note?.trim() ? ` Reason: ${params.note.trim()}` : "";
+  await safeEmitMany(
+    assignments.map((a) => ({
+      user_id: a.admin_user_id,
+      type: "billing_proof_rejected",
+      category: "platform",
+      title: "Payment proof rejected",
+      body: `Your payment proof for ${params.period} was rejected.${noteText}`,
+      metadata: {
+        billing_cycle_id: params.cycleId,
+        venue_id: params.venueId,
+        target_path: `/admin/billing/${params.cycleId}`,
+      },
+    })),
+  );
+}
+
+export async function emitNewBillingCycleToVenueAdmins(params: {
+  venueId: string;
+  venueName: string;
+  cycleId: string;
+  period: string;
+}): Promise<void> {
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  await safeEmitMany(
+    assignments.map((a) => ({
+      user_id: a.admin_user_id,
+      type: "billing_new_cycle",
+      category: "platform",
+      title: "New billing statement",
+      body: `Your ${params.period} billing statement for ${params.venueName} is ready.`,
+      metadata: {
+        billing_cycle_id: params.cycleId,
+        venue_id: params.venueId,
+        target_path: `/admin/billing/${params.cycleId}`,
+      },
+    })),
+  );
 }
 
 export async function emitVenueRequestCreatedToSuperadmins(params: {

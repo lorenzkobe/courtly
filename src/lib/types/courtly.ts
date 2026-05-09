@@ -627,6 +627,9 @@ export type VenueBillingCycle = {
   payment_proof_width?: number | null;
   payment_proof_height?: number | null;
   payment_submitted_at?: string | null;
+  payment_rejected_at?: string | null;
+  payment_rejection_note?: string | null;
+  payment_rejected_by_user_id?: string | null;
   marked_paid_at?: string | null;
   marked_paid_by_user_id?: string | null;
   created_at: string;
@@ -669,7 +672,17 @@ export type BillingCycleBookingRow = {
 
 export type BillingCycleDetailResponse = {
   cycle: VenueBillingCycle;
-  venue: { id: string; name: string };
+  venue: {
+    id: string;
+    name: string;
+    location: string;
+    accepts_gcash: boolean;
+    gcash_account_name?: string | null;
+    gcash_account_number?: string | null;
+    accepts_maya: boolean;
+    maya_account_name?: string | null;
+    maya_account_number?: string | null;
+  };
   bookings: BillingCycleBookingRow[];
 };
 
@@ -682,4 +695,14 @@ export type GenerateBillingResult = {
   generated: number;
   skipped: number;
   protected_paid: number;
+};
+
+export type PlatformPaymentMethod = {
+  id: string;
+  method: "gcash" | "maya";
+  account_name: string;
+  account_number: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 };

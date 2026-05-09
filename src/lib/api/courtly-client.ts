@@ -542,6 +542,34 @@ export const courtlyApi = {
       http.get<{ url: string }>(
         `/api/superadmin/billing/cycles/${cycleId}/payment-proof-url`,
       ),
+    rejectProof: (cycleId: string, note?: string) =>
+      http.post<{ ok: boolean }>(
+        `/api/superadmin/billing/cycles/${cycleId}/reject-proof`,
+        { note: note ?? null },
+      ),
+    listPaymentMethods: () =>
+      http.get<{ methods: import("@/lib/types/courtly").PlatformPaymentMethod[] }>(
+        "/api/superadmin/billing/payment-methods",
+      ),
+    createPaymentMethod: (body: {
+      method: "gcash" | "maya";
+      account_name: string;
+      account_number: string;
+    }) =>
+      http.post<{ method: import("@/lib/types/courtly").PlatformPaymentMethod }>(
+        "/api/superadmin/billing/payment-methods",
+        body,
+      ),
+    updatePaymentMethod: (
+      id: string,
+      body: { account_name?: string; account_number?: string; is_active?: boolean },
+    ) =>
+      http.patch<{ method: import("@/lib/types/courtly").PlatformPaymentMethod }>(
+        `/api/superadmin/billing/payment-methods/${id}`,
+        body,
+      ),
+    deletePaymentMethod: (id: string) =>
+      http.delete<{ ok: boolean }>(`/api/superadmin/billing/payment-methods/${id}`),
   },
 
   adminBilling: {
@@ -553,6 +581,10 @@ export const courtlyApi = {
     getCycle: (cycleId: string) =>
       http.get<import("@/lib/types/courtly").BillingCycleDetailResponse>(
         `/api/admin/billing/${cycleId}`,
+      ),
+    getPaymentMethods: () =>
+      http.get<{ methods: import("@/lib/types/courtly").PlatformPaymentMethod[] }>(
+        "/api/admin/billing/payment-methods",
       ),
     submitProof: (
       cycleId: string,

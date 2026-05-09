@@ -3,13 +3,13 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
   getBillingCycleById,
   getVenueById,
-  markBillingCyclePaid,
+  rejectBillingCycleProof,
 } from "@/lib/data/courtly-db";
-import { emitBillingSettledToVenueAdmins } from "@/lib/notifications/emit-from-server";
+import { emitBillingProofRejectedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 
 type Ctx = { params: Promise<{ cycleId: string }> };
 
-export async function POST(_req: Request, ctx: Ctx) {
+export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -24,24 +24,25 @@ export async function POST(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Billing cycle is already paid." }, { status: 409 });
   }
   if (!cycle.payment_submitted_at) {
-    return NextResponse.json(
-      { error: "Cannot mark as paid — no payment proof has been submitted." },
-      { status: 422 },
-    );
+    return NextResponse.json({ error: "No payment proof has been submitted." }, { status: 422 });
   }
 
-  await markBillingCyclePaid(cycleId, user.id);
+  const body = await req.json().catch(() => ({})) as { note?: string };
+  const note = typeof body.note === "string" ? body.note.trim() || null : null;
+
+  await rejectBillingCycleProof(cycleId, note, user.id);
 
   const venue = await getVenueById(cycle.venue_id).catch(() => null);
   const periodLabel = new Date(cycle.period_start + "T00:00:00").toLocaleDateString("en-PH", {
     year: "numeric",
     month: "long",
   });
-  await emitBillingSettledToVenueAdmins({
+  await emitBillingProofRejectedToVenueAdmins({
     venueId: cycle.venue_id,
     venueName: venue?.name ?? "Unknown venue",
     cycleId,
     period: periodLabel,
+    note,
   });
 
   return NextResponse.json({ ok: true });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle, RefreshCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -68,6 +69,8 @@ function CycleDetailDialog({
   const queryClient = useQueryClient();
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [loadingProof, setLoadingProof] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
 
   const { data, isLoading } = useQuery<BillingCycleDetailResponse>({
     queryKey: ["superadmin", "billing", "cycle", cycleId],
@@ -89,6 +92,19 @@ function CycleDetailDialog({
     onError: (err) => toast.error(apiErrorMessage(err, "Something went wrong.")),
   });
 
+  const rejectMutation = useMutation({
+    mutationFn: () =>
+      courtlyApi.superadminBilling.rejectProof(cycleId!, rejectNote.trim() || undefined),
+    onSuccess: () => {
+      toast.success("Payment proof rejected.");
+      setRejectNote("");
+      setShowRejectForm(false);
+      setProofUrl(null);
+      queryClient.invalidateQueries({ queryKey: ["superadmin", "billing"] });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Something went wrong.")),
+  });
+
   async function handleViewProof() {
     if (!cycleId) return;
     setLoadingProof(true);
@@ -102,17 +118,21 @@ function CycleDetailDialog({
     }
   }
 
+  function handleClose(v: boolean) {
+    onOpenChange(v);
+    if (!v) {
+      setProofUrl(null);
+      setRejectNote("");
+      setShowRejectForm(false);
+    }
+  }
+
   const cycle = data?.cycle;
   const bookings = data?.bookings ?? [];
+  const hasProof = !!cycle?.payment_submitted_at;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v);
-        if (!v) setProofUrl(null);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
@@ -135,6 +155,7 @@ function CycleDetailDialog({
           </div>
         ) : cycle ? (
           <div className="space-y-5">
+            {/* Booking table */}
             <div className="rounded-lg border border-border/60">
               <Table>
                 <TableHeader>
@@ -149,10 +170,7 @@ function CycleDetailDialog({
                 <TableBody>
                   {bookings.length === 0 ? (
                     <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
+                      <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
                         No bookings found for this period.
                       </TableCell>
                     </TableRow>
@@ -177,8 +195,7 @@ function CycleDetailDialog({
               </Table>
               <div className="flex items-center justify-between border-t px-4 py-3">
                 <span className="text-sm font-medium">
-                  {cycle.booking_count} booking
-                  {cycle.booking_count !== 1 ? "s" : ""}
+                  {cycle.booking_count} booking{cycle.booking_count !== 1 ? "s" : ""}
                 </span>
                 <span className="text-base font-semibold">
                   {formatPhp(cycle.total_booking_fees)}
@@ -186,39 +203,100 @@ function CycleDetailDialog({
               </div>
             </div>
 
-            {cycle.payment_submitted_at && (
+            {/* Payment proof section */}
+            {hasProof && (
               <div className="space-y-3 rounded-lg border border-border/60 p-4">
                 <p className="text-sm font-medium">Payment proof</p>
                 <p className="text-xs text-muted-foreground">
                   Submitted{" "}
-                  {new Date(cycle.payment_submitted_at).toLocaleDateString("en-PH", {
+                  {new Date(cycle.payment_submitted_at!).toLocaleDateString("en-PH", {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
                   })}
-                  {cycle.payment_method
-                    ? ` via ${cycle.payment_method.toUpperCase()}`
-                    : ""}
+                  {cycle.payment_method ? ` via ${cycle.payment_method.toUpperCase()}` : ""}
                 </p>
                 {proofUrl ? (
-                  <img
-                    src={proofUrl}
-                    alt="Payment proof"
-                    className="max-h-64 rounded-lg border object-contain"
-                  />
+                  <img src={proofUrl} alt="Payment proof" className="max-h-64 rounded-lg border object-contain" />
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleViewProof}
-                    disabled={loadingProof}
-                  >
+                  <Button size="sm" variant="outline" onClick={handleViewProof} disabled={loadingProof}>
                     {loadingProof ? "Loading…" : "View proof"}
                   </Button>
+                )}
+
+                {/* Reject form */}
+                {cycle.status === "unsettled" && (
+                  showRejectForm ? (
+                    <div className="space-y-2 border-t pt-3">
+                      <p className="text-sm font-medium text-destructive">Reject proof</p>
+                      <Textarea
+                        placeholder="Reason for rejection (optional)"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        rows={2}
+                        className="text-sm"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => rejectMutation.mutate()}
+                          disabled={rejectMutation.isPending}
+                        >
+                          {rejectMutation.isPending ? "Rejecting…" : "Confirm reject"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => { setShowRejectForm(false); setRejectNote(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/5"
+                      onClick={() => setShowRejectForm(true)}
+                    >
+                      <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                      Reject proof
+                    </Button>
+                  )
                 )}
               </div>
             )}
 
+            {/* Rejection history */}
+            {cycle.payment_rejected_at && !hasProof && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-1">
+                <div className="flex items-center gap-2 text-sm font-medium text-red-800">
+                  <XCircle className="h-4 w-4 shrink-0" />
+                  Proof was rejected
+                </div>
+                {cycle.payment_rejection_note && (
+                  <p className="text-sm text-red-700 pl-6">{cycle.payment_rejection_note}</p>
+                )}
+                <p className="text-xs text-red-600 pl-6">
+                  {new Date(cycle.payment_rejected_at).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </p>
+              </div>
+            )}
+
+            {/* No proof warning */}
+            {!hasProof && !cycle.payment_rejected_at && cycle.status === "unsettled" && (
+              <p className="text-sm text-muted-foreground">
+                No payment proof submitted yet.
+              </p>
+            )}
+
+            {/* Paid banner */}
             {cycle.status === "paid" && cycle.marked_paid_at && (
               <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                 <CheckCircle className="h-4 w-4 shrink-0" />
@@ -236,13 +314,14 @@ function CycleDetailDialog({
         ) : null}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleClose(false)}>
             Close
           </Button>
           {cycle?.status === "unsettled" && (
             <Button
               onClick={() => markPaidMutation.mutate()}
-              disabled={markPaidMutation.isPending}
+              disabled={markPaidMutation.isPending || !hasProof}
+              title={!hasProof ? "No payment proof submitted" : undefined}
             >
               {markPaidMutation.isPending ? "Marking…" : "Mark as paid"}
             </Button>
@@ -420,7 +499,9 @@ export default function VenueBillingDetailPage({
                   </TableCell>
                   <TableCell>
                     {c.payment_submitted_at ? (
-                      <span className="text-sm text-green-700">Uploaded</span>
+                      <span className="text-sm text-amber-600">Pending review</span>
+                    ) : c.payment_rejected_at ? (
+                      <span className="text-sm text-red-600">Rejected</span>
                     ) : (
                       <span className="text-sm text-muted-foreground">—</span>
                     )}

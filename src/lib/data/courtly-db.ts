@@ -23,6 +23,7 @@ import type {
   PaymentTransaction,
   VenueBillingCycle,
   BillingCycleStatus,
+  PlatformPaymentMethod,
 } from "@/lib/types/courtly";
 
 function toDateString(value: string | null): string {
@@ -2328,6 +2329,9 @@ export async function updateBillingCycleProof(
       payment_proof_width: params.payment_proof_width,
       payment_proof_height: params.payment_proof_height,
       payment_submitted_at: new Date().toISOString(),
+      payment_rejected_at: null,
+      payment_rejection_note: null,
+      payment_rejected_by_user_id: null,
     } as never)
     .eq("id", id)
     .eq("status", "unsettled");
@@ -2348,5 +2352,112 @@ export async function markBillingCyclePaid(
     } as never)
     .eq("id", id)
     .eq("status", "unsettled");
+  if (error) throw error;
+}
+
+export async function rejectBillingCycleProof(
+  id: string,
+  note: string | null,
+  rejectedByUserId: string,
+): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("venue_billing_cycles" as never)
+    .update({
+      payment_submitted_at: null,
+      payment_rejected_at: new Date().toISOString(),
+      payment_rejection_note: note ?? null,
+      payment_rejected_by_user_id: rejectedByUserId,
+    } as never)
+    .eq("id", id)
+    .eq("status", "unsettled");
+  if (error) throw error;
+}
+
+// ── Platform payment methods ──────────────────────────────────────────────────
+
+function mapPlatformPaymentMethodRow(row: unknown): PlatformPaymentMethod {
+  const r = row as {
+    id: string;
+    method: "gcash" | "maya";
+    account_name: string;
+    account_number: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  };
+  return {
+    id: r.id,
+    method: r.method,
+    account_name: r.account_name,
+    account_number: r.account_number,
+    is_active: r.is_active,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+export async function listPlatformPaymentMethods(
+  onlyActive = false,
+): Promise<PlatformPaymentMethod[]> {
+  const supabase = createSupabaseAdminClient();
+  let query = (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("platform_payment_methods" as never)
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (onlyActive) {
+    query = query.eq("is_active", true) as typeof query;
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data as unknown[]).map(mapPlatformPaymentMethodRow);
+}
+
+export async function createPlatformPaymentMethod(params: {
+  method: "gcash" | "maya";
+  account_name: string;
+  account_number: string;
+  is_active?: boolean;
+}): Promise<PlatformPaymentMethod> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("platform_payment_methods" as never)
+    .insert({
+      method: params.method,
+      account_name: params.account_name,
+      account_number: params.account_number,
+      is_active: params.is_active ?? true,
+    } as never)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapPlatformPaymentMethodRow(data);
+}
+
+export async function updatePlatformPaymentMethod(
+  id: string,
+  params: {
+    account_name?: string;
+    account_number?: string;
+    is_active?: boolean;
+  },
+): Promise<PlatformPaymentMethod> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("platform_payment_methods" as never)
+    .update(params as never)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapPlatformPaymentMethodRow(data);
+}
+
+export async function deletePlatformPaymentMethod(id: string): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await (supabase as unknown as ReturnType<typeof createSupabaseAdminClient>)
+    .from("platform_payment_methods" as never)
+    .delete()
+    .eq("id", id);
   if (error) throw error;
 }

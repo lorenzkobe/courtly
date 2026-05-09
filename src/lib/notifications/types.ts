@@ -24,7 +24,11 @@ export type NotificationEventType =
   | "venue_request_created_superadmin"
   | "open_play_join_approved"
   | "open_play_join_denied"
-  | "open_play_payment_submitted_host";
+  | "open_play_payment_submitted_host"
+  | "billing_proof_submitted_superadmin"
+  | "billing_settled"
+  | "billing_proof_rejected"
+  | "billing_new_cycle";
 
 export type NotificationMetadata = {
   booking_id?: string;
@@ -37,6 +41,7 @@ export type NotificationMetadata = {
   moderation_reason?: string;
   venue_request_id?: string;
   venue_id?: string;
+  billing_cycle_id?: string;
 };
 
 export type Notification = {

@@ -26,10 +26,10 @@ import {
 import { homePathForRole } from "@/lib/auth/management";
 import { useAuth } from "@/lib/auth/auth-context";
 import { cn } from "@/lib/utils";
+import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NAME_REGEX = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
-const PH_MOBILE_REGEX = /^(?:\+63|0)9\d{9}$/;
 
 function isValidName(value: string) {
   const trimmed = value.trim();
@@ -94,7 +94,7 @@ function LoginContent() {
     isValidName(trimmedFirstName) &&
     isValidName(trimmedLastName) &&
     !!birthdate &&
-    PH_MOBILE_REGEX.test(trimmedMobile) &&
+    isValidPhMobile(trimmedMobile) &&
     isPasswordValid &&
     isConfirmPasswordValid;
   const selectedBirthdate = parseIsoToLocalDate(birthdate);
@@ -365,7 +365,7 @@ function LoginContent() {
                   onChange={(e) => setMobileNumber(e.target.value)}
                   disabled={submitting}
                 />
-                {mobileNumber.length > 0 && !PH_MOBILE_REGEX.test(trimmedMobile) ? (
+                {mobileNumber.length > 0 && !isValidPhMobile(trimmedMobile) ? (
                   <p className="text-xs text-destructive">
                     Enter a valid Philippine mobile number.
                   </p>
