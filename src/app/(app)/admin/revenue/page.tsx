@@ -157,16 +157,15 @@ function VenueRevenueInner() {
         <Card className="border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Your net (court subtotal)
+              Paid by customers
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-heading text-2xl font-bold text-foreground">
-              {formatPhp(totals.court_net)}
+              {formatPhp(totals.customer_total)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {totals.booking_count} billable booking
-              {totals.booking_count === 1 ? "" : "s"}
+              Subtotal + booking fee
             </p>
           </CardContent>
         </Card>
@@ -183,18 +182,19 @@ function VenueRevenueInner() {
             <p className="mt-1 text-xs text-muted-foreground">Flat fee retained by Courtly</p>
           </CardContent>
         </Card>
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="border-green-500/20 bg-green-500/5">
           <CardHeader className="pb-2">
             <CardTitle className="font-heading text-sm font-medium text-muted-foreground">
-              Paid by customers
+              Your net (court subtotal)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-2xl font-bold text-primary">
-              {formatPhp(totals.customer_total)}
+            <p className="font-heading text-2xl font-bold text-green-600">
+              {formatPhp(totals.court_net)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Subtotal + booking fee
+              {totals.booking_count} billable booking
+              {totals.booking_count === 1 ? "" : "s"}
             </p>
           </CardContent>
         </Card>
@@ -218,12 +218,12 @@ function VenueRevenueInner() {
                 <Card className="border-border/60">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-heading text-xs font-medium text-muted-foreground">
-                      Venue net
+                      Venue customer total
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
                     <p className="font-heading text-lg font-bold text-foreground">
-                      {formatPhp(group.totals.court_net)}
+                      {formatPhp(group.totals.customer_total)}
                     </p>
                   </CardContent>
                 </Card>
@@ -239,15 +239,15 @@ function VenueRevenueInner() {
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="border-primary/20 bg-primary/5">
+                <Card className="border-green-500/20 bg-green-500/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-heading text-xs font-medium text-muted-foreground">
-                      Venue customer total
+                      Venue net
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    <p className="font-heading text-lg font-bold text-primary">
-                      {formatPhp(group.totals.customer_total)}
+                    <p className="font-heading text-lg font-bold text-green-600">
+                      {formatPhp(group.totals.court_net)}
                     </p>
                   </CardContent>
                 </Card>
@@ -258,9 +258,9 @@ function VenueRevenueInner() {
                   <TableRow>
                     <TableHead>Court</TableHead>
                     <TableHead className="text-right">Bookings</TableHead>
-                    <TableHead className="text-right">Your net</TableHead>
-                    <TableHead className="text-right">Booking fee</TableHead>
                     <TableHead className="text-right">Customer total</TableHead>
+                    <TableHead className="text-right">Booking fee</TableHead>
+                    <TableHead className="text-right">Your net</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -289,13 +289,13 @@ function VenueRevenueInner() {
                             {row.booking_count}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {formatPhp(row.court_net)}
+                            {formatPhp(row.customer_total)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">
                             {formatPhp(row.booking_fees)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {formatPhp(row.customer_total)}
+                            {formatPhp(row.court_net)}
                           </TableCell>
                         </TableRow>
                         {isExpanded ? (
