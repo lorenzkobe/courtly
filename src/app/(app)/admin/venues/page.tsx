@@ -519,9 +519,32 @@ export default function AdminVenuesPage() {
                   Add
                 </Button>
               </div>
-              <div className="space-y-3">
+              {form.hourly_rate_windows.length > 0 && (
+                <div className="space-y-3">
                 {form.hourly_rate_windows.map((row, idx) => (
                   <div key={idx} className="rounded-xl border border-border/50 bg-background p-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Range {idx + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Remove range"
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            hourly_rate_windows: prev.hourly_rate_windows.filter(
+                              (_, i) => i !== idx,
+                            ),
+                          }))
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <VenueTimeInput
                         value={row.start}
@@ -560,7 +583,8 @@ export default function AdminVenuesPage() {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
             <div>
               <Label className="mb-2 block">Payment methods *</Label>
