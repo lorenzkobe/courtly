@@ -52,7 +52,9 @@ export default function AdminBillingPage() {
     staleTime: 30_000,
   });
 
-  const allCycles = data?.cycles ?? [];
+  const allCycles = (data?.cycles ?? []).slice().sort(
+    (a, b) => b.period_start.localeCompare(a.period_start),
+  );
   const cycles = allCycles.filter((c) => {
     if (statusFilter === "all") return true;
     return c.status === statusFilter;

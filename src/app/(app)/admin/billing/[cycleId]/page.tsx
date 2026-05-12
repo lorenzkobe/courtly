@@ -140,7 +140,9 @@ export default function AdminBillingCyclePage({
 
   const cycle = data?.cycle;
   const venue = data?.venue;
-  const bookings = data?.bookings ?? [];
+  const bookings = (data?.bookings ?? []).slice().sort(
+    (a, b) => a.date.localeCompare(b.date),
+  );
   const isPaid = cycle?.status === "paid";
   const hasSubmittedProof = !!cycle?.payment_submitted_at;
   const isRejected = !!cycle?.payment_rejected_at;
