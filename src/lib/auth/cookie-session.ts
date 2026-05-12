@@ -38,7 +38,7 @@ async function readSessionProfileById(authUser: AuthUserLike): Promise<SessionUs
     full_name: displayName,
     role: row.role,
     is_active: row.is_active,
-    dupr_rating: Number(row.dupr_rating ?? 0),
+    dupr_rating: Number(row.dupr_rating ?? 2),
   };
 }
 
