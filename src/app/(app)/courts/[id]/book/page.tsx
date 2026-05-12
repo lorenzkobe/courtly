@@ -410,6 +410,10 @@ export default function BookCourtPage() {
     isFetchingBookingSurface ||
     matrixSurfaceQueries.some((q) => q.isFetching);
 
+  const isSlotMatrixPending =
+    isBookingSurfacePending ||
+    matrixSurfaceQueries.some((q) => q.isPending);
+
   useEffect(() => {
     if (isSlotMatrixFetching) setDatePickerOpen(false);
   }, [isSlotMatrixFetching]);
@@ -1434,7 +1438,7 @@ export default function BookCourtPage() {
             <CardTitle className="font-heading text-lg">Choose your slots</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isSlotMatrixFetching ? (
+            {isSlotMatrixPending ? (
               <div
                 className="space-y-3"
                 aria-busy

@@ -25,6 +25,10 @@ export function useBookingsRealtime({
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const queryKeysRef = useRef(queryKeysToInvalidate);
+  useEffect(() => {
+    queryKeysRef.current = queryKeysToInvalidate;
+  }, [queryKeysToInvalidate]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -138,7 +142,7 @@ export function useBookingsRealtime({
       const oldRow = (payload.old ?? {}) as Record<string, unknown>;
       const rowCourtId = String(newRow["court_id"] ?? oldRow["court_id"] ?? "");
       const rowDate = String(newRow["date"] ?? oldRow["date"] ?? "").slice(0, 10);
-      for (const queryKey of queryKeysToInvalidate) {
+      for (const queryKey of queryKeysRef.current) {
         const expected = expectedFromKey(queryKey);
         if (expected.courtId && rowCourtId && expected.courtId !== rowCourtId) continue;
         if (expected.date && rowDate && expected.date !== rowDate) continue;
@@ -202,5 +206,5 @@ export function useBookingsRealtime({
       clearReconnectTimer();
       void removeChannel();
     };
-  }, [enabled, filter, playerEmail, queryClient, queryKeysToInvalidate]);
+  }, [enabled, filter, playerEmail, queryClient]);
 }
