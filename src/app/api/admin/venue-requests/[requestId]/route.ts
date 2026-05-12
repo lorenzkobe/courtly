@@ -11,6 +11,7 @@ import {
   findPotentialVenueDuplicate,
   normalizeVenueDraftFromBody,
 } from "@/lib/venue-requests";
+import { deleteVenuePhotos } from "@/lib/supabase/storage";
 
 type Ctx = { params: Promise<{ requestId: string }> };
 
@@ -40,6 +41,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const body = (await req.json()) as Record<string, unknown>;
   const shouldCancel = body.cancel_request === true;
   if (shouldCancel) {
+    if (current.photo_urls?.length) {
+      void deleteVenuePhotos(current.photo_urls);
+    }
     const cancelled = await updateRow<VenueRequest>("venue_requests", requestId, {
       request_status: "cancelled",
       reviewed_by: null,
@@ -72,6 +76,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
       },
       { status: 409 },
     );
+  }
+
+  const toDelete = (current.photo_urls ?? []).filter(
+    (url) => !parsed.value.photo_urls.includes(url),
+  );
+  if (toDelete.length > 0) {
+    void deleteVenuePhotos(toDelete);
   }
 
   const next = await updateRow<VenueRequest>("venue_requests", requestId, {

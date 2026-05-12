@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Building2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, Building2, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
@@ -31,6 +31,8 @@ import { validateSocialUrl } from "@/lib/social-url";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { formatStatusLabel } from "@/lib/utils";
+import { optimizeVenuePhoto } from "@/lib/venues/optimize-venue-photo";
+import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 import type { Venue } from "@/lib/types/courtly";
 
 type PriceRangeRow = { start: string; end: string; rate: string };
@@ -44,7 +46,7 @@ const emptyRequestForm = {
   sport: "pickleball" as Venue["sport"],
   amenities: [] as string[],
   customAmenityDraft: "",
-  image_url: "",
+  photo_urls: [] as string[],
   hourly_rate_windows: [{ start: "07:00", end: "22:00", rate: "" }] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
@@ -79,6 +81,10 @@ export default function AdminVenuesPage() {
   >(null);
   const [form, setForm] = useState(emptyRequestForm);
   const [confirmCancelRequestId, setConfirmCancelRequestId] = useState<string | null>(null);
+  const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: venueCards = [], isLoading, isFetching: isFetchingVenues, refetch: refetchVenues } = useQuery({
     queryKey: ["admin-venues"],
@@ -105,13 +111,6 @@ export default function AdminVenuesPage() {
     () => validatePriceRangeFormRows(form.hourly_rate_windows),
     [form.hourly_rate_windows],
   );
-  const paymentValidation = useMemo(
-    () =>
-      validateVenuePaymentSettings(form, {
-        requireAtLeastOne: true,
-      }),
-    [form],
-  );
   const facebookUrlError = useMemo(
     () => validateSocialUrl(form.facebook_url, "facebook"),
     [form.facebook_url],
@@ -119,6 +118,13 @@ export default function AdminVenuesPage() {
   const instagramUrlError = useMemo(
     () => validateSocialUrl(form.instagram_url, "instagram"),
     [form.instagram_url],
+  );
+  const paymentValidation = useMemo(
+    () =>
+      validateVenuePaymentSettings(form, {
+        requireAtLeastOne: true,
+      }),
+    [form],
   );
 
   const createRequest = useMutation({
@@ -139,7 +145,7 @@ export default function AdminVenuesPage() {
         instagram_url: form.instagram_url.trim(),
         sport: form.sport,
         amenities: [...new Set(form.amenities.map((item) => item.trim()).filter(Boolean))],
-        image_url: form.image_url.trim(),
+        photo_urls: form.photo_urls,
         hourly_rate_windows: parsed.windows,
         map_latitude: form.map_latitude,
         map_longitude: form.map_longitude,
@@ -164,6 +170,7 @@ export default function AdminVenuesPage() {
       } else {
         toast.success(mode === "updated" ? "Venue request updated" : "Venue request submitted");
       }
+      setStagedPhotoUrls([]);
       setRequestDialogOpen(false);
       setForm(emptyRequestForm);
       setEditingRequestId(null);
@@ -186,6 +193,40 @@ export default function AdminVenuesPage() {
       toast.error(apiErrorMessage(error, "Could not cancel request"));
     },
   });
+
+  async function handlePhotoSelect(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const optimized = await optimizeVenuePhoto(file);
+      const { data } = await courtlyApi.venuePhotos.upload(optimized.dataUrl);
+      setStagedPhotoUrls((prev) => [...prev, data.public_url]);
+      setForm((prev) => ({ ...prev, photo_urls: [...prev.photo_urls, data.public_url] }));
+    } catch (err) {
+      setPhotoError(apiErrorMessage(err, "Could not upload photo"));
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  }
+
+  function removePhoto(url: string) {
+    setForm((prev) => ({ ...prev, photo_urls: prev.photo_urls.filter((u) => u !== url) }));
+    if (stagedPhotoUrls.includes(url)) {
+      setStagedPhotoUrls((prev) => prev.filter((u) => u !== url));
+      void courtlyApi.venuePhotos.delete([url]);
+    }
+  }
+
+  function cleanupStagedPhotos(currentPhotoUrls: string[]) {
+    const orphaned = stagedPhotoUrls.filter((u) => !currentPhotoUrls.includes(u));
+    if (orphaned.length > 0) {
+      void courtlyApi.venuePhotos.delete(orphaned);
+    }
+    setStagedPhotoUrls([]);
+  }
 
   const addCustomAmenity = () => {
     const nextValue = form.customAmenityDraft.trim();
@@ -366,7 +407,7 @@ export default function AdminVenuesPage() {
                               sport: request.sport,
                               amenities: [...(request.amenities ?? [])],
                               customAmenityDraft: "",
-                              image_url: request.image_url ?? "",
+                              photo_urls: request.photo_urls ?? [],
                               hourly_rate_windows:
                                 request.hourly_rate_windows.length > 0
                                   ? request.hourly_rate_windows.map((window) => ({
@@ -413,6 +454,8 @@ export default function AdminVenuesPage() {
         onOpenChange={(open) => {
           setRequestDialogOpen(open);
           if (!open) {
+            cleanupStagedPhotos(form.photo_urls);
+            setPhotoError(null);
             setEditingRequestId(null);
             setEditingRequestStatus(null);
             setForm(emptyRequestForm);
@@ -698,12 +741,59 @@ export default function AdminVenuesPage() {
               </div>
             </div>
             <div>
-              <Label>Image URL *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.image_url}
-                onChange={(event) => setForm((prev) => ({ ...prev, image_url: event.target.value }))}
+              <Label>
+                Photos *{" "}
+                <span className="font-normal text-muted-foreground">
+                  ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
+                </span>
+              </Label>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {form.photo_urls.map((url, i) => (
+                  <div
+                    key={url}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-border"
+                  >
+                    <img
+                      src={url}
+                      alt={`Photo ${i + 1}`}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(url)}
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
+                      aria-label="Remove photo"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                  >
+                    {isUploadingPhoto ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Plus className="h-5 w-5" />
+                    )}
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handlePhotoSelect}
               />
+              {photoError ? (
+                <p className="mt-1 text-xs text-destructive">{photoError}</p>
+              ) : null}
             </div>
           </div>
           {!formRateValidation.ok ? (
@@ -724,10 +814,11 @@ export default function AdminVenuesPage() {
               type="button"
               disabled={
                 createRequest.isPending ||
+                isUploadingPhoto ||
                 !form.name.trim() ||
                 !form.location.trim() ||
                 !form.contact_phone.trim() ||
-                !form.image_url.trim() ||
+                form.photo_urls.length < VENUE_PHOTO_MIN_COUNT ||
                 !formRateValidation.ok ||
                 !paymentValidation.ok ||
                 Boolean(facebookUrlError) ||

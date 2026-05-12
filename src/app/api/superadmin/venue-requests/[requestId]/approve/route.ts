@@ -78,7 +78,7 @@ export async function POST(req: Request, ctx: Ctx) {
     hourly_rate_windows: requestRecord.hourly_rate_windows,
     status: requestRecord.status,
     amenities: requestRecord.amenities,
-    image_url: requestRecord.image_url,
+    photo_urls: requestRecord.photo_urls ?? [],
     created_at: new Date().toISOString(),
     map_latitude: requestRecord.map_latitude,
     map_longitude: requestRecord.map_longitude,

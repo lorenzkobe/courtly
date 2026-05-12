@@ -57,10 +57,11 @@ function mapCourtRow(row: unknown): Court {
     type: record.type,
     surface: record.surface,
     gallery_urls: record.gallery_urls ?? [],
+    venue_photo_urls: venue?.photo_urls ?? [],
     description: record.description,
     location: venue?.location ?? "",
     sport: venue?.sport ?? "pickleball",
-    image_url: venue?.image_url ?? "",
+    image_url: venue?.photo_urls?.[0] ?? "",
     hourly_rate_windows: windows,
     amenities: venue?.amenities ?? [],
     available_hours: span ?? { open: "07:00", close: "22:00" },
@@ -2042,6 +2043,28 @@ export async function setOpenPlayJoinRequestDecision(params: {
     .eq("id", params.requestId)
     .eq("open_play_session_id", params.sessionId)
     .eq("status", "pending_approval")
+    .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOpenPlayJoinRequestRow(data) : null;
+}
+
+export async function cancelOpenPlayJoinRequest(params: {
+  sessionId: string;
+  requestId: string;
+  userId: string;
+}): Promise<OpenPlayJoinRequest | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("open_play_join_requests")
+    .update({
+      status: "cancelled",
+      payment_lock_expires_at: null,
+    } as never)
+    .eq("id", params.requestId)
+    .eq("open_play_session_id", params.sessionId)
+    .eq("user_id", params.userId)
+    .in("status", ["payment_locked", "pending_approval"])
     .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
     .maybeSingle();
   if (error) throw error;

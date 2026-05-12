@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
-import { formatBookableHourSlotRange } from "@/lib/booking-range";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -49,14 +48,20 @@ function buildTimeOptions(courts: { available_hours: { open: string; close: stri
   return [...tokens].sort((a, b) => a.localeCompare(b));
 }
 
+function formatHour(token: string): string {
+  const h = parseInt(token.split(":")[0], 10);
+  if (h === 0) return "12 AM";
+  if (h === 12) return "12 PM";
+  if (h < 12) return `${h} AM`;
+  return `${h - 12} PM`;
+}
+
 type CourtFiltersState = {
   typeFilter: string;
   favoritesOnly: boolean;
   locationFilter: string;
-  openFrom: string;
-  openTo: string;
-  closeFrom: string;
-  closeTo: string;
+  openAt: string;
+  closeAt: string;
   rateMin: number | null;
   rateMax: number | null;
   amenityPick: Set<string>;
@@ -67,10 +72,8 @@ function defaultCourtFilters(): CourtFiltersState {
     typeFilter: "all",
     favoritesOnly: false,
     locationFilter: "all",
-    openFrom: "",
-    openTo: "",
-    closeFrom: "",
-    closeTo: "",
+    openAt: "",
+    closeAt: "",
     rateMin: null,
     rateMax: null,
     amenityPick: new Set(),
@@ -183,10 +186,8 @@ export default function CourtsPage() {
     typeFilter,
     favoritesOnly,
     locationFilter,
-    openFrom,
-    openTo,
-    closeFrom,
-    closeTo,
+    openAt,
+    closeAt,
     rateMin,
     rateMax,
     amenityPick,
@@ -199,17 +200,8 @@ export default function CourtsPage() {
       if (locationFilter !== "all" && court.location !== locationFilter)
         return false;
 
-      let oMin = openFrom || null;
-      let oMax = openTo || null;
-      if (oMin && oMax && oMin > oMax) [oMin, oMax] = [oMax, oMin];
-      if (oMin && court.available_hours.open < oMin) return false;
-      if (oMax && court.available_hours.open > oMax) return false;
-
-      let cMin = closeFrom || null;
-      let cMax = closeTo || null;
-      if (cMin && cMax && cMin > cMax) [cMin, cMax] = [cMax, cMin];
-      if (cMin && court.available_hours.close < cMin) return false;
-      if (cMax && court.available_hours.close > cMax) return false;
+      if (openAt && court.available_hours.open !== openAt) return false;
+      if (closeAt && court.available_hours.close !== closeAt) return false;
 
       let rLo = rateMin;
       let rHi = rateMax;
@@ -231,10 +223,8 @@ export default function CourtsPage() {
     favoritesOnly,
     favoriteIds,
     locationFilter,
-    openFrom,
-    openTo,
-    closeFrom,
-    closeTo,
+    openAt,
+    closeAt,
     rateMin,
     rateMax,
     amenityPick,
@@ -247,15 +237,6 @@ export default function CourtsPage() {
       else next.add(a);
       return { ...d, amenityPick: next };
     });
-  };
-
-  const formatTimeRangeLabel = (from: string, to: string) => {
-    if (from && to) {
-      return `${formatBookableHourSlotRange(from)} – ${formatBookableHourSlotRange(to)}`;
-    }
-    if (from) return `from ${formatBookableHourSlotRange(from)}`;
-    if (to) return `through ${formatBookableHourSlotRange(to)}`;
-    return "";
   };
 
   const appliedChips = useMemo((): AppliedChip[] => {
@@ -284,20 +265,18 @@ export default function CourtsPage() {
           setApplied((p) => ({ ...p, locationFilter: "all" })),
       });
     }
-    if (applied.openFrom || applied.openTo) {
+    if (applied.openAt) {
       chips.push({
-        id: "open-range",
-        label: `Opens: ${formatTimeRangeLabel(applied.openFrom, applied.openTo)}`,
-        onRemove: () =>
-          setApplied((p) => ({ ...p, openFrom: "", openTo: "" })),
+        id: "open-at",
+        label: `Opens: ${formatHour(applied.openAt)}`,
+        onRemove: () => setApplied((p) => ({ ...p, openAt: "" })),
       });
     }
-    if (applied.closeFrom || applied.closeTo) {
+    if (applied.closeAt) {
       chips.push({
-        id: "close-range",
-        label: `Closes: ${formatTimeRangeLabel(applied.closeFrom, applied.closeTo)}`,
-        onRemove: () =>
-          setApplied((p) => ({ ...p, closeFrom: "", closeTo: "" })),
+        id: "close-at",
+        label: `Closes: ${formatHour(applied.closeAt)}`,
+        onRemove: () => setApplied((p) => ({ ...p, closeAt: "" })),
       });
     }
     if (applied.rateMin != null || applied.rateMax != null) {
@@ -507,128 +486,53 @@ export default function CourtsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Opening time</p>
-                  <p className="text-xs text-muted-foreground">
-                    First hour the court opens (within this window).
-                  </p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="open-from" className="text-xs font-normal">
-                        From
-                      </Label>
-                      <Select
-                        value={draft.openFrom || ANY_VALUE}
-                        onValueChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            openFrom: v === ANY_VALUE ? "" : v,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="open-from">
-                          <SelectValue placeholder="Any" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {formatBookableHourSlotRange(time)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="open-to" className="text-xs font-normal">
-                        To
-                      </Label>
-                      <Select
-                        value={draft.openTo || ANY_VALUE}
-                        onValueChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            openTo: v === ANY_VALUE ? "" : v,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="open-to">
-                          <SelectValue placeholder="Any" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {formatBookableHourSlotRange(time)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  <Label htmlFor="open-at">Opening time</Label>
+                  <Select
+                    value={draft.openAt || ANY_VALUE}
+                    onValueChange={(v) =>
+                      setDraft((d) => ({
+                        ...d,
+                        openAt: v === ANY_VALUE ? "" : v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="open-at">
+                      <SelectValue placeholder="Any" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ANY_VALUE}>Any</SelectItem>
+                      {timeOptions.map((time) => (
+                        <SelectItem key={time} value={time}>
+                          {formatHour(time)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Closing time</p>
-                  <p className="text-xs text-muted-foreground">
-                    Last hour the court closes (within this window).
-                  </p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="close-from"
-                        className="text-xs font-normal"
-                      >
-                        From
-                      </Label>
-                      <Select
-                        value={draft.closeFrom || ANY_VALUE}
-                        onValueChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            closeFrom: v === ANY_VALUE ? "" : v,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="close-from">
-                          <SelectValue placeholder="Any" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {formatBookableHourSlotRange(time)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="close-to" className="text-xs font-normal">
-                        To
-                      </Label>
-                      <Select
-                        value={draft.closeTo || ANY_VALUE}
-                        onValueChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            closeTo: v === ANY_VALUE ? "" : v,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="close-to">
-                          <SelectValue placeholder="Any" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ANY_VALUE}>Any</SelectItem>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {formatBookableHourSlotRange(time)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  <Label htmlFor="close-at">Closing time</Label>
+                  <Select
+                    value={draft.closeAt || ANY_VALUE}
+                    onValueChange={(v) =>
+                      setDraft((d) => ({
+                        ...d,
+                        closeAt: v === ANY_VALUE ? "" : v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="close-at">
+                      <SelectValue placeholder="Any" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ANY_VALUE}>Any</SelectItem>
+                      {timeOptions.map((time) => (
+                        <SelectItem key={time} value={time}>
+                          {formatHour(time)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">

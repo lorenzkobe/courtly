@@ -33,7 +33,7 @@ export async function GET() {
       id: venue.id,
       name: venue.name,
       location: venue.location,
-      image_url: venue.image_url,
+      image_url: venue.photo_urls?.[0] ?? "",
       court_count: countsByVenue.get(venue.id) ?? 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));

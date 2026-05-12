@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ExternalLink,
   Heart,
+  ImageIcon,
   Loader2,
   MapPin,
   Star,
@@ -94,6 +95,7 @@ import { buildBookingPayloads } from "@/lib/bookings/booking-payloads";
 import { useBookingCart } from "@/lib/stores/booking-cart";
 
 function courtGalleryUrls(court: Court): string[] {
+  if (court.venue_photo_urls && court.venue_photo_urls.length > 0) return court.venue_photo_urls;
   const g = court.gallery_urls?.filter(Boolean);
   if (g && g.length > 0) return g;
   if (court.image_url) return [court.image_url];
@@ -171,11 +173,11 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
   if (n === 0) {
     return (
       <div
-        className="flex aspect-video w-full items-center justify-center rounded-2xl border border-border bg-muted text-sm text-muted-foreground"
+        className="flex aspect-video w-full items-center justify-center rounded-2xl border border-border bg-muted"
         role="img"
         aria-label={`${name} — no photos`}
       >
-        No photos for this court yet
+        <ImageIcon className="h-12 w-12 text-muted-foreground/40" />
       </div>
     );
   }

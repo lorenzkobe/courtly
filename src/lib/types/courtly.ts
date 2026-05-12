@@ -83,7 +83,7 @@ export type Venue = {
   hourly_rate_windows: CourtRateWindow[];
   status: VenueStatus;
   amenities: string[];
-  image_url: string;
+  photo_urls: string[];
   created_at: string;
   map_latitude?: number;
   map_longitude?: number;
@@ -115,7 +115,7 @@ export type VenueRequest = {
   hourly_rate_windows: CourtRateWindow[];
   status: VenueStatus;
   amenities: string[];
-  image_url: string;
+  photo_urls: string[];
   map_latitude?: number;
   map_longitude?: number;
   accepts_gcash: boolean;
@@ -156,6 +156,8 @@ export type Court = {
   image_url: string;
   /** Deprecated/optional legacy metadata. */
   gallery_urls?: string[];
+  /** All venue photos; derived on read from linked venue. */
+  venue_photo_urls?: string[];
   /** Deprecated/optional legacy metadata. */
   description?: string;
   /** Derived on read from linked venue (maps). */

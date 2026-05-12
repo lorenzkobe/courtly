@@ -1,10 +1,10 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Check, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, Check, Loader2, Plus, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
-import { useMemo, useState } from "react";
+import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -39,6 +39,8 @@ import type { ManagedUser, Venue, VenueRequest } from "@/lib/types/courtly";
 import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { formatStatusLabel } from "@/lib/utils";
+import { optimizeVenuePhoto } from "@/lib/venues/optimize-venue-photo";
+import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 
 type PriceRangeRow = { start: string; end: string; rate: string };
 
@@ -51,7 +53,7 @@ const emptyForm = {
   sport: "pickleball" as Venue["sport"],
   amenities: [] as string[],
   customAmenityDraft: "",
-  image_url: "",
+  photo_urls: [] as string[],
   hourly_rate_windows: [] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
@@ -101,6 +103,10 @@ export default function SuperadminVenuesPage() {
   const [confirmRequestUpdateRequestId, setConfirmRequestUpdateRequestId] = useState<string | null>(null);
   const [bookingFeeInput, setBookingFeeInput] = useState("");
   const [bookingFeeTouched, setBookingFeeTouched] = useState(false);
+  const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     data: directoryPages,
@@ -264,7 +270,7 @@ export default function SuperadminVenuesPage() {
         amenities: [
           ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
         ],
-        image_url: form.image_url.trim(),
+        photo_urls: form.photo_urls,
         accepts_gcash: form.accepts_gcash,
         gcash_account_name: form.gcash_account_name.trim(),
         gcash_account_number: form.gcash_account_number.trim(),
@@ -285,6 +291,7 @@ export default function SuperadminVenuesPage() {
         queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
       });
       toast.success("Venue updated");
+      setStagedPhotoUrls([]);
       setDialogOpen(false);
       setEditingVenue(null);
       setForm(emptyForm);
@@ -387,7 +394,7 @@ export default function SuperadminVenuesPage() {
       sport: a.sport,
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
-      image_url: a.image_url ?? "",
+      photo_urls: a.photo_urls ?? [],
       map_latitude:
         a.map_latitude != null && Number.isFinite(a.map_latitude)
           ? a.map_latitude
@@ -432,6 +439,40 @@ export default function SuperadminVenuesPage() {
         : [...prev.amenities, amenity],
     }));
   };
+
+  async function handlePhotoSelect(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const optimized = await optimizeVenuePhoto(file);
+      const { data } = await courtlyApi.venuePhotos.upload(optimized.dataUrl);
+      setStagedPhotoUrls((prev) => [...prev, data.public_url]);
+      setForm((prev) => ({ ...prev, photo_urls: [...prev.photo_urls, data.public_url] }));
+    } catch (err) {
+      setPhotoError(apiErrorMessage(err, "Could not upload photo"));
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  }
+
+  function removePhoto(url: string) {
+    setForm((prev) => ({ ...prev, photo_urls: prev.photo_urls.filter((u) => u !== url) }));
+    if (stagedPhotoUrls.includes(url)) {
+      setStagedPhotoUrls((prev) => prev.filter((u) => u !== url));
+      void courtlyApi.venuePhotos.delete([url]);
+    }
+  }
+
+  function cleanupStagedPhotos(currentPhotoUrls: string[]) {
+    const orphaned = stagedPhotoUrls.filter((u) => !currentPhotoUrls.includes(u));
+    if (orphaned.length > 0) {
+      void courtlyApi.venuePhotos.delete(orphaned);
+    }
+    setStagedPhotoUrls([]);
+  }
 
   const addCustomAmenity = () => {
     const next = form.customAmenityDraft.trim();
@@ -865,7 +906,16 @@ export default function SuperadminVenuesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            cleanupStagedPhotos(form.photo_urls);
+            setPhotoError(null);
+          }
+          setDialogOpen(open);
+        }}
+      >
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading">Edit venue</DialogTitle>
@@ -1244,12 +1294,59 @@ export default function SuperadminVenuesPage() {
               </div>
             </div>
             <div>
-              <Label>Image URL *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.image_url}
-                onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+              <Label>
+                Photos *{" "}
+                <span className="font-normal text-muted-foreground">
+                  ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
+                </span>
+              </Label>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {form.photo_urls.map((url, i) => (
+                  <div
+                    key={url}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-border"
+                  >
+                    <img
+                      src={url}
+                      alt={`Photo ${i + 1}`}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(url)}
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
+                      aria-label="Remove photo"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                  >
+                    {isUploadingPhoto ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Plus className="h-5 w-5" />
+                    )}
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handlePhotoSelect}
               />
+              {photoError ? (
+                <p className="mt-1 text-xs text-destructive">{photoError}</p>
+              ) : null}
             </div>
             <div>
               <Label>Venue admins</Label>
@@ -1356,10 +1453,11 @@ export default function SuperadminVenuesPage() {
               className="font-heading font-semibold"
               disabled={
                 saveAccount.isPending ||
+                isUploadingPhoto ||
                 !form.name.trim() ||
                 !form.location.trim() ||
                 !form.contact_phone.trim() ||
-                !form.image_url.trim() ||
+                form.photo_urls.length < VENUE_PHOTO_MIN_COUNT ||
                 !priceRangeFormValidation.ok ||
                 !paymentSettingsValidation.ok ||
                 Boolean(facebookUrlError) ||

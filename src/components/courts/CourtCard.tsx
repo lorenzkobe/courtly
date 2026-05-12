@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, MapPin, Clock, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Heart, ImageIcon, MapPin, Clock, Star } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,20 +36,52 @@ export default function CourtCard({
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
 }) {
+  const photos =
+    court.venue_photo_urls && court.venue_photo_urls.length > 0
+      ? court.venue_photo_urls
+      : court.image_url
+        ? [court.image_url]
+        : [];
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const n = photos.length;
+  const safeIndex = n > 0 ? photoIndex % n : 0;
+
   return (
     <Card className="group overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative h-48 overflow-hidden bg-muted">
-        <Image
-          src={court.image_url}
-          alt={court.name}
-          fill
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          unoptimized
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
+        {n > 0 ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photos[safeIndex]}
+            alt={court.name}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <ImageIcon className="h-10 w-10 text-muted-foreground/40" />
+          </div>
+        )}
+        {n > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); setPhotoIndex((i) => (i - 1 + n) % n); }}
+              className="absolute left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/85 shadow-sm backdrop-blur-sm hover:bg-background"
+              aria-label="Previous photo"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); setPhotoIndex((i) => (i + 1) % n); }}
+              className="absolute right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/85 shadow-sm backdrop-blur-sm hover:bg-background"
+              aria-label="Next photo"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : null}
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-4rem)] flex-wrap gap-2">
           <Badge className="bg-secondary/90 text-secondary-foreground backdrop-blur-sm">
             {formatStatusLabel(court.type)}

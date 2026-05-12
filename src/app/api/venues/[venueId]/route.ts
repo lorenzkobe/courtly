@@ -25,6 +25,7 @@ import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 import { normalizeBookingFee } from "@/lib/platform-fee";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { isValidPhMobile, normalizePhMobile } from "@/lib/validation/person-fields";
+import { deleteVenuePhotos } from "@/lib/supabase/storage";
 
 function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
   const keys: (keyof Venue)[] = [
@@ -37,7 +38,7 @@ function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
     "hourly_rate_windows",
     "status",
     "amenities",
-    "image_url",
+    "photo_urls",
     "map_latitude",
     "map_longitude",
     "accepts_gcash",
@@ -300,6 +301,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     venuePatch.maya_account_name = paymentSettings.value.maya_account_name;
     venuePatch.maya_account_number = normalizedMayaNumber;
   }
+  if (Array.isArray(venuePatch.photo_urls)) {
+    const toDelete = (cur.photo_urls ?? []).filter(
+      (url) => !(venuePatch.photo_urls as string[]).includes(url),
+    );
+    if (toDelete.length > 0) {
+      void deleteVenuePhotos(toDelete);
+    }
+  }
+
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 
   if (user.role === "superadmin" && hasAssignmentPatch) {

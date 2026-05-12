@@ -315,6 +315,11 @@ export const courtlyApi = {
         `/api/open-play/${id}/requests/${requestId}/deny`,
         body ?? {},
       ),
+    cancelRequest: (id: string, requestId: string) =>
+      http.post<{ request: OpenPlayJoinRequest }>(
+        `/api/open-play/${id}/requests/${requestId}/cancel`,
+        {},
+      ),
     addComment: (id: string, body: { comment: string }) =>
       http.post<{ comment: OpenPlayComment }>(`/api/open-play/${id}/comments`, body),
     updateComment: (sessionId: string, commentId: string, body: { comment: string }) =>
@@ -332,6 +337,13 @@ export const courtlyApi = {
       http.get<TournamentRegistration[]>("/api/tournament-registrations", {
         params,
       }),
+  },
+
+  venuePhotos: {
+    upload: (dataUrl: string) =>
+      http.post<{ public_url: string }>("/api/admin/venue-photos", { data_url: dataUrl }),
+    delete: (publicUrls: string[]) =>
+      http.delete("/api/admin/venue-photos", { data: { public_urls: publicUrls } }),
   },
 
   venues: {

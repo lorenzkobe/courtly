@@ -407,6 +407,18 @@ export default function OpenPlayDetailPage() {
     },
     onError: () => toast.error("Could not delete open play."),
   });
+  const cancelJoinMutation = useMutation({
+    mutationFn: async () => {
+      if (!myRequest) throw new Error("No request to cancel");
+      return courtlyApi.openPlay.cancelRequest(sessionId, myRequest.id);
+    },
+    onSuccess: () => {
+      toast.success("Payment cancelled.");
+      refresh();
+    },
+    onError: () => toast.error("Could not cancel payment."),
+  });
+
   const updateOpenPlayMutation = useMutation({
     mutationFn: async () =>
       courtlyApi.openPlay.update(sessionId, {
@@ -846,6 +858,12 @@ export default function OpenPlayDetailPage() {
               <Users className="h-4 w-4" />
               {data.counts.approved}/{session.max_players} approved
             </span>
+            {isHost && data.counts.payment_locked > 0 ? (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                {data.counts.payment_locked} in payment process
+              </span>
+            ) : null}
             <span className="font-semibold text-primary">
               {formatPhp(session.price_per_player)} / player
             </span>
@@ -1011,7 +1029,7 @@ export default function OpenPlayDetailPage() {
                 <div key={request.id} className="rounded-md border border-border/70 p-3">
                   <p className="text-sm font-medium">{request.user_name ?? request.user_id}</p>
                   <p className="text-xs text-muted-foreground">
-                    Status: {request.status}
+                    Status: {joinRequestStatusLabel(request.status)}
                     {typeof request.user_dupr_rating === "number"
                       ? ` · DUPR ${request.user_dupr_rating.toFixed(2)}`
                       : ""}
@@ -1338,6 +1356,10 @@ export default function OpenPlayDetailPage() {
           onSubmit={() => submitProofMutation.mutate()}
           submitDisabled={submitProofMutation.isPending || proofOptimizing || !proofDataUrl}
           submitPending={submitProofMutation.isPending}
+          onCancel={() => cancelJoinMutation.mutate()}
+          cancelDisabled={cancelJoinMutation.isPending || submitProofMutation.isPending}
+          cancelPending={cancelJoinMutation.isPending}
+          cancelLabel="Cancel payment"
         />
       ) : null}
     </div>

@@ -7,6 +7,7 @@ import {
 import { normalizeSocialUrl, validateSocialUrl } from "@/lib/social-url";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
 import { isValidPhMobile, normalizePhMobile } from "@/lib/validation/person-fields";
+import { VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 
 export type NormalizedVenueDraft = Omit<
   VenueRequest,
@@ -77,7 +78,9 @@ export function normalizeVenueDraftFromBody(
           .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
           .filter(Boolean)
       : [],
-    image_url: typeof body.image_url === "string" ? body.image_url.trim() : "",
+    photo_urls: Array.isArray(body.photo_urls)
+      ? (body.photo_urls as unknown[]).filter((u): u is string => typeof u === "string" && u.length > 0)
+      : [],
     accepts_gcash: paymentSettings.value.accepts_gcash,
     gcash_account_name: paymentSettings.value.gcash_account_name,
     gcash_account_number: paymentSettings.value.gcash_account_number
@@ -96,10 +99,11 @@ export function normalizeVenueDraftFromBody(
       : {}),
   };
 
-  if (!nextValue.name || !nextValue.location || !nextValue.contact_phone || !nextValue.image_url) {
+
+  if (!nextValue.name || !nextValue.location || !nextValue.contact_phone || nextValue.photo_urls.length < VENUE_PHOTO_MIN_COUNT) {
     return {
       ok: false,
-      error: "Name, location, contact number, and image URL are required.",
+      error: `Name, location, contact number, and at least ${VENUE_PHOTO_MIN_COUNT} photos are required.`,
     };
   }
   if (!isValidPhMobile(nextValue.contact_phone)) {

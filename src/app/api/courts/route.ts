@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     name: courtName,
     location: venue.location,
     sport: venue.sport,
-    image_url: venue.image_url,
+    image_url: venue.photo_urls?.[0] ?? "",
     hourly_rate_windows: windows,
     amenities: venue.amenities,
     available_hours: span ?? { open: "07:00", close: "22:00" },
