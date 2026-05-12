@@ -203,8 +203,8 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
           <Button
             type="button"
             size="icon"
-            variant="secondary"
-            className="absolute left-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 shadow-md backdrop-blur-sm pointer-events-auto opacity-90 hover:opacity-100"
+            variant="ghost"
+            className="absolute left-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-black/50 text-white shadow-md pointer-events-auto hover:bg-black/70 hover:text-white"
             onClick={() => go(-1)}
             aria-label="Previous photo"
           >
@@ -213,8 +213,8 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
           <Button
             type="button"
             size="icon"
-            variant="secondary"
-            className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 shadow-md backdrop-blur-sm pointer-events-auto opacity-90 hover:opacity-100"
+            variant="ghost"
+            className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-black/50 text-white shadow-md pointer-events-auto hover:bg-black/70 hover:text-white"
             onClick={() => go(1)}
             aria-label="Next photo"
           >

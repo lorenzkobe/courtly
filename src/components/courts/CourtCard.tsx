@@ -67,7 +67,7 @@ export default function CourtCard({
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); setPhotoIndex((i) => (i - 1 + n) % n); }}
-              className="absolute left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/85 shadow-sm backdrop-blur-sm hover:bg-background"
+              className="absolute left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white shadow-sm hover:bg-black/70"
               aria-label="Previous photo"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -75,7 +75,7 @@ export default function CourtCard({
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); setPhotoIndex((i) => (i + 1) % n); }}
-              className="absolute right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/85 shadow-sm backdrop-blur-sm hover:bg-background"
+              className="absolute right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white shadow-sm hover:bg-black/70"
               aria-label="Next photo"
             >
               <ChevronRight className="h-3.5 w-3.5" />
