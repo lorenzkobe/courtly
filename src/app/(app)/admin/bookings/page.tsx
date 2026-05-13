@@ -62,7 +62,6 @@ const statusStyles: Record<string, string> = {
 
 type AdminBookingFilters = {
   status: "all" | Booking["status"];
-  paymentReview: "all" | "refund_required" | "paid";
   venueId: string;
   dateFrom: string;
   dateTo: string;
@@ -73,7 +72,6 @@ type AdminBookingFilters = {
 function defaultAdminBookingFilters(): AdminBookingFilters {
   return {
     status: "all",
-    paymentReview: "all",
     venueId: "",
     dateFrom: "",
     dateTo: "",
@@ -84,15 +82,6 @@ function defaultAdminBookingFilters(): AdminBookingFilters {
 
 function cloneAdminBookingFilters(s: AdminBookingFilters): AdminBookingFilters {
   return { ...s };
-}
-
-function bookingPaymentTraceStatus(
-  booking: Pick<Booking, "status" | "refund_required" | "paid_at">,
-): "refund_required" | "paid" | "none" {
-  if (booking.refund_required) return "refund_required";
-  if (booking.paid_at || booking.status === "confirmed" || booking.status === "completed")
-    return "paid";
-  return "none";
 }
 
 /** One row per checkout: shared `booking_group_id`, or the row’s own id when standalone. */
@@ -112,7 +101,6 @@ type AdminBookingListGroup = {
   totalCost: number;
   venueLabel: string;
   statusKey: string;
-  refundRequired: boolean;
   dateMin: string;
   dateMax: string;
   courtsSummary: string;
@@ -147,6 +135,10 @@ function bookingAuditBadgeClass(title: string): string {
       return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
     case "Booking completed":
       return "border-violet-500/30 bg-violet-500/10 text-violet-700";
+    case "Refund in progress":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+    case "Refunded":
+      return "border-border bg-muted text-muted-foreground";
     case "Booking cancelled":
       return "border-orange-500/30 bg-orange-500/10 text-orange-700";
     case "Booking rejected":
@@ -168,6 +160,10 @@ function bookingAuditAccentClass(title: string): string {
       return "bg-emerald-500/70";
     case "Booking completed":
       return "bg-violet-500/70";
+    case "Refund in progress":
+      return "bg-amber-500/70";
+    case "Refunded":
+      return "bg-border";
     case "Booking cancelled":
       return "bg-orange-500/70";
     case "Booking rejected":
@@ -205,7 +201,7 @@ function bookingAuditEventsForSegment(segment: Booking): BookingAuditEvent[] {
   if (segment.status === "confirmed") {
     events.push({
       id: `${segment.id}-confirmed`,
-      at: segment.status_updated_at ?? segment.paid_at ?? null,
+      at: segment.status_updated_at ?? null,
       title: "Booking confirmed",
       detail: segmentLabel,
       actor: statusActor,
@@ -220,18 +216,29 @@ function bookingAuditEventsForSegment(segment: Booking): BookingAuditEvent[] {
       actor: statusActor,
     });
   }
+  if (segment.status === "refund") {
+    events.push({
+      id: `${segment.id}-refund`,
+      at: segment.status_updated_at ?? null,
+      title: "Refund in progress",
+      detail: segmentLabel,
+      actor: statusActor,
+    });
+  }
+  if (segment.status === "refunded") {
+    events.push({
+      id: `${segment.id}-refunded`,
+      at: segment.status_updated_at ?? null,
+      title: "Refunded",
+      detail: segmentLabel,
+      actor: statusActor,
+    });
+  }
   if (segment.status === "cancelled") {
-    const rejected =
-      Boolean(segment.payment_failed_at) ||
-      (segment.cancel_reason ?? "").toLowerCase().includes("reject");
+    const rejected = (segment.cancel_reason ?? "").toLowerCase().includes("reject");
     events.push({
       id: `${segment.id}-${rejected ? "rejected" : "cancelled"}`,
-      at:
-        segment.status_updated_at ??
-        segment.payment_failed_at ??
-        segment.refunded_at ??
-        segment.created_date ??
-        null,
+      at: segment.status_updated_at ?? segment.created_date ?? null,
       title: rejected ? "Booking rejected" : "Booking cancelled",
       detail: segment.cancel_reason?.trim() || segmentLabel,
       actor: statusActor,
@@ -369,6 +376,7 @@ export default function AdminBookingsPage() {
 
   const [confirmBulkPendingOpen, setConfirmBulkPendingOpen] = useState(false);
   const [confirmBulkCompleteOpen, setConfirmBulkCompleteOpen] = useState(false);
+  const [confirmBulkRefundedOpen, setConfirmBulkRefundedOpen] = useState(false);
   const [paymentProofPreviewUrl, setPaymentProofPreviewUrl] = useState<string | null>(
     null,
   );
@@ -378,7 +386,10 @@ export default function AdminBookingsPage() {
     Record<string, "confirmed" | "cancelled">
   >({});
   const [completionDecisionById, setCompletionDecisionById] = useState<
-    Record<string, "completed">
+    Record<string, "completed" | "refund">
+  >({});
+  const [refundedDecisionById, setRefundedDecisionById] = useState<
+    Record<string, "refunded">
   >({});
   const [paymentProofZoom, setPaymentProofZoom] = useState(1);
   const [isLoadingProof, setIsLoadingProof] = useState(false);
@@ -533,6 +544,10 @@ export default function AdminBookingsPage() {
     () => detailSegments.filter((segment) => segment.status === "confirmed"),
     [detailSegments],
   );
+  const refundSegments = useMemo(
+    () => detailSegments.filter((segment) => segment.status === "refund"),
+    [detailSegments],
+  );
   const selectedPendingUpdates = useMemo(
     () =>
       pendingConfirmationSegments.flatMap((segment) => {
@@ -544,12 +559,21 @@ export default function AdminBookingsPage() {
   );
   const selectedCompleteUpdates = useMemo(
     () =>
-      confirmedSegments.flatMap((segment) =>
-        completionDecisionById[segment.id]
-          ? [{ id: segment.id, status: "completed" as const }]
+      confirmedSegments.flatMap((segment) => {
+        const decision = completionDecisionById[segment.id] as string | undefined;
+        if (!decision || decision === "skip") return [];
+        return [{ id: segment.id, status: decision as Booking["status"] }];
+      }),
+    [confirmedSegments, completionDecisionById],
+  );
+  const selectedRefundedUpdates = useMemo(
+    () =>
+      refundSegments.flatMap((segment) =>
+        refundedDecisionById[segment.id]
+          ? [{ id: segment.id, status: "refunded" as const }]
           : [],
       ),
-    [confirmedSegments, completionDecisionById],
+    [refundSegments, refundedDecisionById],
   );
 
   const adminBookingNotes = useMemo(() => {
@@ -732,8 +756,10 @@ export default function AdminBookingsPage() {
       toast.success("Booking decisions submitted");
       setPendingDecisionById({});
       setCompletionDecisionById({});
+      setRefundedDecisionById({});
       setConfirmBulkPendingOpen(false);
       setConfirmBulkCompleteOpen(false);
+      setConfirmBulkRefundedOpen(false);
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Could not submit bulk booking decisions"));
@@ -761,7 +787,6 @@ export default function AdminBookingsPage() {
     const searchUpper = searchTerm.toUpperCase();
     const {
       status: statusFilter,
-      paymentReview,
       venueId,
       dateFrom,
       dateTo,
@@ -772,11 +797,6 @@ export default function AdminBookingsPage() {
     const rowMatches = (booking: Booking) => {
       const statusMatch =
         statusFilter === "all" || booking.status === statusFilter;
-      const trace = bookingPaymentTraceStatus(booking);
-      const paymentReviewMatch =
-        paymentReview === "all" ||
-        (paymentReview === "refund_required" && trace === "refund_required") ||
-        (paymentReview === "paid" && trace === "paid");
       const venueMatch = !venueId || booking.venue_id === venueId;
       const fromOk = !dateFrom || booking.date >= dateFrom;
       const toOk = !dateTo || booking.date <= dateTo;
@@ -805,7 +825,6 @@ export default function AdminBookingsPage() {
         booking.booking_number?.split("-").at(-1)?.toUpperCase().includes(searchUpper);
       return (
         statusMatch &&
-        paymentReviewMatch &&
         venueMatch &&
         fromOk &&
         toOk &&
@@ -849,7 +868,6 @@ export default function AdminBookingsPage() {
       const statusSet = new Set(members.map((m) => m.status));
       const statusKey =
         statusSet.size === 1 ? [...statusSet][0]! : "__mixed_status__";
-      const refundRequired = members.some((m) => m.refund_required === true);
       const dateMin = members.reduce(
         (min, m) => (m.date < min ? m.date : min),
         members[0]!.date,
@@ -882,7 +900,6 @@ export default function AdminBookingsPage() {
         totalCost,
         venueLabel,
         statusKey,
-        refundRequired,
         dateMin,
         dateMax,
         courtsSummary,
@@ -918,21 +935,6 @@ export default function AdminBookingsPage() {
         label: `Status: ${formatBookingStatusLabel(f.status)}`,
         onRemove: () =>
           setAppliedFilters((p) => ({ ...p, status: "all" })),
-      });
-    }
-    if (f.paymentReview === "refund_required") {
-      chips.push({
-        id: "payment-review",
-        label: "Refund",
-        onRemove: () =>
-          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
-      });
-    } else if (f.paymentReview === "paid") {
-      chips.push({
-        id: "payment-review",
-        label: "Paid / confirmed",
-        onRemove: () =>
-          setAppliedFilters((p) => ({ ...p, paymentReview: "all" })),
       });
     }
     if (f.venueId) {
@@ -985,8 +987,6 @@ export default function AdminBookingsPage() {
         .length,
       cancelled: bookings.filter((booking) => booking.status === "cancelled")
         .length,
-      refundRequired: bookings.filter((booking) => booking.refund_required === true)
-        .length,
       revenue: bookings
         .filter((booking) => booking.status !== "cancelled")
         .reduce((sum, booking) => sum + (booking.total_cost || 0), 0),
@@ -1010,13 +1010,25 @@ export default function AdminBookingsPage() {
       <ConfirmDialog
         open={confirmBulkCompleteOpen}
         onOpenChange={setConfirmBulkCompleteOpen}
-        title="Complete selected slots?"
-        description={`This will mark ${selectedCompleteUpdates.length} slot${selectedCompleteUpdates.length === 1 ? "" : "s"} as completed.`}
-        confirmLabel="Complete selected"
+        title="Submit slot actions?"
+        description={`This will apply ${selectedCompleteUpdates.length} action${selectedCompleteUpdates.length === 1 ? "" : "s"} on confirmed slots.`}
+        confirmLabel="Submit"
         isPending={bulkUpdateStatuses.isPending}
         onConfirm={() => {
           if (selectedCompleteUpdates.length === 0) return;
           bulkUpdateStatuses.mutate(selectedCompleteUpdates);
+        }}
+      />
+      <ConfirmDialog
+        open={confirmBulkRefundedOpen}
+        onOpenChange={setConfirmBulkRefundedOpen}
+        title="Mark as refunded?"
+        description={`This will mark ${selectedRefundedUpdates.length} slot${selectedRefundedUpdates.length === 1 ? "" : "s"} as refunded.`}
+        confirmLabel="Mark refunded"
+        isPending={bulkUpdateStatuses.isPending}
+        onConfirm={() => {
+          if (selectedRefundedUpdates.length === 0) return;
+          bulkUpdateStatuses.mutate(selectedRefundedUpdates);
         }}
       />
       <Dialog
@@ -1178,12 +1190,6 @@ export default function AdminBookingsPage() {
                       <dd className="font-heading font-bold text-primary">
                         {formatPhp(adminSessionTotal)}
                       </dd>
-                      {detailBooking.payment_reference_id ? (
-                        <>
-                          <dt className="text-muted-foreground">Payment reference</dt>
-                          <dd className="break-all text-xs">{detailBooking.payment_reference_id}</dd>
-                        </>
-                      ) : null}
                       {adminBookingNotes ? (
                         <>
                           <dt className="text-muted-foreground">Booking notes</dt>
@@ -1304,14 +1310,6 @@ export default function AdminBookingsPage() {
                                 >
                                   {formatBookingStatusLabel(segment.status)}
                                 </Badge>
-                                {segment.refund_required ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-amber-500/30 bg-amber-500/10 text-amber-700"
-                                  >
-                                    Refund
-                                  </Badge>
-                                ) : null}
                                 <p className="font-semibold tabular-nums text-foreground">
                                   {formatPhp(segment.total_cost ?? 0)}
                                 </p>
@@ -1364,8 +1362,8 @@ export default function AdminBookingsPage() {
                                   onValueChange={(value) =>
                                     setCompletionDecisionById((current) => {
                                       const next = { ...current };
-                                      if (value === "completed") {
-                                        next[segment.id] = "completed";
+                                      if (value === "completed" || value === "refund") {
+                                        next[segment.id] = value as "completed" | "refund";
                                       } else {
                                         delete next[segment.id];
                                       }
@@ -1379,6 +1377,33 @@ export default function AdminBookingsPage() {
                                   <SelectContent>
                                     <SelectItem value="skip">No action</SelectItem>
                                     <SelectItem value="completed">Complete slot</SelectItem>
+                                    <SelectItem value="refund">Refund slot</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ) : null}
+                            {segment.status === "refund" ? (
+                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+                                <Select
+                                  value={refundedDecisionById[segment.id] ?? ""}
+                                  onValueChange={(value) =>
+                                    setRefundedDecisionById((current) => {
+                                      const next = { ...current };
+                                      if (value === "refunded") {
+                                        next[segment.id] = "refunded";
+                                      } else {
+                                        delete next[segment.id];
+                                      }
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 w-[220px]">
+                                    <SelectValue placeholder="Select action" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="skip">No action</SelectItem>
+                                    <SelectItem value="refunded">Mark as refunded</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -1413,13 +1438,31 @@ export default function AdminBookingsPage() {
                           disabled={selectedCompleteUpdates.length === 0 || bulkUpdateStatuses.isPending}
                           onClick={() => {
                             if (selectedCompleteUpdates.length === 0) {
-                              toast.error("Select at least one confirmed slot to complete.");
+                              toast.error("Select at least one confirmed slot action.");
                               return;
                             }
                             setConfirmBulkCompleteOpen(true);
                           }}
                         >
-                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit completion"}
+                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit"}
+                        </Button>
+                      </div>
+                    ) : null}
+                    {refundSegments.length > 0 ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={selectedRefundedUpdates.length === 0 || bulkUpdateStatuses.isPending}
+                          onClick={() => {
+                            if (selectedRefundedUpdates.length === 0) {
+                              toast.error("Select at least one refund slot to mark as refunded.");
+                              return;
+                            }
+                            setConfirmBulkRefundedOpen(true);
+                          }}
+                        >
+                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit refunded"}
                         </Button>
                       </div>
                     ) : null}
@@ -1541,11 +1584,6 @@ export default function AdminBookingsPage() {
             label: "Cancelled",
             value: stats.cancelled,
             color: "text-destructive",
-          },
-          {
-            label: "Refund",
-            value: stats.refundRequired,
-            color: "text-amber-700",
           },
           {
             label: "Revenue",
@@ -1684,27 +1722,8 @@ export default function AdminBookingsPage() {
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="admin-booking-filter-payment-review">Payment</Label>
-              <Select
-                value={draftFilters.paymentReview}
-                onValueChange={(v) =>
-                  setDraftFilters((d) => ({
-                    ...d,
-                    paymentReview: v as AdminBookingFilters["paymentReview"],
-                  }))
-                }
-              >
-                <SelectTrigger id="admin-booking-filter-payment-review" className="mt-1.5">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="refund_required">Refund</SelectItem>
-                  <SelectItem value="paid">Paid / confirmed</SelectItem>
+                  <SelectItem value="refund">Refund in progress</SelectItem>
+                  <SelectItem value="refunded">Refunded</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1874,14 +1893,6 @@ export default function AdminBookingsPage() {
                         ? "Mixed statuses"
                         : formatBookingStatusLabel(group.statusKey)}
                     </Badge>
-                    {group.refundRequired ? (
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/30 bg-amber-500/10 px-2 py-0 text-[10px] text-amber-800 dark:text-amber-200"
-                      >
-                        Refund
-                      </Badge>
-                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <span className="font-medium text-foreground">

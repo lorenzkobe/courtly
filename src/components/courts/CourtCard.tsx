@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { ChevronLeft, ChevronRight, Heart, ImageIcon, MapPin, Clock, Star } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -31,10 +30,12 @@ export default function CourtCard({
   court,
   isFavorite = false,
   onToggleFavorite,
+  bookHref,
 }: {
   court: Court;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  bookHref?: string;
 }) {
   const photos =
     court.venue_photo_urls && court.venue_photo_urls.length > 0
@@ -172,7 +173,7 @@ export default function CourtCard({
           </div>
         ) : null}
         <Button className="w-full font-heading font-semibold shadow-sm" asChild>
-          <Link href={`/courts/${court.id}/book`}>Book This Court</Link>
+          <Link href={bookHref ?? `/courts/${court.id}/book`}>Book This Court</Link>
         </Button>
       </CardContent>
     </Card>

@@ -46,10 +46,10 @@ import {
 import {
   aggregateSessionStatus,
   sessionFullyCompletedForReview,
-  sessionStatusLabel,
 } from "@/lib/bookings/session-display-status";
 import { isValidOpenPlayDuprRange, roundDuprBound } from "@/lib/open-play/dupr-range";
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
+import { BookingStatusStepper } from "@/components/booking/BookingStatusStepper";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 import { isValidPhMobile } from "@/lib/validation/person-fields";
 
@@ -59,6 +59,8 @@ const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
+  refund: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  refunded: "bg-muted text-muted-foreground border-border",
   __session_mixed__: "bg-sky-500/10 text-sky-900 border-sky-500/25 dark:text-sky-100",
 };
 
@@ -673,6 +675,7 @@ export default function BookingDetailPage() {
             <h2 className="font-heading text-lg font-semibold text-foreground">
               Summary
             </h2>
+            <BookingStatusStepper status={sessionStatusKey} />
             <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr] sm:gap-x-6">
               <dt className="text-muted-foreground">
                 Court{sessionCourts.multiple ? "s" : ""}
@@ -690,15 +693,6 @@ export default function BookingDetailPage() {
                 {booking.date
                   ? format(new Date(`${booking.date}T12:00:00`), "EEE, MMM d, yyyy")
                   : "—"}
-              </dd>
-              <dt className="text-muted-foreground">Status</dt>
-              <dd>
-                <Badge
-                  variant="outline"
-                  className={statusStyles[sessionStatusKey] ?? ""}
-                >
-                  {sessionStatusLabel(sessionStatusKey)}
-                </Badge>
               </dd>
             </dl>
 

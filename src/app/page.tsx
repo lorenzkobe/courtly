@@ -115,13 +115,18 @@ export default async function HomePage() {
           </Link>
           <div className="flex items-center gap-2">
             {user ? (
-              <Button className="font-heading font-semibold" asChild>
-                <Link href={appHomePath}>Open app</Link>
-              </Button>
+              <>
+                <Button variant="outline" className="font-medium" asChild>
+                  <Link href="/courts">Book</Link>
+                </Button>
+                <Button className="font-heading font-semibold" asChild>
+                  <Link href={appHomePath}>Open app</Link>
+                </Button>
+              </>
             ) : (
               <>
-                <Button variant="ghost" className="font-medium" asChild>
-                  <Link href="/login">Sign In</Link>
+                <Button variant="outline" className="font-medium" asChild>
+                  <Link href="/book">Book</Link>
                 </Button>
                 <Button
                   className="font-heading font-semibold shadow-sm shadow-primary/20"

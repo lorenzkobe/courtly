@@ -6,6 +6,10 @@ import type { Booking, CourtReview } from "@/lib/types/courtly";
 import type { EmitNotificationInput } from "@/lib/notifications/repository";
 import { createNotificationRepository } from "@/lib/notifications/repository-factory";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  sendBookingRefundInitiated,
+  sendBookingRefunded,
+} from "@/lib/email/email-service";
 
 const repo = createNotificationRepository();
 
@@ -52,7 +56,9 @@ function coerceBookingStatus(
     value === "pending_confirmation" ||
     value === "confirmed" ||
     value === "cancelled" ||
-    value === "completed"
+    value === "completed" ||
+    value === "refund" ||
+    value === "refunded"
   ) {
     return value;
   }
@@ -63,9 +69,11 @@ function coerceBookingStatus(
       t === "pending_confirmation" ||
       t === "confirmed" ||
       t === "cancelled" ||
-      t === "completed"
+      t === "completed" ||
+      t === "refund" ||
+      t === "refunded"
     ) {
-      return t;
+      return t as Booking["status"];
     }
   }
   return fallback;
@@ -239,12 +247,18 @@ export async function emitBulkBookingLifecycleNotifications(
 ): Promise<void> {
   if (items.length === 0) return;
   try {
-    const completedTransitions = items.filter((item) => {
+    const isIndividualTransition = (item: { prev: Booking; nextRow: Record<string, unknown> }) => {
       const prev = snapshotFromBooking(item.prev);
       const next = snapshotFromBookingRow(item.nextRow, prev);
-      return next.status === "completed" && prev.status !== "completed";
-    });
-    for (const item of completedTransitions) {
+      return (
+        (next.status === "completed" && prev.status !== "completed") ||
+        (next.status === "refund" && prev.status !== "refund") ||
+        (next.status === "refunded" && prev.status !== "refunded")
+      );
+    };
+
+    const individualTransitions = items.filter(isIndividualTransition);
+    for (const item of individualTransitions) {
       await emitBookingLifecycleNotifications({
         prev: item.prev,
         nextRow: item.nextRow,
@@ -253,11 +267,7 @@ export async function emitBulkBookingLifecycleNotifications(
       });
     }
 
-    const digestItems = items.filter((item) => {
-      const prev = snapshotFromBooking(item.prev);
-      const next = snapshotFromBookingRow(item.nextRow, prev);
-      return !(next.status === "completed" && prev.status !== "completed");
-    });
+    const digestItems = items.filter((item) => !isIndividualTransition(item));
     if (digestItems.length === 0) return;
 
     type Agg = { confirmed: number; cancelled: number; firstBookingId: string };
@@ -321,11 +331,60 @@ async function emitBookingLifecycleNotificationsInner(params: {
 }): Promise<void> {
   const prev = snapshotFromBooking(params.prev);
   const next = snapshotFromBookingRow(params.nextRow, prev);
+
+  // Email stubs fire for all players (authenticated and guest) before the uid check.
+  const playerEmail = params.prev.player_email?.trim();
+  const emailBase = {
+    to: playerEmail ?? "",
+    playerName: params.prev.player_name ?? "Player",
+    bookingNumber: params.prev.booking_number ?? "",
+    courtName: params.prev.court_name ?? "",
+    venueName: params.prev.establishment_name ?? "",
+  };
+  if (next.status === "refund" && prev.status !== "refund" && playerEmail) {
+    void sendBookingRefundInitiated(emailBase);
+  }
+  if (next.status === "refunded" && prev.status !== "refunded" && playerEmail) {
+    void sendBookingRefunded(emailBase);
+  }
+
   let uid = next.user_id ?? prev.user_id;
   if (!uid) {
     uid = await fetchBookingOwnerUserId(params.bookingId);
   }
   if (!uid) return;
+
+  if (next.status === "refund" && prev.status !== "refund") {
+    await safeEmitMany([
+      {
+        user_id: uid,
+        type: "booking_refund_initiated",
+        title: "Refund in progress",
+        body: "A refund has been initiated for your booking.",
+        metadata: {
+          booking_id: params.bookingId,
+          target_path: `/my-bookings/${params.bookingId}`,
+        },
+      },
+    ]);
+    return;
+  }
+
+  if (next.status === "refunded" && prev.status !== "refunded") {
+    await safeEmitMany([
+      {
+        user_id: uid,
+        type: "booking_refunded",
+        title: "Refund completed",
+        body: "Your booking refund has been processed.",
+        metadata: {
+          booking_id: params.bookingId,
+          target_path: `/my-bookings/${params.bookingId}`,
+        },
+      },
+    ]);
+    return;
+  }
 
   if (next.status === "cancelled" && prev.status !== "cancelled") {
     await safeEmitMany([

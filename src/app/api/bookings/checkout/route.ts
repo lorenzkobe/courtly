@@ -11,8 +11,12 @@ import {
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
-import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
+import { sendGuestBookingConfirmation } from "@/lib/email/email-service";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
+import { format } from "date-fns";
+import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function toBookingPayloadList(body: unknown): Partial<Booking>[] {
   if (Array.isArray(body)) return body as Partial<Booking>[];
@@ -22,14 +26,49 @@ function toBookingPayloadList(body: unknown): Partial<Booking>[] {
   return [body as Partial<Booking>];
 }
 
+type GuestFields = {
+  guest_first_name?: string;
+  guest_last_name?: string;
+  guest_email?: string;
+  guest_phone?: string;
+};
+
 export async function POST(req: Request) {
   const sessionUser = await readSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requestBody = (await req.json()) as GuestFields & { items?: Partial<Booking>[] };
+
+  let playerName: string;
+  let playerEmail: string;
+  let userId: string | null;
+
+  if (sessionUser) {
+    playerName = sessionUser.full_name ?? sessionUser.email;
+    playerEmail = sessionUser.email;
+    userId = sessionUser.id;
+  } else {
+    const firstName = (requestBody.guest_first_name ?? "").trim();
+    const lastName = (requestBody.guest_last_name ?? "").trim();
+    const email = (requestBody.guest_email ?? "").trim().toLowerCase();
+    const phone = (requestBody.guest_phone ?? "").trim();
+
+    if (!firstName) return NextResponse.json({ error: "First name is required." }, { status: 400 });
+    if (!lastName) return NextResponse.json({ error: "Last name is required." }, { status: 400 });
+    if (!EMAIL_REGEX.test(email)) {
+      return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
+    }
+    if (!phone) return NextResponse.json({ error: "Phone number is required." }, { status: 400 });
+
+    playerName = `${firstName} ${lastName}`;
+    playerEmail = email;
+    userId = null;
   }
 
-  const requestBody = await req.json();
-  const payloads = toBookingPayloadList(requestBody);
+  const payloads = sessionUser
+    ? toBookingPayloadList(requestBody)
+    : Array.isArray(requestBody.items)
+      ? requestBody.items
+      : [];
+
   if (payloads.length === 0) {
     return NextResponse.json({ error: "At least one booking is required." }, { status: 400 });
   }
@@ -45,12 +84,14 @@ export async function POST(req: Request) {
   const rows: Array<Record<string, unknown>> = [];
   let checkoutPaymentMethods: BookingCheckoutResponse["payment_methods"] = [];
   let totalDue = 0;
+  let firstCourtName = "";
+  let firstVenueName = "";
 
-  for (const body of payloads) {
-    const court = courts.find((row) => row.id === body.court_id);
+  for (const item of payloads) {
+    const court = courts.find((row) => row.id === item.court_id);
     const venue = court ? venues.find((row) => row.id === court.venue_id) : null;
     if (!court || !venue) {
-      return NextResponse.json({ error: "Court not found" }, { status: 404 });
+      return NextResponse.json({ error: "Court not found." }, { status: 404 });
     }
     if (court.status !== "active" || venue.status !== "active") {
       return NextResponse.json(
@@ -58,14 +99,14 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    if (!body.date || !body.start_time || !body.end_time) {
+    if (!item.date || !item.start_time || !item.end_time) {
       return NextResponse.json({ error: "Missing booking date/time." }, { status: 400 });
     }
     const hasConflict = await hasBlockingBookingConflictForCourt(
       court.id,
-      body.date,
-      body.start_time,
-      body.end_time,
+      item.date,
+      item.start_time,
+      item.end_time,
     );
     if (hasConflict) {
       return NextResponse.json(
@@ -82,25 +123,24 @@ export async function POST(req: Request) {
     }
     if (checkoutPaymentMethods.length === 0) {
       checkoutPaymentMethods = methods;
+      firstCourtName = court.name;
+      firstVenueName =
+        (venue as { establishment_name?: string }).establishment_name ?? venue.name ?? "Venue";
     }
 
-    let courtSubtotal = body.court_subtotal;
-    let bookingFee = body.booking_fee;
-    let itemTotal = body.total_cost;
+    let courtSubtotal = item.court_subtotal;
+    let bookingFee = item.booking_fee;
+    let itemTotal = item.total_cost;
     const venueOverride = Number(
       (venue as { booking_fee_override?: unknown }).booking_fee_override ?? Number.NaN,
     );
-    const bookingFeeForVenue = Number.isFinite(venueOverride)
-      ? venueOverride
-      : defaultFeeSetting;
+    const bookingFeeForVenue = Number.isFinite(venueOverride) ? venueOverride : defaultFeeSetting;
     const hasFullSplit =
       typeof courtSubtotal === "number" &&
       typeof bookingFee === "number" &&
       typeof itemTotal === "number";
     if (!hasFullSplit) {
-      const numHours = Math.max(1,
-        hourFromTime(body.end_time) - hourFromTime(body.start_time)
-      );
+      const numHours = Math.max(1, hourFromTime(item.end_time) - hourFromTime(item.start_time));
       if (typeof courtSubtotal === "number") {
         const split = splitBookingAmounts(courtSubtotal, bookingFeeForVenue, numHours);
         bookingFee = split.booking_fee;
@@ -116,23 +156,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Missing booking amount." }, { status: 400 });
       }
     }
+
     rows.push({
-      user_id: sessionUser.id,
+      user_id: userId,
       booking_number: bookingNumber,
       court_id: court.id,
       booking_group_id: bookingGroupId,
-      date: body.date,
-      start_time: body.start_time,
-      end_time: body.end_time,
-      player_name: body.player_name ?? sessionUser.full_name ?? sessionUser.email,
-      player_email: body.player_email ?? sessionUser.email,
-      players_count: body.players_count ?? null,
+      date: item.date,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      player_name: item.player_name ?? playerName,
+      player_email: item.player_email ?? playerEmail,
+      players_count: item.players_count ?? null,
       court_subtotal: courtSubtotal ?? null,
       booking_fee: bookingFee ?? null,
       total_cost: itemTotal ?? null,
       status: "pending_payment",
       hold_expires_at: holdExpiresAt.toISOString(),
-      notes: body.notes ?? null,
+      notes: item.notes ?? null,
       payment_provider: "manual",
       payment_attempt_count: 1,
     });
@@ -146,34 +187,56 @@ export async function POST(req: Request) {
     const tryRows =
       attempt === 0
         ? rows
-        : rows.map((row) => ({ ...row, booking_number: generateBookingNumber(payloads[0]?.date ?? null) }));
+        : rows.map((row) => ({
+            ...row,
+            booking_number: generateBookingNumber(payloads[0]?.date ?? null),
+          }));
     const { data, error } = await supabase
       .from("bookings")
       .insert(tryRows as never[])
       .select("id, booking_group_id");
     if (!error && data && data.length > 0) {
       insertedRows = data as Array<{ id: string; booking_group_id: string }>;
-      bookingNumber = String((tryRows[0] as { booking_number?: string }).booking_number ?? bookingNumber);
+      bookingNumber = String(
+        (tryRows[0] as { booking_number?: string }).booking_number ?? bookingNumber,
+      );
       inserted = true;
       break;
     }
-    if (error?.code !== "23505") {
-      break;
-    }
+    if (error?.code !== "23505") break;
   }
   if (!inserted || !insertedRows || insertedRows.length === 0) {
     return NextResponse.json({ error: "Failed to create booking hold." }, { status: 500 });
   }
 
-  const bookingId = (insertedRows[0] as { id: string }).id;
+  const bookingId = insertedRows[0]!.id;
 
-  const body: BookingCheckoutResponse = {
+  if (!sessionUser) {
+    const firstItem = payloads[0]!;
+    const dateLabel = firstItem.date
+      ? format(new Date(`${firstItem.date}T12:00:00`), "EEE, MMM d, yyyy")
+      : (firstItem.date ?? "");
+    const timeRange =
+      firstItem.start_time && firstItem.end_time
+        ? `${firstItem.start_time} – ${firstItem.end_time}`
+        : "";
+    void sendGuestBookingConfirmation({
+      to: playerEmail,
+      playerName,
+      bookingNumber,
+      courtName: firstCourtName,
+      venueName: firstVenueName,
+      date: dateLabel,
+      timeRange,
+    });
+  }
+
+  return NextResponse.json({
     booking_id: bookingId,
     booking_group_id: bookingGroupId,
+    booking_number: bookingNumber,
     hold_expires_at: holdExpiresAt.toISOString(),
     total_due: totalDue,
     payment_methods: checkoutPaymentMethods,
-  };
-
-  return NextResponse.json(body);
+  });
 }

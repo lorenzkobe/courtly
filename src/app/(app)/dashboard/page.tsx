@@ -399,8 +399,8 @@ export default function DashboardPage() {
                         {session.current_players}/{session.max_players} players
                       </span>
                       <span className="font-heading text-sm font-bold text-primary">
-                        {(session.price_per_player ?? session.fee ?? 0) > 0
-                          ? formatPhpCompact(session.price_per_player ?? session.fee ?? 0)
+                        {(session.price_per_player ?? 0) > 0
+                          ? formatPhpCompact(session.price_per_player ?? 0)
                           : "Free"}
                       </span>
                     </div>

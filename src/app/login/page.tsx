@@ -61,14 +61,23 @@ function LoginContent() {
 
   const nextPath = safeRedirectPath(searchParams.get("next"));
 
-  const [email, setEmail] = useState("");
+  // Pre-fill from guest booking redirect (?register=1&email=X&first_name=X&last_name=X&phone=X)
+  const prefillRegister = searchParams.get("register") === "1";
+  const prefillEmail = searchParams.get("email") ?? "";
+  const prefillFirstName = searchParams.get("first_name") ?? "";
+  const prefillLastName = searchParams.get("last_name") ?? "";
+  const prefillPhone = searchParams.get("phone") ?? "";
+
+  const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState(prefillFirstName);
+  const [lastName, setLastName] = useState(prefillLastName);
   const [birthdate, setBirthdate] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [mobileNumber, setMobileNumber] = useState(prefillPhone);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">(
+    prefillRegister ? "signup" : "signin",
+  );
   const [birthdateOpen, setBirthdateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -12,6 +12,8 @@ export type NotificationEventType =
   | "booking_changed"
   | "booking_completed_review_reminder"
   | "booking_created_admin"
+  | "booking_refund_initiated"
+  | "booking_refunded"
   | "review_added_admin"
   | "review_flagged_author"
   | "review_flagged_superadmin"

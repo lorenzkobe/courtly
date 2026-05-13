@@ -222,16 +222,12 @@ export type Booking = {
     | "pending_confirmation"
     | "confirmed"
     | "cancelled"
-    | "completed";
+    | "completed"
+    | "refund"
+    | "refunded";
   hold_expires_at?: string | null;
   payment_provider?: "manual" | null;
-  payment_link_id?: string | null;
-  payment_link_url?: string | null;
-  payment_link_created_at?: string | null;
   payment_attempt_count?: number;
-  paid_at?: string | null;
-  payment_failed_at?: string | null;
-  payment_reference_id?: string | null;
   payment_submitted_method?: VenueManualPaymentMethod | null;
   payment_submitted_at?: string | null;
   payment_proof_url?: string | null;
@@ -240,8 +236,6 @@ export type Booking = {
   payment_proof_width?: number | null;
   payment_proof_height?: number | null;
   cancel_reason?: string | null;
-  refund_required?: boolean;
-  refunded_at?: string | null;
   /** Player-provided booking note. Set during booking creation; immutable afterwards. */
   notes?: string;
   /** Internal shared note for court admins/superadmin managing this booking's court. */
@@ -359,7 +353,6 @@ export type OpenPlaySession = {
   host_name: string;
   host_email?: string;
   description?: string;
-  fee?: number;
   price_per_player: number;
   dupr_min?: number | null;
   dupr_max?: number | null;

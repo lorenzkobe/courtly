@@ -19,6 +19,8 @@ export function formatStatusLabel(status: string): string {
 
 const BOOKING_STATUS_UI_LABELS: Record<string, string> = {
   pending_confirmation: "Waiting for venue confirmation",
+  refund: "Refund in progress",
+  refunded: "Refunded",
 };
 
 /** Player- and admin-facing label for `booking.status` (and segment status). */

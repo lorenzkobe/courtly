@@ -119,7 +119,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     : Number(existing.max_players);
   const nextPricePerPlayer = Object.prototype.hasOwnProperty.call(patch, "price_per_player")
     ? Number(patch.price_per_player)
-    : Number(existing.price_per_player ?? existing.fee ?? 0);
+    : Number(existing.price_per_player ?? 0);
   const nextDuprMin = Object.prototype.hasOwnProperty.call(patch, "dupr_min")
     ? Math.round(Number(patch.dupr_min) * 100) / 100
     : Math.round(Number(existing.dupr_min ?? 2) * 100) / 100;
@@ -211,7 +211,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
   patch.description = nextDescription || undefined;
   patch.max_players = nextMaxPlayers;
   patch.price_per_player = nextPricePerPlayer;
-  patch.fee = nextPricePerPlayer;
   patch.dupr_min = nextDuprMin;
   patch.dupr_max = nextDuprMax;
   const updated = await updateRow<OpenPlaySession>("open_play_sessions", id, patch);

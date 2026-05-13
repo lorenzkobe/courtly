@@ -694,8 +694,7 @@ export default function BookCourtPage() {
         (booking) =>
           booking.status === "pending_payment" &&
           booking.hold_expires_at &&
-          new Date(booking.hold_expires_at).getTime() > now &&
-          !booking.payment_failed_at,
+          new Date(booking.hold_expires_at).getTime() > now,
       )
       .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""));
     return candidates[0] ?? null;

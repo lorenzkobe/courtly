@@ -103,13 +103,7 @@ function mapBookingRow(row: unknown): Booking {
     status: Booking["status"];
     hold_expires_at?: string | null;
     payment_provider?: string | null;
-    payment_link_id?: string | null;
-    payment_link_url?: string | null;
-    payment_link_created_at?: string | null;
     payment_attempt_count?: number | null;
-    paid_at?: string | null;
-    payment_failed_at?: string | null;
-    payment_reference_id?: string | null;
     payment_submitted_method?: "gcash" | "maya" | null;
     payment_submitted_at?: string | null;
     payment_proof_url?: string | null;
@@ -118,8 +112,6 @@ function mapBookingRow(row: unknown): Booking {
     payment_proof_width?: number | null;
     payment_proof_height?: number | null;
     cancel_reason?: string | null;
-    refund_required?: boolean | null;
-    refunded_at?: string | null;
     notes?: string;
     admin_note?: string;
     admin_note_updated_by_user_id?: string;
@@ -170,13 +162,7 @@ function mapBookingRow(row: unknown): Booking {
     status: record.status,
     hold_expires_at: record.hold_expires_at ?? null,
     payment_provider: record.payment_provider === "manual" ? "manual" : null,
-    payment_link_id: record.payment_link_id ?? null,
-    payment_link_url: record.payment_link_url ?? null,
-    payment_link_created_at: record.payment_link_created_at ?? null,
     payment_attempt_count: record.payment_attempt_count ?? 0,
-    paid_at: record.paid_at ?? null,
-    payment_failed_at: record.payment_failed_at ?? null,
-    payment_reference_id: record.payment_reference_id ?? null,
     payment_submitted_method:
       record.payment_submitted_method === "gcash" || record.payment_submitted_method === "maya"
         ? record.payment_submitted_method
@@ -188,8 +174,6 @@ function mapBookingRow(row: unknown): Booking {
     payment_proof_width: record.payment_proof_width ?? null,
     payment_proof_height: record.payment_proof_height ?? null,
     cancel_reason: record.cancel_reason ?? null,
-    refund_required: record.refund_required ?? false,
-    refunded_at: record.refunded_at ?? null,
     notes: record.notes,
     admin_note: record.admin_note,
     admin_note_updated_by_user_id: record.admin_note_updated_by_user_id,
@@ -266,7 +250,6 @@ function mapOpenPlaySessionRow(row: unknown): OpenPlaySession {
     host_name: string;
     host_email?: string | null;
     description?: string | null;
-    fee?: number | null;
     price_per_player?: number | null;
     dupr_min?: number | null;
     dupr_max?: number | null;
@@ -285,7 +268,7 @@ function mapOpenPlaySessionRow(row: unknown): OpenPlaySession {
   };
   const court = record.courts ?? null;
   const venue = court?.venues ?? null;
-  const price = Number(record.price_per_player ?? record.fee ?? 0);
+  const price = Number(record.price_per_player ?? 0);
   return {
     id: record.id,
     sport: record.sport,
@@ -303,7 +286,6 @@ function mapOpenPlaySessionRow(row: unknown): OpenPlaySession {
     host_name: record.host_name,
     host_email: record.host_email ?? undefined,
     description: record.description ?? undefined,
-    fee: Number(record.fee ?? price),
     price_per_player: price,
     dupr_min: record.dupr_min ?? null,
     dupr_max: record.dupr_max ?? null,
@@ -420,7 +402,7 @@ function mapVenueRequestRow(row: unknown): VenueRequest {
 }
 
 export async function listVenues(): Promise<Venue[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.from("venues").select("*");
   if (error) throw error;
   return (data ?? []).map((row) => {
@@ -511,7 +493,7 @@ export async function getPlatformDefaultBookingFeeAmount(): Promise<number> {
 }
 
 export async function getVenueById(venueId: string): Promise<Venue | null> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("venues")
     .select("*")
@@ -665,7 +647,7 @@ export async function listVenueAdminAssignmentsByVenue(
 }
 
 export async function listCourts(): Promise<Court[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("courts")
     .select("*, venues(*)");
@@ -674,7 +656,7 @@ export async function listCourts(): Promise<Court[]> {
 }
 
 export async function getCourtById(id: string): Promise<Court | null> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("courts")
     .select("*, venues(*)")
@@ -685,7 +667,7 @@ export async function getCourtById(id: string): Promise<Court | null> {
 }
 
 export async function listCourtsByVenue(venueId: string): Promise<Court[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("courts")
     .select("*, venues(*)")
@@ -711,7 +693,7 @@ export async function listCourtsDirectory(
   if (params.courtIds && params.courtIds.length === 0) return [];
   if (params.venueIds && params.venueIds.length === 0) return [];
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   let query = supabase.from("courts").select("*, venues!inner(*)");
   if (params.status) {
     query = query.eq("status", params.status);
@@ -729,6 +711,17 @@ export async function listCourtsDirectory(
     query = query.in("id", params.courtIds);
   }
   const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapCourtRow);
+}
+
+export async function listActiveCourts(): Promise<Court[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("courts")
+    .select("*, venues!inner(*)")
+    .eq("status", "active")
+    .eq("venues.status", "active");
   if (error) throw error;
   return (data ?? []).map(mapCourtRow);
 }
@@ -932,20 +925,6 @@ export async function listCourtIdsByVenueIds(venueIds: string[]): Promise<string
   return (data ?? []).map((row) => (row as { id: string }).id);
 }
 
-export async function listBookingsByCourtOnDate(
-  courtId: string,
-  date: string,
-): Promise<Booking[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
-    .eq("court_id", courtId)
-    .eq("date", date);
-  if (error) throw error;
-  return (data ?? []).map(mapBookingRow);
-}
-
 export async function listBookingsByIds(bookingIds: string[]): Promise<Booking[]> {
   if (bookingIds.length === 0) return [];
   const supabase = await createSupabaseServerClient();
@@ -1009,16 +988,12 @@ export async function getBookingByIdAdmin(id: string): Promise<Booking | null> {
   return data ? mapBookingRow(data) : null;
 }
 
-export async function getBookingByPaymentLinkIdAdmin(
-  paymentLinkId: string,
-): Promise<Booking | null> {
+export async function getBookingByBookingNumber(bookingNumber: string): Promise<Booking | null> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("bookings")
     .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
-    .eq("payment_link_id", paymentLinkId)
-    .order("created_at", { ascending: false })
-    .limit(1)
+    .eq("booking_number", bookingNumber)
     .maybeSingle();
   if (error) throw error;
   return data ? mapBookingRow(data) : null;
@@ -1289,22 +1264,13 @@ function isActivePendingPaymentHold(
   return holdUntil.getTime() > now.getTime();
 }
 
-export function isBlockingBookingNow(
-  booking: Pick<Booking, "status" | "hold_expires_at">,
-  now = new Date(),
-): boolean {
-  if (booking.status === "confirmed") return true;
-  if (booking.status === "pending_confirmation") return true;
-  return isActivePendingPaymentHold(booking, now);
-}
-
 export async function hasBlockingBookingConflictForCourt(
   courtId: string,
   date: string,
   startTime: string,
   endTime: string,
 ): Promise<boolean> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("bookings")
     .select("status, hold_expires_at, start_time, end_time")
@@ -1317,16 +1283,30 @@ export async function hasBlockingBookingConflictForCourt(
   const rows =
     (data ?? []) as Array<Pick<Booking, "status" | "hold_expires_at"> & { start_time: string; end_time: string }>;
   const now = new Date();
-  return rows.some((row) => isBlockingBookingNow(row, now));
+  return rows.some((row) => {
+    if (row.status === "confirmed") return true;
+    if (row.status === "pending_confirmation") return true;
+    return isActivePendingPaymentHold(row, now);
+  });
 }
 
 export async function listBlockingBookingsByCourtOnDate(
   courtId: string,
   date: string,
 ): Promise<Booking[]> {
-  const rows = await listBookingsByCourtOnDate(courtId, date);
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*, courts(id,name,venue_id,venues(id,name,sport))")
+    .eq("court_id", courtId)
+    .eq("date", date);
+  if (error) throw error;
   const now = new Date();
-  return rows.filter((booking) => isBlockingBookingNow(booking, now));
+  return (data ?? []).map(mapBookingRow).filter((booking) => {
+    if (booking.status === "confirmed") return true;
+    if (booking.status === "pending_confirmation") return true;
+    return isActivePendingPaymentHold(booking, now);
+  });
 }
 
 export async function hasConfirmedBookingConflictForVenue(
@@ -1378,7 +1358,7 @@ export async function listVenueClosuresByVenue(
   venueId: string,
   date?: string,
 ): Promise<VenueClosure[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   let query = supabase.from("venue_closures").select("*").eq("venue_id", venueId);
   if (date) {
     query = query.eq("date", date);
@@ -1416,7 +1396,7 @@ export async function listCourtClosuresByCourt(
   courtId: string,
   date?: string,
 ): Promise<CourtClosure[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   let query = supabase.from("court_closures").select("*").eq("court_id", courtId);
   if (date) {
     query = query.eq("date", date);
@@ -1464,7 +1444,7 @@ export async function listCourtReviews(): Promise<CourtReview[]> {
 }
 
 export async function listCourtReviewsByVenue(venueId: string): Promise<CourtReview[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("court_reviews")
     .select("*")
@@ -1530,7 +1510,7 @@ export async function listReviewSummaryByVenueIds(
 ): Promise<Map<string, { average_rating: number; review_count: number }>> {
   const out = new Map<string, { average_rating: number; review_count: number }>();
   if (venueIds.length === 0) return out;
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("court_reviews")
     .select("venue_id, rating")
@@ -1929,21 +1909,14 @@ export async function acquireOpenPlayPaymentLock(params: {
   if (!row?.request_id) {
     return { result, request: null };
   }
-  const request = await getOpenPlayJoinRequestById(row.request_id);
-  return { result, request };
-}
-
-export async function getOpenPlayJoinRequestById(
-  requestId: string,
-): Promise<OpenPlayJoinRequest | null> {
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  const { data: reqData, error: reqError } = await supabase
     .from("open_play_join_requests")
     .select("*, profiles!open_play_join_requests_user_id_fkey(full_name,dupr_rating)")
-    .eq("id", requestId)
+    .eq("id", row.request_id)
     .maybeSingle();
-  if (error) throw error;
-  return data ? mapOpenPlayJoinRequestRow(data) : null;
+  if (reqError) throw reqError;
+  const request = reqData ? mapOpenPlayJoinRequestRow(reqData) : null;
+  return { result, request };
 }
 
 export async function submitOpenPlayJoinPaymentProof(params: {
