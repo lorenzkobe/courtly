@@ -36,6 +36,7 @@ type PublicBookingDetail = {
   date: string;
   start_time: string;
   end_time: string;
+  slots: { start_time: string; end_time: string }[];
   status: string;
   player_name: string | null;
   player_email: string | null;
@@ -248,11 +249,18 @@ export default function PublicBookingStatusPage() {
                   {format(new Date(`${booking.date}T12:00:00`), "EEE, MMM d, yyyy")}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 shrink-0 text-primary" />
-                <p className="text-foreground">
-                  {formatTimeShort(booking.start_time)} – {formatTimeShort(booking.end_time)}
-                </p>
+              <div className="flex items-start gap-2">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div className="flex flex-wrap gap-1.5">
+                  {(booking.slots.length > 0 ? booking.slots : [{ start_time: booking.start_time, end_time: booking.end_time }]).map((slot, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center rounded-md border border-border/60 bg-muted/30 px-2 py-0.5 text-xs font-medium text-foreground"
+                    >
+                      {formatTimeShort(slot.start_time)} – {formatTimeShort(slot.end_time)}
+                    </span>
+                  ))}
+                </div>
               </div>
               {booking.total_cost != null ? (
                 <div className="border-t border-border/60 pt-3">

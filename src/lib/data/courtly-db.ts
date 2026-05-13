@@ -1012,6 +1012,19 @@ export async function getBookingByBookingNumber(bookingNumber: string): Promise<
   return { ...base, end_time: last.end_time, total_cost: totalCost, court_subtotal: courtSubtotal, booking_fee: bookingFee };
 }
 
+export async function getBookingSlotsByBookingNumber(
+  bookingNumber: string,
+): Promise<{ start_time: string; end_time: string }[]> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("start_time, end_time")
+    .eq("booking_number", bookingNumber)
+    .order("start_time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as { start_time: string; end_time: string }[];
+}
+
 export async function listBookingsByGroupIdAdmin(
   bookingGroupId: string,
 ): Promise<Booking[]> {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getBookingByBookingNumber, getCourtById } from "@/lib/data/courtly-db";
+import { getBookingByBookingNumber, getBookingSlotsByBookingNumber, getCourtById } from "@/lib/data/courtly-db";
 
 type Ctx = { params: Promise<{ booking_number: string }> };
 
@@ -9,7 +9,11 @@ export async function GET(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Booking number is required." }, { status: 400 });
   }
 
-  const booking = await getBookingByBookingNumber(booking_number.trim().toUpperCase());
+  const bn = booking_number.trim().toUpperCase();
+  const [booking, slots] = await Promise.all([
+    getBookingByBookingNumber(bn),
+    getBookingSlotsByBookingNumber(bn),
+  ]);
   if (!booking) {
     return NextResponse.json({ error: "Booking not found." }, { status: 404 });
   }
@@ -24,6 +28,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     date: booking.date,
     start_time: booking.start_time,
     end_time: booking.end_time,
+    slots: slots.map((s) => ({ start_time: s.start_time, end_time: s.end_time })),
     status: booking.status,
     player_name: booking.player_name,
     player_email: booking.player_email,
