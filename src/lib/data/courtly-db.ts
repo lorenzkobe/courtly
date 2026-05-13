@@ -999,9 +999,17 @@ export async function getBookingByBookingNumber(bookingNumber: string): Promise<
     .from("bookings")
     .select(BOOKING_SELECT_WITH_COURTS_AND_PROFILE)
     .eq("booking_number", bookingNumber)
-    .maybeSingle();
+    .order("start_time", { ascending: true });
   if (error) throw error;
-  return data ? mapBookingRow(data) : null;
+  if (!data || data.length === 0) return null;
+  const base = mapBookingRow(data[0]);
+  if (data.length === 1) return base;
+  // Multi-slot: extend time range to last slot and sum per-slot costs
+  const last = data[data.length - 1] as { end_time: string };
+  const totalCost = data.reduce((sum, row) => sum + Number((row as { total_cost?: number }).total_cost ?? 0), 0);
+  const courtSubtotal = data.reduce((sum, row) => sum + Number((row as { court_subtotal?: number }).court_subtotal ?? 0), 0);
+  const bookingFee = data.reduce((sum, row) => sum + Number((row as { booking_fee?: number }).booking_fee ?? 0), 0);
+  return { ...base, end_time: last.end_time, total_cost: totalCost, court_subtotal: courtSubtotal, booking_fee: bookingFee };
 }
 
 export async function listBookingsByGroupIdAdmin(

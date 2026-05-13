@@ -33,7 +33,11 @@ export async function enrichBookingsWithProfileMobile(
     ),
   ];
   if (userIds.length === 0) {
-    return bookings.map((booking) => ({ ...booking, player_mobile_number: null }));
+    // Guest bookings already have player_mobile_number set from guest_phone — preserve it.
+    return bookings.map((booking) => ({
+      ...booking,
+      player_mobile_number: booking.player_mobile_number ?? null,
+    }));
   }
 
   const admin = createSupabaseAdminClient();
@@ -51,7 +55,10 @@ export async function enrichBookingsWithProfileMobile(
   }
 
   return bookings.map((booking) => {
-    if (!booking.user_id) return { ...booking, player_mobile_number: null };
+    if (!booking.user_id) {
+      // Guest booking — preserve player_mobile_number already mapped from guest_phone.
+      return { ...booking, player_mobile_number: booking.player_mobile_number ?? null };
+    }
     return {
       ...booking,
       player_mobile_number: mobileByUserId.get(booking.user_id) ?? null,

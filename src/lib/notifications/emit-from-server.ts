@@ -206,7 +206,7 @@ export async function emitBookingCreatedToVenueAdmins(params: {
   courtName: string;
   bookingId: string;
   bookerLabel: string;
-  bookerUserId: string;
+  bookerUserId: string | null;
 }): Promise<void> {
   const assignments = await listVenueAdminAssignments();
   const adminIds = new Set(
@@ -214,7 +214,7 @@ export async function emitBookingCreatedToVenueAdmins(params: {
       .filter((a) => a.venue_id === params.venueId)
       .map((a) => a.admin_user_id),
   );
-  adminIds.delete(params.bookerUserId);
+  if (params.bookerUserId) adminIds.delete(params.bookerUserId);
   const inputs: EmitNotificationInput[] = [...adminIds].map((user_id) => ({
     user_id,
     type: "booking_created_admin",

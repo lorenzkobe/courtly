@@ -12,6 +12,7 @@ import {
   listVenues,
 } from "@/lib/data/courtly-db";
 import { sendGuestBookingConfirmation } from "@/lib/email/email-service";
+import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 import { format } from "date-fns";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
   let totalDue = 0;
   let firstCourtName = "";
   let firstVenueName = "";
+  let firstVenueId = "";
 
   for (const item of payloads) {
     const court = courts.find((row) => row.id === item.court_id);
@@ -128,6 +130,7 @@ export async function POST(req: Request) {
       firstCourtName = court.name;
       firstVenueName =
         (venue as { establishment_name?: string }).establishment_name ?? venue.name ?? "Venue";
+      firstVenueId = venue.id;
     }
 
     let courtSubtotal = item.court_subtotal;
@@ -213,6 +216,15 @@ export async function POST(req: Request) {
   }
 
   const bookingId = insertedRows[0]!.id;
+
+  void emitBookingCreatedToVenueAdmins({
+    venueId: firstVenueId,
+    venueName: firstVenueName,
+    courtName: firstCourtName,
+    bookingId,
+    bookerLabel: playerName,
+    bookerUserId: userId,
+  });
 
   if (!sessionUser) {
     const firstItem = payloads[0]!;
