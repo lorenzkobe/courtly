@@ -115,6 +115,7 @@ function mapBookingRow(row: unknown): Booking {
     payment_proof_height?: number | null;
     cancel_reason?: string | null;
     notes?: string;
+    guest_phone?: string | null;
     admin_note?: string;
     admin_note_updated_by_user_id?: string;
     admin_note_updated_by_name?: string;
@@ -133,7 +134,9 @@ function mapBookingRow(row: unknown): Booking {
   if (Object.prototype.hasOwnProperty.call(record, "profiles")) {
     const prof = record.profiles;
     if (prof == null) {
-      player_mobile_number = null;
+      const gp = record.guest_phone;
+      player_mobile_number =
+        typeof gp === "string" && gp.trim().length > 0 ? gp.trim() : null;
     } else {
       const raw = prof.mobile_number;
       player_mobile_number =

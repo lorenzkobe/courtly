@@ -63,6 +63,8 @@ export async function POST(req: Request) {
     userId = null;
   }
 
+  const guestPhone = sessionUser ? null : (requestBody.guest_phone ?? "").trim() || null;
+
   const payloads = sessionUser
     ? toBookingPayloadList(requestBody)
     : Array.isArray(requestBody.items)
@@ -174,6 +176,7 @@ export async function POST(req: Request) {
       status: "pending_payment",
       hold_expires_at: holdExpiresAt.toISOString(),
       notes: item.notes ?? null,
+      guest_phone: guestPhone,
       payment_provider: "manual",
       payment_attempt_count: 1,
     });
