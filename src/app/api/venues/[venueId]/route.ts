@@ -41,6 +41,8 @@ function pickVenuePatch(patch: Record<string, unknown>): Partial<Venue> {
     "photo_urls",
     "map_latitude",
     "map_longitude",
+    "city",
+    "address",
     "accepts_gcash",
     "gcash_account_name",
     "gcash_account_number",

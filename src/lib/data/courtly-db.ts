@@ -71,6 +71,8 @@ function mapCourtRow(row: unknown): Court {
     instagram_url: venue?.instagram_url,
     map_latitude: venue?.map_latitude,
     map_longitude: venue?.map_longitude,
+    city: venue?.city ?? undefined,
+    address: venue?.address ?? undefined,
     accepts_gcash: venue?.accepts_gcash,
     gcash_account_name: venue?.gcash_account_name,
     gcash_account_number: venue?.gcash_account_number,

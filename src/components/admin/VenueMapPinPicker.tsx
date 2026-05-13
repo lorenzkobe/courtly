@@ -1,8 +1,9 @@
 "use client";
 
-import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
+import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export type VenueMapPinValue = { lat: number; lng: number } | null;
@@ -10,59 +11,48 @@ export type VenueMapPinValue = { lat: number; lng: number } | null;
 type Props = {
   value: VenueMapPinValue;
   onChange: (next: VenueMapPinValue) => void;
-  /** When false, map click/drag only (no Places search). Use for venue edit / venue admins. */
+  /** When false, map click/drag only (no address search). */
   showPlaceSearch?: boolean;
-  /** Optional non-interactive preview mode. */
+  /** Non-interactive preview mode. */
   readOnly?: boolean;
+  /** Called when address details are resolved — from search or reverse geocoding a click/drag. */
+  onPlaceDetails?: (details: { city?: string; address?: string }) => void;
 };
 
 const DEFAULT_CENTER = { lat: 14.5995, lng: 120.9842 };
 
-const PLACES_API_LIBRARY_URL =
-  "https://console.cloud.google.com/apis/library/places.googleapis.com";
-let mapsLoaderInitialized = false;
-
-function placesConsoleUrlFromError(message: string): string {
-  const m = message.match(/project\s+(\d+)/i);
-  if (m?.[1]) {
-    return `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${m[1]}`;
-  }
-  return PLACES_API_LIBRARY_URL;
-}
-
-function textFromGmpNetworkError(ev: Event): string {
-  if (ev instanceof ErrorEvent && ev.message?.trim()) {
-    return ev.message.trim();
-  }
-  const ce = ev as CustomEvent<{ message?: string }>;
-  if (ce.detail?.message?.trim()) {
-    return ce.detail.message.trim();
-  }
-  const unknown = ev as unknown as { message?: string; error?: { message?: string } };
-  return (
-    unknown.message ??
-    unknown.error?.message ??
-    "Places search failed. Enable Places API (New) for your Google Cloud project."
-  );
-}
-
-type PlacesLibWithPac = {
-  PlaceAutocompleteElement: typeof google.maps.places.PlaceAutocompleteElement;
+type NominatimResult = {
+  place_id: number;
+  lat: string;
+  lon: string;
+  display_name: string;
+  address: {
+    city?: string;
+    town?: string;
+    municipality?: string;
+    county?: string;
+  };
 };
 
-function getPlaceAutocompleteCtor(placesLib: object) {
-  const lib = placesLib as PlacesLibWithPac;
-  if (typeof lib.PlaceAutocompleteElement !== "function") {
-    throw new Error("PlaceAutocompleteElement missing from Places library");
-  }
-  return lib.PlaceAutocompleteElement;
+function extractCity(addr: NominatimResult["address"]): string | undefined {
+  return addr.city ?? addr.town ?? addr.municipality ?? addr.county;
 }
 
-function placePredictionFromGmpSelect(
-  ev: Event,
-): google.maps.places.PlacePrediction | null {
-  const raw = ev as unknown as { placePrediction?: google.maps.places.PlacePrediction | null };
-  return raw.placePrediction ?? null;
+async function reverseGeocodeNominatim(
+  lat: number,
+  lng: number,
+): Promise<{ city?: string; address?: string } | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+      { headers: { "Accept-Language": "en" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as NominatimResult;
+    return { city: extractCity(data.address), address: data.display_name };
+  } catch {
+    return null;
+  }
 }
 
 export function VenueMapPinPicker({
@@ -70,336 +60,299 @@ export function VenueMapPinPicker({
   onChange,
   showPlaceSearch = true,
   readOnly = false,
+  onPlaceDetails,
 }: Props) {
   const mapElRef = useRef<HTMLDivElement>(null);
-  const pacHostRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-  const advancedMarkerClassRef =
-    useRef<google.maps.MarkerLibrary["AdvancedMarkerElement"] | null>(null);
-  const pacElementRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(null);
+  const mapRef = useRef<import("leaflet").Map | null>(null);
+  const markerRef = useRef<import("leaflet").Marker | null>(null);
   const onChangeRef = useRef(onChange);
+  const onPlaceDetailsRef = useRef(onPlaceDetails);
   const [mapReady, setMapReady] = useState(false);
-  const [loadError, setLoadError] = useState<"missing_key" | "load_failed" | null>(
-    null,
-  );
-  const [placesSearchError, setPlacesSearchError] = useState<string | null>(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+  useEffect(() => {
+    onPlaceDetailsRef.current = onPlaceDetails;
+  }, [onPlaceDetails]);
 
-  const ensureMarkerOnMap = useCallback((map: google.maps.Map) => {
-    const AdvancedMarkerElement = advancedMarkerClassRef.current;
-    if (!AdvancedMarkerElement) return null;
-    if (markerRef.current) return markerRef.current;
-    const marker = new AdvancedMarkerElement({
-      map,
-      gmpDraggable: !readOnly,
-    });
-    if (!readOnly) {
-      marker.addListener("dragend", () => {
-        const pos = marker.position;
-        if (!pos) return;
-        const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
-        const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
-        if (typeof lat === "number" && typeof lng === "number") {
-          onChangeRef.current({ lat, lng });
+  const placeMarker = useCallback(
+    async (lat: number, lng: number, doReverseGeocode: boolean) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const L = (await import("leaflet")).default;
+
+      if (markerRef.current) {
+        markerRef.current.setLatLng([lat, lng]);
+      } else {
+        const marker = L.marker([lat, lng], { draggable: !readOnly });
+        if (!readOnly) {
+          marker.on("dragend", () => {
+            const pos = marker.getLatLng();
+            onChangeRef.current({ lat: pos.lat, lng: pos.lng });
+            void reverseGeocodeNominatim(pos.lat, pos.lng).then((details) => {
+              if (details) onPlaceDetailsRef.current?.(details);
+            });
+          });
         }
-      });
-    }
-    markerRef.current = marker;
-    return marker;
-  }, [readOnly]);
+        marker.addTo(map);
+        markerRef.current = marker;
+      }
 
-  const applyPin = useCallback(
-    (map: google.maps.Map, lat: number, lng: number) => {
-      const marker = ensureMarkerOnMap(map);
-      if (!marker) return;
-      marker.position = { lat, lng };
-      marker.map = map;
-      map.panTo({ lat, lng });
-      map.setZoom(16);
+      map.setView([lat, lng], 16);
       onChangeRef.current({ lat, lng });
+      if (doReverseGeocode) {
+        void reverseGeocodeNominatim(lat, lng).then((details) => {
+          if (details) onPlaceDetailsRef.current?.(details);
+        });
+      }
     },
-    [ensureMarkerOnMap],
+    [readOnly],
   );
 
+  // Initialize map once
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
-    if (!apiKey) {
-      setLoadError("missing_key");
-      return;
-    }
+    const mapEl = mapElRef.current;
+    if (!mapEl || mapRef.current) return;
 
-    const initialPin = value;
     let cancelled = false;
-    const listeners: Array<{ remove: () => void }> = [];
-    let pacHostMounted: HTMLDivElement | null = null;
 
     void (async () => {
-      try {
-        if (!mapsLoaderInitialized) {
-          setOptions({ key: apiKey, v: "weekly" });
-          mapsLoaderInitialized = true;
-        }
-        const mapsLib = await importLibrary("maps");
-        const markerLib = await importLibrary("marker");
-        const mapEl = mapElRef.current;
-        if (cancelled || !mapEl) return;
+      const L = (await import("leaflet")).default;
+      // Fix broken default marker icons in webpack/Next.js bundles
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
 
-        advancedMarkerClassRef.current = markerLib.AdvancedMarkerElement;
+      if (cancelled || !mapEl) return;
 
-        const center = initialPin ?? DEFAULT_CENTER;
-        const map = new mapsLib.Map(mapEl, {
-          center,
-          zoom: initialPin ? 16 : 11,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-          mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
-        });
-        mapRef.current = map;
+      const center = value ?? DEFAULT_CENTER;
+      const map = L.map(mapEl, {
+        center: [center.lat, center.lng],
+        zoom: value ? 16 : 11,
+        zoomControl: !readOnly,
+        dragging: !readOnly,
+        scrollWheelZoom: !readOnly,
+        doubleClickZoom: !readOnly,
+        boxZoom: !readOnly,
+        keyboard: !readOnly,
+        touchZoom: !readOnly,
+      });
 
-        if (showPlaceSearch) {
-          const pacHost = pacHostRef.current;
-          if (!pacHost) return;
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(map);
 
-          const placesLib = await importLibrary("places");
-          const PlaceAutocompleteElement = getPlaceAutocompleteCtor(placesLib);
+      mapRef.current = map;
 
-          const pac = new PlaceAutocompleteElement({
-            requestedRegion: "ph",
-          });
-          pac.id = "venue-place-autocomplete";
-          pac.setAttribute("placeholder", "Search for the venue or address");
-          pac.className = "block w-full";
-          pacHost.replaceChildren(pac);
-          pacHostMounted = pacHost;
-          pacElementRef.current = pac;
-
-          const syncSearchBias = () => {
-            const b = map.getBounds();
-            if (b) pac.locationBias = b;
-          };
-          listeners.push(map.addListener("bounds_changed", syncSearchBias));
-          syncSearchBias();
-
-          const onGmpSelect = async (ev: Event) => {
-            const prediction = placePredictionFromGmpSelect(ev);
-            if (!prediction) return;
-            try {
-              const place = prediction.toPlace();
-              const { place: loaded } = await place.fetchFields({ fields: ["location"] });
-              const loc = loaded.location;
-              if (!loc) return;
-              setPlacesSearchError(null);
-              applyPin(map, loc.lat(), loc.lng());
-            } catch (err) {
-              const msg =
-                err instanceof Error && err.message
-                  ? err.message
-                  : "Could not load place details. Check Places API (New) and billing.";
-              setPlacesSearchError(msg);
-            }
-          };
-          pac.addEventListener("gmp-select", (e) => {
-            void onGmpSelect(e);
-          });
-
-          pac.addEventListener("gmp-error", (ev: Event) => {
-            setPlacesSearchError(textFromGmpNetworkError(ev));
-          });
-        } else {
-          pacElementRef.current = null;
-        }
-
+      if (value) {
+        const marker = L.marker([value.lat, value.lng], { draggable: !readOnly });
         if (!readOnly) {
-          listeners.push(
-            map.addListener("click", (e: google.maps.MapMouseEvent) => {
-              if (!e.latLng) return;
-              setPlacesSearchError(null);
-              applyPin(map, e.latLng.lat(), e.latLng.lng());
-            }),
-          );
+          marker.on("dragend", () => {
+            const pos = marker.getLatLng();
+            onChangeRef.current({ lat: pos.lat, lng: pos.lng });
+            void reverseGeocodeNominatim(pos.lat, pos.lng).then((details) => {
+              if (details) onPlaceDetailsRef.current?.(details);
+            });
+          });
         }
-
-        if (initialPin) {
-          const marker = ensureMarkerOnMap(map);
-          if (marker) {
-            marker.position = initialPin;
-            marker.map = map;
-          }
-        }
-
-        setMapReady(true);
-      } catch {
-        if (!cancelled) setLoadError("load_failed");
+        marker.addTo(map);
+        markerRef.current = marker;
       }
+
+      if (!readOnly) {
+        map.on("click", (e: import("leaflet").LeafletMouseEvent) => {
+          const { lat, lng } = e.latlng;
+          void placeMarker(lat, lng, true);
+        });
+      }
+
+      if (!cancelled) setMapReady(true);
     })();
 
     return () => {
       cancelled = true;
-      for (const l of listeners) {
-        l.remove();
-      }
-      pacElementRef.current = null;
-      pacHostMounted?.replaceChildren();
-      if (markerRef.current) {
-        markerRef.current.map = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
         markerRef.current = null;
       }
-      advancedMarkerClassRef.current = null;
-      mapRef.current = null;
       setMapReady(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialPin at mount; parent remounts via key
-  }, [applyPin, ensureMarkerOnMap, showPlaceSearch, readOnly]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once; parent remounts via key
+  }, [readOnly]);
 
+  // Sync value changes after init
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    if (value) {
-      const marker = ensureMarkerOnMap(map);
-      if (!marker) return;
-      marker.position = value;
-      marker.map = map;
-      map.panTo(value);
-    } else if (markerRef.current) {
-      markerRef.current.map = null;
-      markerRef.current = null;
+    void (async () => {
+      const L = (await import("leaflet")).default;
+      if (value) {
+        if (markerRef.current) {
+          markerRef.current.setLatLng([value.lat, value.lng]);
+        } else {
+          const marker = L.marker([value.lat, value.lng], { draggable: !readOnly });
+          if (!readOnly) {
+            marker.on("dragend", () => {
+              const pos = marker.getLatLng();
+              onChangeRef.current({ lat: pos.lat, lng: pos.lng });
+              void reverseGeocodeNominatim(pos.lat, pos.lng).then((details) => {
+                if (details) onPlaceDetailsRef.current?.(details);
+              });
+            });
+          }
+          marker.addTo(map);
+          markerRef.current = marker;
+        }
+        map.panTo([value.lat, value.lng]);
+      } else {
+        if (markerRef.current) {
+          markerRef.current.remove();
+          markerRef.current = null;
+        }
+      }
+    })();
+  }, [value, mapReady, readOnly]);
+
+  const handleSearchChange = useCallback((q: string) => {
+    setSearchQuery(q);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!q.trim() || q.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
     }
-  }, [value, mapReady, ensureMarkerOnMap]);
+    searchTimerRef.current = setTimeout(() => {
+      setSearchLoading(true);
+      void fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=5&countrycodes=ph`,
+        { headers: { "Accept-Language": "en" } },
+      )
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data: NominatimResult[]) => {
+          setSuggestions(data);
+          setShowSuggestions(data.length > 0);
+        })
+        .catch(() => {
+          /* ignore */
+        })
+        .finally(() => setSearchLoading(false));
+    }, 400);
+  }, []);
 
-  const clearPacValue = () => {
-    const el = pacElementRef.current;
-    if (!el) return;
-    try {
-      (el as unknown as { value?: string }).value = "";
-    } catch {
-      /* optional on older typings */
-    }
-  };
-
-  if (loadError === "missing_key") {
-    return (
-      <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-        Set <code className="rounded bg-muted px-1">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>{" "}
-        and enable <strong>Maps JavaScript API</strong>
-        {showPlaceSearch ? (
-          <>
-            {" "}
-            plus <strong>Places API (New)</strong> in Google Cloud (referrer-restricted key).
-          </>
-        ) : (
-          <> in Google Cloud (referrer-restricted key).</>
-        )}
-      </div>
-    );
-  }
-
-  if (loadError === "load_failed") {
-    return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-        {showPlaceSearch
-          ? "Could not load Google Maps. Confirm the key, billing, and that Places API (New) is enabled."
-          : "Could not load Google Maps. Confirm the key and billing."}
-      </div>
-    );
-  }
+  const handleSelectSuggestion = useCallback(
+    (result: NominatimResult) => {
+      const lat = parseFloat(result.lat);
+      const lng = parseFloat(result.lon);
+      setSearchQuery(result.display_name);
+      setSuggestions([]);
+      setShowSuggestions(false);
+      void placeMarker(lat, lng, false);
+      onPlaceDetailsRef.current?.({
+        city: extractCity(result.address),
+        address: result.display_name,
+      });
+    },
+    [placeMarker],
+  );
 
   return (
     <div className="venue-map-pin-picker space-y-2">
-      {showPlaceSearch ? (
+      {showPlaceSearch && !readOnly ? (
         <>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1">
-              <Label htmlFor="venue-place-autocomplete">Find on map</Label>
-              <div
-                ref={pacHostRef}
-                className="mt-1.5 w-full [&_gmp-place-autocomplete]:block [&_gmp-place-autocomplete]:w-full"
+          <div className="relative z-10 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="relative min-w-0 flex-1">
+              <Label htmlFor="venue-place-search">Find on map</Label>
+              <Input
+                id="venue-place-search"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Search for the venue or address"
+                className="mt-1.5"
+                autoComplete="off"
               />
+              {showSuggestions && (
+                <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-background shadow-lg">
+                  {searchLoading ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
+                  ) : (
+                    suggestions.map((s) => (
+                      <button
+                        key={s.place_id}
+                        type="button"
+                        className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
+                        onMouseDown={() => handleSelectSuggestion(s)}
+                      >
+                        {s.display_name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-            {readOnly ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                disabled={!value}
-                onClick={() => {
-                  setPlacesSearchError(null);
-                  onChange(null);
-                  clearPacValue();
-                }}
-              >
-                Clear pin
-              </Button>
-            )}
-          </div>
-          {placesSearchError ? (
-            <div
-              role="alert"
-              className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-xs text-foreground"
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="shrink-0"
+              disabled={!value}
+              onClick={() => {
+                onChange(null);
+                setSearchQuery("");
+                setSuggestions([]);
+                setShowSuggestions(false);
+              }}
             >
-              <p className="font-medium">Could not reach Places</p>
-              <p className="mt-1.5 whitespace-pre-wrap text-muted-foreground">{placesSearchError}</p>
-              <a
-                href={placesConsoleUrlFromError(placesSearchError)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-flex font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Open Google Cloud — enable Places API (New)
-              </a>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                After enabling, wait a few minutes for Google to propagate, then try again. You can still{" "}
-                <strong>click the map</strong> to set a pin without search.
-              </p>
-            </div>
-          ) : null}
-          {readOnly ? (
-            <p className="text-xs text-muted-foreground">Map preview for this venue request.</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Search for a place, or <strong>click the map</strong> to drop the pin; drag the pin to
-              fine-tune. This sets the map players see when booking.
-            </p>
-          )}
-        </>
-      ) : (
-        <>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0">
-              <Label>Map pin</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Click the map to place the pin, or drag it to adjust. This is what players see on the
-                booking page.
-              </p>
-            </div>
-            {readOnly ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                disabled={!value}
-                onClick={() => {
-                  onChange(null);
-                }}
-              >
-                Clear pin
-              </Button>
-            )}
+              Clear pin
+            </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Search for a place, or <strong>click the map</strong> to drop the pin; drag the pin to
+            fine-tune. This sets the map players see when booking.
+          </p>
         </>
-      )}
+      ) : !readOnly ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <Label>Map pin</Label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Click the map to place the pin, or drag it to adjust. This is what players see on the
+              booking page.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={!value}
+            onClick={() => onChange(null)}
+          >
+            Clear pin
+          </Button>
+        </div>
+      ) : null}
       <div
         ref={mapElRef}
-        className="h-52 w-full cursor-crosshair overflow-hidden rounded-xl border border-border bg-muted/20"
+        className="relative z-0 h-52 w-full overflow-hidden rounded-xl border border-border bg-muted/20"
+        style={{ cursor: readOnly ? "default" : "crosshair" }}
         role="presentation"
-        title="Click to place or move pin"
+        title={readOnly ? undefined : "Click to place or move pin"}
       />
     </div>
   );

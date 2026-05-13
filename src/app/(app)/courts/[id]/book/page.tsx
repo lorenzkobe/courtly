@@ -32,6 +32,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
 import PageHeader from "@/components/shared/PageHeader";
@@ -967,11 +968,6 @@ export default function BookCourtPage() {
     court.map_longitude != null &&
     Number.isFinite(court.map_latitude) &&
     Number.isFinite(court.map_longitude);
-  const mapLat = court.map_latitude ?? 0;
-  const mapLon = court.map_longitude ?? 0;
-  const mapOpenHref = hasMapPin
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:px-10">
@@ -1161,8 +1157,8 @@ export default function BookCourtPage() {
           />
 
           <PageHeader
-            title={`Book ${court.establishment_name ?? court.name}`}
-            subtitle={court.location}
+            title={court.establishment_name ?? court.name}
+            subtitle={court.city ?? court.location}
             alignActions="start"
           >
             <Button
@@ -1282,30 +1278,42 @@ export default function BookCourtPage() {
               </dl>
 
               <div className="space-y-3 border-t border-border/60 pt-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 space-y-1">
-                    <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
-                      <MapPin className="h-4 w-4 text-primary" aria-hidden />
-                      Location
-                    </h3>
-                    <p className="text-sm text-foreground">{court.location}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {hasMapPin
-                        ? "Opens in Google Maps at the venue pin."
-                        : "Opens in Google Maps using this address."}
-                    </p>
+                <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
+                  <MapPin className="h-4 w-4 text-primary" aria-hidden />
+                  Location
+                </h3>
+                {hasMapPin && (
+                  <VenueMapPinPicker
+                    value={{ lat: court.map_latitude ?? 0, lng: court.map_longitude ?? 0 }}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                )}
+                <p className="text-sm text-foreground">{court.location}</p>
+                {hasMapPin && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={`https://maps.google.com/?q=${court.map_latitude ?? 0},${court.map_longitude ?? 0}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Google Maps
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={`https://maps.apple.com/?ll=${court.map_latitude ?? 0},${court.map_longitude ?? 0}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Apple Maps
+                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                      </a>
+                    </Button>
                   </div>
-                  <Button variant="outline" size="sm" className="shrink-0 self-start sm:mt-7" asChild>
-                    <a
-                      href={mapOpenHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Open in Map
-                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                    </a>
-                  </Button>
-                </div>
+                )}
               </div>
 
               <div className="space-y-3 border-t border-border/60 pt-4">

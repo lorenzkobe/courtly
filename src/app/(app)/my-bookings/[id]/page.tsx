@@ -50,6 +50,7 @@ import {
 import { isValidOpenPlayDuprRange, roundDuprBound } from "@/lib/open-play/dupr-range";
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import { BookingStatusStepper } from "@/components/booking/BookingStatusStepper";
+import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
 import { isValidPhMobile } from "@/lib/validation/person-fields";
 
@@ -592,11 +593,6 @@ export default function BookingDetailPage() {
     Number.isFinite(court.map_longitude);
   const mapLat = court?.map_latitude ?? 0;
   const mapLon = court?.map_longitude ?? 0;
-  const mapOpenHref = court
-    ? hasMapPin
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${mapLat},${mapLon}`)}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`
-    : "#";
 
   if (loading) {
     return (
@@ -1118,25 +1114,39 @@ export default function BookingDetailPage() {
                     Location
                   </p>
                   <div className="space-y-3">
+                    {hasMapPin && (
+                      <VenueMapPinPicker
+                        value={{ lat: mapLat, lng: mapLon }}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
                     <p className="flex items-start gap-2 text-foreground">
                       <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0">{court.location}</span>
                     </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-fit"
-                      asChild
-                    >
-                      <a
-                        href={mapOpenHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Open in Map
-                        <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                      </a>
-                    </Button>
+                    {hasMapPin && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" className="w-fit" asChild>
+                          <a
+                            href={`https://maps.google.com/?q=${mapLat},${mapLon}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Google Maps
+                          </a>
+                        </Button>
+                        <Button variant="outline" size="sm" className="w-fit" asChild>
+                          <a
+                            href={`https://maps.apple.com/?ll=${mapLat},${mapLon}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Apple Maps
+                          </a>
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">

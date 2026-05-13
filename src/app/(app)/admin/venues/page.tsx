@@ -50,6 +50,7 @@ const emptyRequestForm = {
   hourly_rate_windows: [{ start: "07:00", end: "22:00", rate: "" }] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
+  city: "",
   accepts_gcash: false,
   gcash_account_name: "",
   gcash_account_number: "",
@@ -140,6 +141,7 @@ export default function AdminVenuesPage() {
       const body = {
         name: form.name.trim(),
         location: form.location.trim(),
+        city: form.city.trim(),
         contact_phone: form.contact_phone.trim(),
         facebook_url: form.facebook_url.trim(),
         instagram_url: form.instagram_url.trim(),
@@ -418,6 +420,7 @@ export default function AdminVenuesPage() {
                                   : [{ start: "07:00", end: "22:00", rate: "" }],
                               map_latitude: request.map_latitude ?? null,
                               map_longitude: request.map_longitude ?? null,
+                              city: (request as { city?: string }).city ?? "",
                               accepts_gcash: request.accepts_gcash ?? false,
                               gcash_account_name: request.gcash_account_name ?? "",
                               gcash_account_number: request.gcash_account_number ?? "",
@@ -491,7 +494,7 @@ export default function AdminVenuesPage() {
             </div>
             <VenueMapPinPicker
               key="admin-venue-request"
-              showPlaceSearch={false}
+              showPlaceSearch={true}
               value={
                 form.map_latitude != null && form.map_longitude != null
                   ? { lat: form.map_latitude, lng: form.map_longitude }
@@ -504,6 +507,13 @@ export default function AdminVenuesPage() {
                   map_longitude: next?.lng ?? null,
                 }))
               }
+              onPlaceDetails={({ city, address }) => {
+                setForm((f) => ({
+                  ...f,
+                  city: city ?? f.city,
+                  location: address ?? f.location,
+                }));
+              }}
             />
             <div>
               <Label>Contact number *</Label>

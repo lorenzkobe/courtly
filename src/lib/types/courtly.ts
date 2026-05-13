@@ -87,6 +87,8 @@ export type Venue = {
   created_at: string;
   map_latitude?: number;
   map_longitude?: number;
+  city?: string;
+  address?: string;
   accepts_gcash: boolean;
   gcash_account_name?: string;
   gcash_account_number?: string;
@@ -164,6 +166,10 @@ export type Court = {
   map_latitude?: number;
   /** Derived on read from linked venue (maps). */
   map_longitude?: number;
+  /** Derived on read from linked venue. */
+  city?: string;
+  /** Derived on read from linked venue. */
+  address?: string;
   /** Derived on read from linked venue payment settings. */
   accepts_gcash?: boolean;
   /** Derived on read from linked venue payment settings. */

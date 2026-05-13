@@ -57,6 +57,7 @@ const emptyForm = {
   hourly_rate_windows: [] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
+  city: "",
   accepts_gcash: false,
   gcash_account_name: "",
   gcash_account_number: "",
@@ -262,6 +263,7 @@ export default function SuperadminVenuesPage() {
       const body = {
         name: form.name.trim(),
         location: form.location.trim(),
+        city: form.city.trim(),
         contact_phone: form.contact_phone.trim(),
         facebook_url: form.facebook_url.trim(),
         instagram_url: form.instagram_url.trim(),
@@ -403,6 +405,7 @@ export default function SuperadminVenuesPage() {
         a.map_longitude != null && Number.isFinite(a.map_longitude)
           ? a.map_longitude
           : null,
+      city: (a as { city?: string }).city ?? "",
       hourly_rate_windows:
         (a.hourly_rate_windows ?? []).length > 0
           ? (a.hourly_rate_windows ?? []).map((w) => ({
@@ -943,7 +946,7 @@ export default function SuperadminVenuesPage() {
             <div>
               <VenueMapPinPicker
                 key={editingVenue?.id ?? "edit-venue"}
-                showPlaceSearch={false}
+                showPlaceSearch={true}
                 value={
                   form.map_latitude != null &&
                   form.map_longitude != null &&
@@ -959,6 +962,13 @@ export default function SuperadminVenuesPage() {
                     map_longitude: next?.lng ?? null,
                   }))
                 }
+                onPlaceDetails={({ city, address }) => {
+                  setForm((f) => ({
+                    ...f,
+                    city: city ?? f.city,
+                    location: address ?? f.location,
+                  }));
+                }}
               />
             </div>
             <div>

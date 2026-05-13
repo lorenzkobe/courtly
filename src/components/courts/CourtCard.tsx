@@ -48,7 +48,7 @@ export default function CourtCard({
   const safeIndex = n > 0 ? photoIndex % n : 0;
 
   return (
-    <Card className="group overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+    <Card className="group flex flex-col overflow-hidden border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative h-48 overflow-hidden bg-muted">
         {n > 0 ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -116,14 +116,14 @@ export default function CourtCard({
           </button>
         ) : null}
       </div>
-      <CardContent className="p-5">
+      <CardContent className="flex flex-1 flex-col p-5">
         <h3 className="mb-2 font-heading text-lg font-bold text-foreground">
           {court.establishment_name ?? court.name}
         </h3>
         <div className="mb-4 space-y-1.5 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{court.location}</span>
+            <span className="truncate">{court.city ?? court.location}</span>
           </div>
           <div className="flex items-start gap-2">
             <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -172,7 +172,7 @@ export default function CourtCard({
             ))}
           </div>
         ) : null}
-        <Button className="w-full font-heading font-semibold shadow-sm" asChild>
+        <Button className="mt-auto w-full font-heading font-semibold shadow-sm" asChild>
           <Link href={bookHref ?? `/courts/${court.id}/book`}>Book This Court</Link>
         </Button>
       </CardContent>

@@ -85,6 +85,7 @@ const defaultVenueForm = {
   hourly_rate_windows: [] as Array<{ start: string; end: string; rate: string }>,
   map_latitude: null as number | null,
   map_longitude: null as number | null,
+  city: "",
   accepts_gcash: false,
   gcash_account_name: "",
   gcash_account_number: "",
@@ -222,6 +223,7 @@ export default function AdminVenueCourtsPage() {
       await courtlyApi.venues.update(venueId, {
         name: venueForm.name.trim(),
         location: venueForm.location.trim(),
+        city: venueForm.city.trim(),
         contact_phone: venueForm.contact_phone.trim(),
         facebook_url: venueForm.facebook_url.trim(),
         instagram_url: venueForm.instagram_url.trim(),
@@ -435,6 +437,7 @@ export default function AdminVenueCourtsPage() {
         venue.map_longitude != null && Number.isFinite(venue.map_longitude)
           ? venue.map_longitude
           : null,
+      city: (venue as { city?: string }).city ?? "",
       hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((rateWindow) => ({
         start: rateWindow.start,
         end: rateWindow.end,
@@ -815,7 +818,7 @@ export default function AdminVenueCourtsPage() {
             <div>
               <VenueMapPinPicker
                 key={venueId}
-                showPlaceSearch={false}
+                showPlaceSearch={true}
                 value={
                   venueForm.map_latitude != null &&
                   venueForm.map_longitude != null &&
@@ -831,6 +834,13 @@ export default function AdminVenueCourtsPage() {
                     map_longitude: next?.lng ?? null,
                   }))
                 }
+                onPlaceDetails={({ city, address }) => {
+                  setVenueForm((f) => ({
+                    ...f,
+                    city: city ?? f.city,
+                    location: address ?? f.location,
+                  }));
+                }}
               />
             </div>
             <div>

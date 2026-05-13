@@ -31,15 +31,14 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { cn } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
 
-const ANY_VALUE = "__any__";
 
 type CourtFiltersState = {
   typeFilter: string;
-  locationFilter: string;
+  cityFilter: string;
 };
 
 function defaultFilters(): CourtFiltersState {
-  return { typeFilter: "all", locationFilter: "all" };
+  return { typeFilter: "all", cityFilter: "all" };
 }
 
 export default function PublicBookPage() {
@@ -65,16 +64,18 @@ export default function PublicBookPage() {
     return [...byVenue.values()];
   }, [courts]);
 
-  const uniqueLocations = useMemo(
-    () => [...new Set(venueCards.map((c) => c.location))].sort((a, b) => a.localeCompare(b)),
+  const uniqueCities = useMemo(
+    () =>
+      [...new Set(venueCards.map((c) => c.city).filter((c): c is string => !!c))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
     [venueCards],
   );
 
   const filtered = useMemo(() => {
     return venueCards.filter((court) => {
       if (applied.typeFilter !== "all" && court.type !== applied.typeFilter) return false;
-      if (applied.locationFilter !== "all" && court.location !== applied.locationFilter)
-        return false;
+      if (applied.cityFilter !== "all" && court.city !== applied.cityFilter) return false;
       return true;
     });
   }, [venueCards, applied]);
@@ -88,11 +89,11 @@ export default function PublicBookPage() {
         onRemove: () => setApplied((p) => ({ ...p, typeFilter: "all" })),
       });
     }
-    if (applied.locationFilter !== "all") {
+    if (applied.cityFilter !== "all") {
       chips.push({
         id: "place",
-        label: `Place: ${applied.locationFilter}`,
-        onRemove: () => setApplied((p) => ({ ...p, locationFilter: "all" })),
+        label: `Place: ${applied.cityFilter}`,
+        onRemove: () => setApplied((p) => ({ ...p, cityFilter: "all" })),
       });
     }
     return chips;
@@ -144,6 +145,7 @@ export default function PublicBookPage() {
           ))}
         </div>
 
+        {!isLoading && (
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {appliedChips.length > 0 ? (
             <Button
@@ -203,19 +205,17 @@ export default function PublicBookPage() {
                 <div className="space-y-2">
                   <Label htmlFor="filter-place">Place</Label>
                   <Select
-                    value={draft.locationFilter || ANY_VALUE}
-                    onValueChange={(v) =>
-                      setDraft((d) => ({ ...d, locationFilter: v === ANY_VALUE ? "all" : v }))
-                    }
+                    value={draft.cityFilter}
+                    onValueChange={(v) => setDraft((d) => ({ ...d, cityFilter: v }))}
                   >
                     <SelectTrigger id="filter-place">
                       <SelectValue placeholder="All places" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ANY_VALUE}>All places</SelectItem>
-                      {uniqueLocations.map((loc) => (
-                        <SelectItem key={loc} value={loc}>
-                          {loc}
+                      <SelectItem value="all">All places</SelectItem>
+                      {uniqueCities.map((city) => (
+                        <SelectItem key={city} value={city}>
+                          {city}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -233,6 +233,7 @@ export default function PublicBookPage() {
             </DialogContent>
           </Dialog>
         </div>
+        )}
       </div>
 
       {isLoading ? (

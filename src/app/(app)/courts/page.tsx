@@ -59,7 +59,7 @@ function formatHour(token: string): string {
 type CourtFiltersState = {
   typeFilter: string;
   favoritesOnly: boolean;
-  locationFilter: string;
+  cityFilter: string;
   openAt: string;
   closeAt: string;
   rateMin: number | null;
@@ -71,7 +71,7 @@ function defaultCourtFilters(): CourtFiltersState {
   return {
     typeFilter: "all",
     favoritesOnly: false,
-    locationFilter: "all",
+    cityFilter: "all",
     openAt: "",
     closeAt: "",
     rateMin: null,
@@ -153,10 +153,10 @@ export default function CourtsPage() {
     return [...byVenue.values()];
   }, [courts]);
 
-  const uniqueLocations = useMemo(
+  const uniqueCities = useMemo(
     () =>
-      [...new Set(venueCards.map((court) => court.location))].sort((a, b) =>
-        a.localeCompare(b),
+      [...new Set(venueCards.map((court) => court.city).filter((c): c is string => !!c))].sort(
+        (a, b) => a.localeCompare(b),
       ),
     [venueCards],
   );
@@ -185,7 +185,7 @@ export default function CourtsPage() {
   const {
     typeFilter,
     favoritesOnly,
-    locationFilter,
+    cityFilter,
     openAt,
     closeAt,
     rateMin,
@@ -197,8 +197,7 @@ export default function CourtsPage() {
     return venueCards.filter((court) => {
       if (typeFilter !== "all" && court.type !== typeFilter) return false;
       if (favoritesOnly && !favoriteIds.has(court.venue_id)) return false;
-      if (locationFilter !== "all" && court.location !== locationFilter)
-        return false;
+      if (cityFilter !== "all" && court.city !== cityFilter) return false;
 
       if (openAt && court.available_hours.open !== openAt) return false;
       if (closeAt && court.available_hours.close !== closeAt) return false;
@@ -222,7 +221,7 @@ export default function CourtsPage() {
     typeFilter,
     favoritesOnly,
     favoriteIds,
-    locationFilter,
+    cityFilter,
     openAt,
     closeAt,
     rateMin,
@@ -257,12 +256,12 @@ export default function CourtsPage() {
           setApplied((p) => ({ ...p, favoritesOnly: false })),
       });
     }
-    if (applied.locationFilter !== "all") {
+    if (applied.cityFilter !== "all") {
       chips.push({
         id: "place",
-        label: `Place: ${applied.locationFilter}`,
+        label: `Place: ${applied.cityFilter}`,
         onRemove: () =>
-          setApplied((p) => ({ ...p, locationFilter: "all" })),
+          setApplied((p) => ({ ...p, cityFilter: "all" })),
       });
     }
     if (applied.openAt) {
@@ -346,6 +345,7 @@ export default function CourtsPage() {
           ))}
         </div>
 
+        {!isLoading && (
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {activeFilterCount > 0 ? (
             <Button
@@ -466,9 +466,9 @@ export default function CourtsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="filter-place">Place</Label>
                   <Select
-                    value={draft.locationFilter}
+                    value={draft.cityFilter}
                     onValueChange={(v) =>
-                      setDraft((d) => ({ ...d, locationFilter: v }))
+                      setDraft((d) => ({ ...d, cityFilter: v }))
                     }
                   >
                     <SelectTrigger id="filter-place">
@@ -476,9 +476,9 @@ export default function CourtsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All places</SelectItem>
-                      {uniqueLocations.map((loc) => (
-                        <SelectItem key={loc} value={loc}>
-                          {loc}
+                      {uniqueCities.map((city) => (
+                        <SelectItem key={city} value={city}>
+                          {city}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -642,6 +642,7 @@ export default function CourtsPage() {
             </DialogContent>
           </Dialog>
         </div>
+        )}
       </div>
 
       {isLoading ? (
