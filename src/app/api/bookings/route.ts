@@ -95,7 +95,7 @@ export async function GET(req: Request) {
       date: date ?? undefined,
       playerEmail: playerEmail ?? undefined,
       statuses: manageable
-        ? ["pending_confirmation", "confirmed", "cancelled", "completed"]
+        ? ["pending_confirmation", "confirmed", "cancelled", "completed", "refund", "refunded"]
         : undefined,
       offset,
       limit,
@@ -130,7 +130,7 @@ export async function GET(req: Request) {
     date: date ?? undefined,
     playerEmail: playerEmail ?? undefined,
     statuses: manageable
-      ? ["pending_confirmation", "confirmed", "cancelled", "completed"]
+      ? ["pending_confirmation", "confirmed", "cancelled", "completed", "refund", "refunded"]
       : undefined,
   });
   if (sport) list = list.filter((booking) => bookingSport(booking) === sport);

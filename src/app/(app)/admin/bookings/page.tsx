@@ -57,6 +57,8 @@ const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-destructive/10 text-destructive border-destructive/20",
   completed: "bg-muted text-muted-foreground border-border",
+  refund: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  refunded: "bg-muted text-muted-foreground border-border",
   __mixed_status__: "bg-muted/80 text-foreground border-border/80",
 };
 
@@ -1602,7 +1604,7 @@ export default function AdminBookingsPage() {
         ))}
       </div>
 
-      <div className="mb-6 flex flex-col gap-3">
+      {!isLoading && <div className="mb-6 flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1685,7 +1687,7 @@ export default function AdminBookingsPage() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </div>}
 
       <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
         <DialogContent
