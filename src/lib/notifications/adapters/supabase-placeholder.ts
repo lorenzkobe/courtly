@@ -176,6 +176,30 @@ export class SupabaseNotificationRepository implements NotificationRepository {
       .from("notifications")
       .insert(rows as never);
     if (error) throw error;
+
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && serviceRoleKey) {
+        const uniqueUserIds = [...new Set(rows.map((r) => r.user_id))];
+        const messages = uniqueUserIds.map((userId) => ({
+          topic: `user-notifications:${userId}`,
+          event: "notification",
+          payload: {},
+        }));
+        await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: serviceRoleKey,
+          },
+          body: JSON.stringify({ messages }),
+        });
+      }
+    } catch {
+      // Non-critical — 60s polling fallback in NotificationBell covers missed signals
+    }
   }
 }
 

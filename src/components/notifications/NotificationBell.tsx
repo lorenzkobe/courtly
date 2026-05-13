@@ -134,6 +134,7 @@ export default function NotificationBell() {
       // the badge count immediately, even before the popover is opened.
       enabled: Boolean(user),
       staleTime: 15_000,
+      refetchInterval: 60_000,
     });
 
   const markRead = useMutation({
