@@ -611,7 +611,7 @@ export default function PublicBookCourtPage() {
             </span>
           </div>
           <DialogFooter className="gap-2 border-t border-border/60 px-6 py-4 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setCartCheckoutReviewOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setCartCheckoutReviewOpen(false)} disabled={createBookingsMut.isPending}>
               Back
             </Button>
             <Button
