@@ -166,15 +166,18 @@ export async function POST(req: Request, ctx: Ctx) {
     source_type: body.payment_method,
   });
 
-  if (!booking.user_id) {
-    const callerEmail = normalizeEmail(body.player_email) || normalizeEmail(booking.player_email);
+  const playerEmail = booking.player_email?.trim() || normalizeEmail(body.player_email);
+  if (playerEmail) {
     void sendGuestBookingStatusUpdate({
-      to: booking.player_email ?? callerEmail,
+      to: playerEmail,
       playerName: booking.player_name ?? "Guest",
       bookingNumber: booking.booking_number ?? "",
       status: "pending_confirmation",
       courtName: booking.court_name ?? "",
       venueName: booking.establishment_name ?? "",
+      date: booking.date ?? "",
+      startTime: booking.start_time ?? "",
+      endTime: booking.end_time ?? "",
     });
   }
 

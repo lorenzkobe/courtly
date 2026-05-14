@@ -621,7 +621,7 @@ export async function listManagedUsersByIds(userIds: string[]): Promise<ManagedU
 }
 
 export async function listVenueAdminAssignments(): Promise<VenueAdminAssignment[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.from("venue_admin_assignments").select("*");
   if (error) throw error;
   return (data ?? []) as VenueAdminAssignment[];
@@ -642,7 +642,7 @@ export async function listVenueAdminAssignmentsByAdminUser(
 export async function listVenueAdminAssignmentsByVenue(
   venueId: string,
 ): Promise<VenueAdminAssignment[]> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("venue_admin_assignments")
     .select("*")

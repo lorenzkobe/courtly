@@ -217,7 +217,7 @@ export default function GuestPaymentGate() {
         if (!hold) return;
         cancelMut.mutate({ bookingId: hold.booking_id, playerEmail: hold.player_email });
       }}
-      cancelDisabled={submitProofMut.isPending}
+      cancelDisabled={submitProofMut.isPending || proofOptimizing}
       cancelPending={cancelMut.isPending}
     />
   );

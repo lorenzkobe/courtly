@@ -11,10 +11,8 @@ import {
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
-import { sendGuestBookingConfirmation } from "@/lib/email/email-service";
 import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
-import { format } from "date-fns";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -225,26 +223,6 @@ export async function POST(req: Request) {
     bookerLabel: playerName,
     bookerUserId: userId,
   });
-
-  if (!sessionUser) {
-    const firstItem = payloads[0]!;
-    const dateLabel = firstItem.date
-      ? format(new Date(`${firstItem.date}T12:00:00`), "EEE, MMM d, yyyy")
-      : (firstItem.date ?? "");
-    const timeRange =
-      firstItem.start_time && firstItem.end_time
-        ? `${firstItem.start_time} – ${firstItem.end_time}`
-        : "";
-    void sendGuestBookingConfirmation({
-      to: playerEmail,
-      playerName,
-      bookingNumber,
-      courtName: firstCourtName,
-      venueName: firstVenueName,
-      date: dateLabel,
-      timeRange,
-    });
-  }
 
   return NextResponse.json({
     booking_id: bookingId,

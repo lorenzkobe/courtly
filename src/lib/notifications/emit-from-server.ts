@@ -9,6 +9,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   sendBookingRefundInitiated,
   sendBookingRefunded,
+  sendGuestBookingStatusUpdate,
 } from "@/lib/email/email-service";
 
 const repo = createNotificationRepository();
@@ -275,6 +276,21 @@ export async function emitBulkBookingLifecycleNotifications(
     for (const item of digestItems) {
       const prev = snapshotFromBooking(item.prev);
       const next = snapshotFromBookingRow(item.nextRow, prev);
+      const playerEmail = item.prev.player_email?.trim();
+      if (playerEmail) {
+        const emailBase = {
+          to: playerEmail,
+          playerName: item.prev.player_name ?? "Player",
+          bookingNumber: item.prev.booking_number ?? "",
+          courtName: item.prev.court_name ?? "",
+          venueName: item.prev.establishment_name ?? "",
+        };
+        if (next.status === "confirmed" && prev.status !== "confirmed") {
+          void sendGuestBookingStatusUpdate({ ...emailBase, status: "confirmed" });
+        } else if (next.status === "cancelled" && prev.status !== "cancelled") {
+          void sendGuestBookingStatusUpdate({ ...emailBase, status: "cancelled" });
+        }
+      }
       let uid = next.user_id ?? prev.user_id;
       if (!uid) {
         uid = (await fetchBookingOwnerUserId(item.bookingId)) ?? null;

@@ -1357,7 +1357,7 @@ export default function OpenPlayDetailPage() {
           submitDisabled={submitProofMutation.isPending || proofOptimizing || !proofDataUrl}
           submitPending={submitProofMutation.isPending}
           onCancel={() => cancelJoinMutation.mutate()}
-          cancelDisabled={cancelJoinMutation.isPending || submitProofMutation.isPending}
+          cancelDisabled={cancelJoinMutation.isPending || submitProofMutation.isPending || proofOptimizing}
           cancelPending={cancelJoinMutation.isPending}
           cancelLabel="Cancel payment"
         />

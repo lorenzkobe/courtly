@@ -910,9 +910,9 @@ export default function AdminBookingsPage() {
 
     rows.sort((a, b) => {
       if (sortBy === "oldest_date") {
-        const byDate = a.dateMin.localeCompare(b.dateMin);
-        if (byDate !== 0) return byDate;
-        return a.leader.start_time.localeCompare(b.leader.start_time);
+        return String(a.leader.created_date ?? "").localeCompare(
+          String(b.leader.created_date ?? ""),
+        );
       }
       if (sortBy === "amount_high") {
         return b.totalCost - a.totalCost;
@@ -920,9 +920,10 @@ export default function AdminBookingsPage() {
       if (sortBy === "amount_low") {
         return a.totalCost - b.totalCost;
       }
-      const byDate = b.dateMax.localeCompare(a.dateMax);
-      if (byDate !== 0) return byDate;
-      return b.leader.start_time.localeCompare(a.leader.start_time);
+      // latest_date (default): most recently created booking first
+      return String(b.leader.created_date ?? "").localeCompare(
+        String(a.leader.created_date ?? ""),
+      );
     });
     return rows;
   }, [appliedFilters, bookings, search, sortBy]);
@@ -1604,7 +1605,7 @@ export default function AdminBookingsPage() {
         ))}
       </div>
 
-      {!isLoading && <div className="mb-6 flex flex-col gap-3">
+      {!(isLoading || isRefetching) && <div className="mb-6 flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

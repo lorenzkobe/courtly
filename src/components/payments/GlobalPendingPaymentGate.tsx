@@ -253,7 +253,7 @@ export default function GlobalPendingPaymentGate() {
             activePendingBooking.booking_group_id ?? activePendingBooking.id,
         });
       }}
-      cancelDisabled={submitPaymentProof.isPending}
+      cancelDisabled={submitPaymentProof.isPending || proofOptimizing}
       cancelPending={cancelPendingBooking.isPending}
     />
   );

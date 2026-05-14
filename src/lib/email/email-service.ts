@@ -86,40 +86,6 @@ function badge(text: string, color: string): string {
 // Email functions
 // ---------------------------------------------------------------------------
 
-export async function sendGuestBookingConfirmation(params: {
-  to: string;
-  playerName: string;
-  bookingNumber: string;
-  courtName: string;
-  venueName: string;
-  date: string;
-  timeRange: string;
-}): Promise<void> {
-  const { to, playerName, bookingNumber, courtName, venueName, date, timeRange } = params;
-  const bookingUrl = `${APP_URL}/b/${bookingNumber}`;
-
-  const body = `
-    ${h1("Booking Confirmed")}
-    ${p(`Hi ${playerName}, your court is booked! Here are your booking details.`)}
-    ${detailTable(
-      detail("Booking #", bookingNumber) +
-      detail("Venue", venueName) +
-      detail("Court", courtName) +
-      detail("Date", date) +
-      detail("Time", timeRange)
-    )}
-    ${p("Your booking is currently <strong>pending payment</strong>. Please submit your payment proof to confirm your slot.")}
-    ${button("View Booking & Submit Payment", bookingUrl)}
-  `;
-
-  await resend.emails.send({
-    from: FROM,
-    to,
-    subject: `Booking Confirmed — ${courtName} on ${date}`,
-    html: layout("Booking Confirmed", body),
-  });
-}
-
 export async function sendGuestBookingStatusUpdate(params: {
   to: string;
   playerName: string;
@@ -127,8 +93,11 @@ export async function sendGuestBookingStatusUpdate(params: {
   status: string;
   courtName: string;
   venueName: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 }): Promise<void> {
-  const { to, playerName, bookingNumber, status, courtName, venueName } = params;
+  const { to, playerName, bookingNumber, status, courtName, venueName, date, startTime, endTime } = params;
   const bookingUrl = `${APP_URL}/b/${bookingNumber}`;
 
   const statusLabels: Record<string, { label: string; color: string; message: string }> = {
@@ -165,6 +134,11 @@ export async function sendGuestBookingStatusUpdate(params: {
     message: "Your booking status has been updated.",
   };
 
+  const timeRange = startTime && endTime ? `${startTime} – ${endTime}` : "";
+  const dateLabel = date
+    ? new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+    : "";
+
   const body = `
     ${h1("Booking Update")}
     ${p(`Hi ${playerName}, here's an update on your booking.`)}
@@ -172,6 +146,8 @@ export async function sendGuestBookingStatusUpdate(params: {
       detail("Booking #", bookingNumber) +
       detail("Venue", venueName) +
       detail("Court", courtName) +
+      (dateLabel ? detail("Date", dateLabel) : "") +
+      (timeRange ? detail("Time", timeRange) : "") +
       detail("Status", badge(info.label, info.color))
     )}
     ${p(info.message)}
