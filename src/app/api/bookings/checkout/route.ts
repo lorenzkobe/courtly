@@ -11,7 +11,6 @@ import {
   listCourts,
   listVenues,
 } from "@/lib/data/courtly-db";
-import { emitBookingCreatedToVenueAdmins } from "@/lib/notifications/emit-from-server";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
 
@@ -85,9 +84,6 @@ export async function POST(req: Request) {
   const rows: Array<Record<string, unknown>> = [];
   let checkoutPaymentMethods: BookingCheckoutResponse["payment_methods"] = [];
   let totalDue = 0;
-  let firstCourtName = "";
-  let firstVenueName = "";
-  let firstVenueId = "";
 
   for (const item of payloads) {
     const court = courts.find((row) => row.id === item.court_id);
@@ -125,10 +121,6 @@ export async function POST(req: Request) {
     }
     if (checkoutPaymentMethods.length === 0) {
       checkoutPaymentMethods = methods;
-      firstCourtName = court.name;
-      firstVenueName =
-        (venue as { establishment_name?: string }).establishment_name ?? venue.name ?? "Venue";
-      firstVenueId = venue.id;
     }
 
     let courtSubtotal = item.court_subtotal;
@@ -214,15 +206,6 @@ export async function POST(req: Request) {
   }
 
   const bookingId = insertedRows[0]!.id;
-
-  void emitBookingCreatedToVenueAdmins({
-    venueId: firstVenueId,
-    venueName: firstVenueName,
-    courtName: firstCourtName,
-    bookingId,
-    bookerLabel: playerName,
-    bookerUserId: userId,
-  });
 
   return NextResponse.json({
     booking_id: bookingId,
