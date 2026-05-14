@@ -96,8 +96,9 @@ export async function sendGuestBookingStatusUpdate(params: {
   date?: string;
   startTime?: string;
   endTime?: string;
+  slots?: Array<{ date?: string; startTime?: string; endTime?: string; courtName?: string }>;
 }): Promise<void> {
-  const { to, playerName, bookingNumber, status, courtName, venueName, date, startTime, endTime } = params;
+  const { to, playerName, bookingNumber, status, courtName, venueName, date, startTime, endTime, slots } = params;
   const bookingUrl = `${APP_URL}/b/${bookingNumber}`;
 
   const statusLabels: Record<string, { label: string; color: string; message: string }> = {
@@ -134,10 +135,37 @@ export async function sendGuestBookingStatusUpdate(params: {
     message: "Your booking status has been updated.",
   };
 
-  const timeRange = startTime && endTime ? `${startTime} – ${endTime}` : "";
-  const dateLabel = date
-    ? new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
-    : "";
+  function formatDate(d?: string) {
+    return d
+      ? new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+      : "";
+  }
+
+  const activeSlots = slots && slots.length > 0 ? slots : null;
+
+  let slotRows: string;
+  if (activeSlots && activeSlots.length > 1) {
+    slotRows = activeSlots
+      .map((slot, i) => {
+        const parts = [
+          slot.courtName,
+          formatDate(slot.date),
+          slot.startTime && slot.endTime ? `${slot.startTime} – ${slot.endTime}` : "",
+        ].filter(Boolean);
+        return detail(`Slot ${i + 1}`, parts.join(" · "));
+      })
+      .join("");
+  } else {
+    const s = activeSlots ? activeSlots[0] : null;
+    const dateLabel = formatDate(s?.date ?? date);
+    const timeRange = (s?.startTime ?? startTime) && (s?.endTime ?? endTime)
+      ? `${s?.startTime ?? startTime} – ${s?.endTime ?? endTime}`
+      : "";
+    slotRows =
+      detail("Court", courtName) +
+      (dateLabel ? detail("Date", dateLabel) : "") +
+      (timeRange ? detail("Time", timeRange) : "");
+  }
 
   const body = `
     ${h1("Booking Update")}
@@ -145,9 +173,7 @@ export async function sendGuestBookingStatusUpdate(params: {
     ${detailTable(
       detail("Booking #", bookingNumber) +
       detail("Venue", venueName) +
-      detail("Court", courtName) +
-      (dateLabel ? detail("Date", dateLabel) : "") +
-      (timeRange ? detail("Time", timeRange) : "") +
+      slotRows +
       detail("Status", badge(info.label, info.color))
     )}
     ${p(info.message)}

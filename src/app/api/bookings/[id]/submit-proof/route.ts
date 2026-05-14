@@ -168,6 +168,12 @@ export async function POST(req: Request, ctx: Ctx) {
 
   const playerEmail = booking.player_email?.trim() || normalizeEmail(body.player_email);
   if (playerEmail) {
+    const slots = groupRows.map((row) => ({
+      date: row.date ?? undefined,
+      startTime: row.start_time ?? undefined,
+      endTime: row.end_time ?? undefined,
+      courtName: row.court_name ?? undefined,
+    }));
     void sendGuestBookingStatusUpdate({
       to: playerEmail,
       playerName: booking.player_name ?? "Guest",
@@ -175,9 +181,7 @@ export async function POST(req: Request, ctx: Ctx) {
       status: "pending_confirmation",
       courtName: booking.court_name ?? "",
       venueName: booking.establishment_name ?? "",
-      date: booking.date ?? "",
-      startTime: booking.start_time ?? "",
-      endTime: booking.end_time ?? "",
+      slots,
     });
   }
 

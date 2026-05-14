@@ -275,74 +275,74 @@ export default function PublicBookingStatusPage() {
             </CardContent>
           </Card>
 
-          {(booking.location || booking.contact_phone || booking.facebook_url || booking.instagram_url) ? (
+          {(hasMapPin || booking.location || booking.contact_phone || booking.facebook_url || booking.instagram_url) ? (
             <Card className="border-border/50">
-              <CardContent className="space-y-5 p-6">
+              <CardContent className="space-y-4 p-6">
                 <h2 className="font-heading text-base font-semibold text-foreground">
                   Venue
                 </h2>
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <div>
                   <p className="text-base font-semibold text-foreground">
                     {booking.establishment_name ?? booking.court_name ?? "—"}
                   </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {booking.location ? (
-                    <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Location
-                      </p>
-                      <div className="space-y-3">
-                        <p className="flex items-start gap-2 text-foreground">
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0">{booking.location}</span>
-                        </p>
-                        {mapOpenHref ? (
-                          <Button variant="outline" size="sm" className="w-fit" asChild>
-                            <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
-                              Open in Map
-                              <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                            </a>
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {(booking.contact_phone || booking.facebook_url || booking.instagram_url) ? (
-                    <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Contact
-                      </p>
-                      {booking.contact_phone ? (
-                        <p className="font-medium text-foreground">{booking.contact_phone}</p>
-                      ) : null}
-                      {(booking.facebook_url || booking.instagram_url) ? (
-                        <div className="flex flex-wrap gap-2 pt-0.5">
-                          {booking.facebook_url ? (
-                            <a
-                              href={booking.facebook_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                            >
-                              Facebook <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : null}
-                          {booking.instagram_url ? (
-                            <a
-                              href={booking.instagram_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                            >
-                              Instagram <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                  {booking.contact_phone ? (
+                    <p className="mt-0.5 text-sm text-muted-foreground">{booking.contact_phone}</p>
                   ) : null}
                 </div>
+                {(hasMapPin || booking.location) ? (
+                  <div className="space-y-2">
+                    <iframe
+                      src={
+                        hasMapPin
+                          ? `https://maps.google.com/maps?q=${booking.map_latitude},${booking.map_longitude}&z=15&output=embed`
+                          : `https://maps.google.com/maps?q=${encodeURIComponent(booking.location!)}&z=15&output=embed`
+                      }
+                      className="w-full rounded-xl border border-border/60"
+                      height="200"
+                      loading="lazy"
+                      title="Venue location"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                    {booking.location ? (
+                      <p className="flex items-start gap-2 text-sm text-foreground">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">{booking.location}</span>
+                      </p>
+                    ) : null}
+                    {mapOpenHref ? (
+                      <Button variant="outline" size="sm" className="w-fit" asChild>
+                        <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
+                          Open in Map
+                          <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {(booking.facebook_url || booking.instagram_url) ? (
+                  <div className="flex flex-wrap gap-2">
+                    {booking.facebook_url ? (
+                      <a
+                        href={booking.facebook_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                      >
+                        Facebook <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                    {booking.instagram_url ? (
+                      <a
+                        href={booking.instagram_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                      >
+                        Instagram <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

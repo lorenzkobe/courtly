@@ -169,6 +169,7 @@ export default function PaymentLockOverlay({
                     size="sm"
                     className="h-8 shrink-0 text-muted-foreground"
                     onClick={onClearProof}
+                    disabled={submitPending}
                   >
                     Change photo
                   </Button>

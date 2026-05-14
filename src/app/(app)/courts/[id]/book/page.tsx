@@ -1064,6 +1064,7 @@ export default function BookCourtPage() {
             <Button
               type="button"
               variant="outline"
+              disabled={createBookings.isPending}
               onClick={() => setCartCheckoutReviewOpen(false)}
             >
               Back

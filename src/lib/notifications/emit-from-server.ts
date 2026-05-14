@@ -271,26 +271,50 @@ export async function emitBulkBookingLifecycleNotifications(
     const digestItems = items.filter((item) => !isIndividualTransition(item));
     if (digestItems.length === 0) return;
 
+    type EmailGroup = {
+      emailBase: { to: string; playerName: string; bookingNumber: string; courtName: string; venueName: string };
+      status: "confirmed" | "cancelled";
+      slots: Array<{ date?: string; startTime?: string; endTime?: string; courtName?: string }>;
+    };
+    const emailGroups = new Map<string, EmailGroup>();
+
     type Agg = { confirmed: number; cancelled: number; firstBookingId: string };
     const byUser = new Map<string, Agg>();
     for (const item of digestItems) {
       const prev = snapshotFromBooking(item.prev);
       const next = snapshotFromBookingRow(item.nextRow, prev);
+
+      let targetStatus: "confirmed" | "cancelled" | null = null;
+      if (next.status === "confirmed" && prev.status !== "confirmed") targetStatus = "confirmed";
+      else if (next.status === "cancelled" && prev.status !== "cancelled") targetStatus = "cancelled";
+
       const playerEmail = item.prev.player_email?.trim();
-      if (playerEmail) {
-        const emailBase = {
-          to: playerEmail,
-          playerName: item.prev.player_name ?? "Player",
-          bookingNumber: item.prev.booking_number ?? "",
-          courtName: item.prev.court_name ?? "",
-          venueName: item.prev.establishment_name ?? "",
+      if (playerEmail && targetStatus) {
+        const groupKey = `${playerEmail}|${targetStatus}|${item.prev.booking_group_id ?? item.bookingId}`;
+        const slot = {
+          date: item.prev.date ?? undefined,
+          startTime: item.prev.start_time ?? undefined,
+          endTime: item.prev.end_time ?? undefined,
+          courtName: item.prev.court_name ?? undefined,
         };
-        if (next.status === "confirmed" && prev.status !== "confirmed") {
-          void sendGuestBookingStatusUpdate({ ...emailBase, status: "confirmed" });
-        } else if (next.status === "cancelled" && prev.status !== "cancelled") {
-          void sendGuestBookingStatusUpdate({ ...emailBase, status: "cancelled" });
+        const existing = emailGroups.get(groupKey);
+        if (existing) {
+          existing.slots.push(slot);
+        } else {
+          emailGroups.set(groupKey, {
+            emailBase: {
+              to: playerEmail,
+              playerName: item.prev.player_name ?? "Player",
+              bookingNumber: item.prev.booking_number ?? "",
+              courtName: item.prev.court_name ?? "",
+              venueName: item.prev.establishment_name ?? "",
+            },
+            status: targetStatus,
+            slots: [slot],
+          });
         }
       }
+
       let uid = next.user_id ?? prev.user_id;
       if (!uid) {
         uid = (await fetchBookingOwnerUserId(item.bookingId)) ?? null;
@@ -306,6 +330,10 @@ export async function emitBulkBookingLifecycleNotifications(
       } else if (next.status === "cancelled" && prev.status !== "cancelled") {
         agg.cancelled += 1;
       }
+    }
+
+    for (const group of emailGroups.values()) {
+      void sendGuestBookingStatusUpdate({ ...group.emailBase, status: group.status, slots: group.slots });
     }
 
     const inputs: EmitNotificationInput[] = [];

@@ -1099,87 +1099,81 @@ export default function BookingDetailPage() {
 
         {court ? (
           <Card className="border-border/50">
-            <CardContent className="space-y-5 p-6">
+            <CardContent className="space-y-4 p-6">
               <h2 className="font-heading text-lg font-semibold text-foreground">
                 Venue
               </h2>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+              <div>
                 <p className="text-base font-semibold text-foreground">
                   {court.establishment_name ?? booking.establishment_name ?? "—"}
                 </p>
+                {court.contact_phone ? (
+                  <p className="mt-0.5 text-sm text-muted-foreground">{court.contact_phone}</p>
+                ) : null}
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Location
-                  </p>
-                  <div className="space-y-3">
-                    {hasMapPin && (
-                      <VenueMapPinPicker
-                        value={{ lat: mapLat, lng: mapLon }}
-                        onChange={() => {}}
-                        readOnly
-                      />
-                    )}
-                    <p className="flex items-start gap-2 text-foreground">
+              {(hasMapPin || court.location) ? (
+                <div className="space-y-2">
+                  {hasMapPin && (
+                    <VenueMapPinPicker
+                      value={{ lat: mapLat, lng: mapLon }}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                  )}
+                  {court.location ? (
+                    <p className="flex items-start gap-2 text-sm text-foreground">
                       <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0">{court.location}</span>
                     </p>
-                    {hasMapPin && (
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" className="w-fit" asChild>
-                          <a
-                            href={`https://maps.google.com/?q=${mapLat},${mapLon}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Google Maps
-                          </a>
-                        </Button>
-                        <Button variant="outline" size="sm" className="w-fit" asChild>
-                          <a
-                            href={`https://maps.apple.com/?ll=${mapLat},${mapLon}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Apple Maps
-                          </a>
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-3 rounded-xl border border-border/60 p-4 text-sm">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Contact
-                  </p>
-                  <p className="font-medium text-foreground">{court.contact_phone ?? "—"}</p>
-                  {court.facebook_url || court.instagram_url ? (
-                    <div className="flex flex-wrap gap-2 pt-0.5">
-                      {court.facebook_url ? (
+                  ) : null}
+                  {hasMapPin && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" className="w-fit" asChild>
                         <a
-                          href={court.facebook_url}
+                          href={`https://maps.google.com/?q=${mapLat},${mapLon}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                         >
-                          Facebook <ExternalLink className="h-3 w-3" />
+                          Google Maps
                         </a>
-                      ) : null}
-                      {court.instagram_url ? (
+                      </Button>
+                      <Button variant="outline" size="sm" className="w-fit" asChild>
                         <a
-                          href={court.instagram_url}
+                          href={`https://maps.apple.com/?ll=${mapLat},${mapLon}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
                         >
-                          Instagram <ExternalLink className="h-3 w-3" />
+                          Apple Maps
                         </a>
-                      ) : null}
+                      </Button>
                     </div>
+                  )}
+                </div>
+              ) : null}
+              {court.facebook_url || court.instagram_url ? (
+                <div className="flex flex-wrap gap-2">
+                  {court.facebook_url ? (
+                    <a
+                      href={court.facebook_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                    >
+                      Facebook <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                  {court.instagram_url ? (
+                    <a
+                      href={court.instagram_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                    >
+                      Instagram <ExternalLink className="h-3 w-3" />
+                    </a>
                   ) : null}
                 </div>
-              </div>
+              ) : null}
               {court.amenities?.length ? (
                 <div className="flex flex-wrap gap-1.5">
                   {court.amenities.map((amenity) => (
