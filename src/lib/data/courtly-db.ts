@@ -1040,23 +1040,6 @@ export async function listBookingsByGroupIdAdmin(
   return (data ?? []).map(mapBookingRow);
 }
 
-export async function markPaymentWebhookEventProcessed(params: {
-  provider: string;
-  providerEventId: string;
-  eventType: string;
-  payload?: Record<string, unknown>;
-}): Promise<boolean> {
-  const supabase = createSupabaseAdminClient();
-  const { error } = await supabase.from("payment_webhook_events").insert({
-    provider: params.provider,
-    provider_event_id: params.providerEventId,
-    event_type: params.eventType,
-    payload: params.payload ?? null,
-  } as never);
-  if (!error) return true;
-  if (error.code === "23505") return false;
-  throw error;
-}
 
 export type PaymentTransactionWrite = {
   provider: string;
