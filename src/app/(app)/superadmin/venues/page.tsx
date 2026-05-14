@@ -289,10 +289,26 @@ export default function SuperadminVenuesPage() {
       };
       return courtlyApi.venues.update(editingVenue!.id, body);
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({
-        queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
-      });
+    onSuccess: (response) => {
+      const updatedVenue = response.data;
+      queryClient.setQueryData(
+        queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+        (old: typeof directoryPages) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              venues: {
+                ...page.venues,
+                items: page.venues.items.map((v) =>
+                  v.id === updatedVenue.id ? updatedVenue : v,
+                ),
+              },
+            })),
+          };
+        },
+      );
       toast.success("Venue updated");
       setStagedPhotoUrls([]);
       setDialogOpen(false);

@@ -27,6 +27,7 @@ import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import type { Booking } from "@/lib/types/courtly";
 import { formatTimeShort } from "@/lib/booking-range";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isFeaturePreviewUser } from "@/lib/auth/feature-preview";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 const bookingStatusStyles: Record<string, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700 border-amber-500/30",
@@ -77,6 +78,17 @@ export default function DashboardPage() {
     return () => window.clearInterval(id);
   }, []);
   const todayIso = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+
+  const previewUser = isFeaturePreviewUser(user?.email);
+  const visibleQuickActions = useMemo(
+    () =>
+      previewUser
+        ? quickActions
+        : quickActions.filter(
+            (a) => a.path !== "/tournaments" && a.path !== "/open-play",
+          ),
+    [previewUser],
+  );
 
   const { data: overview, isLoading: loadingTodayBookings } = useQuery({
     queryKey: ["dashboard-overview", selectedSport, todayIso],
@@ -159,7 +171,7 @@ export default function DashboardPage() {
 
       <div className="mx-auto max-w-7xl space-y-12 px-6 py-10 md:px-10">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {quickActions.map((action) => (
+          {visibleQuickActions.map((action) => (
             <Link key={action.path} href={action.path}>
               <Card className="group h-full cursor-pointer border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
                 <CardContent className="flex flex-col gap-3 p-5">

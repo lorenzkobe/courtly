@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, ListFilter, X } from "lucide-react";
+import { Calendar, Clock, ListFilter, Trophy, Users, X } from "lucide-react";
 import CourtCard from "@/components/courts/CourtCard";
 import EmptyState from "@/components/shared/EmptyState";
 import PageHeader from "@/components/shared/PageHeader";
@@ -217,6 +217,31 @@ export default function PublicBookPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              <div className="space-y-2 border-t border-border/60 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  More booking types
+                </p>
+                <div className="flex flex-col gap-2">
+                  {[
+                    { icon: Trophy, label: "Tournaments" },
+                    { icon: Users, label: "Open Play" },
+                  ].map(({ icon: Icon, label }) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 opacity-60"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        {label}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <Clock className="h-2.5 w-2.5" />
+                        Coming soon
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
               <DialogFooter className="flex-row flex-wrap justify-between gap-2">

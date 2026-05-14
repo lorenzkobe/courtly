@@ -58,6 +58,7 @@ export function normalizeVenueDraftFromBody(
   const nextValue: NormalizedVenueDraft = {
     name: typeof body.name === "string" ? body.name.trim() : "",
     location: typeof body.location === "string" ? body.location.trim() : "",
+    city: typeof body.city === "string" && body.city.trim() ? body.city.trim() : undefined,
     contact_phone:
       typeof body.contact_phone === "string"
         ? normalizePhMobile(body.contact_phone)

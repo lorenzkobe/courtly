@@ -71,6 +71,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const venuePayload: Omit<Venue, "id"> = {
     name: requestRecord.name,
     location: requestRecord.location,
+    city: requestRecord.city,
     contact_phone: requestRecord.contact_phone,
     facebook_url: requestRecord.facebook_url,
     instagram_url: requestRecord.instagram_url,

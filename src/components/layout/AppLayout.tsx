@@ -29,6 +29,7 @@ import { courtlyApi } from "@/lib/api/courtly-client";
 import { homePathForRole } from "@/lib/auth/management";
 import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isFeaturePreviewUser } from "@/lib/auth/feature-preview";
 import type { SessionUser } from "@/lib/types/courtly";
 
 const PLAYER_NAV = [
@@ -131,7 +132,18 @@ export default function AppLayout({
     return () => media.removeEventListener("change", sync);
   }, []);
 
-  const sidebar = useMemo(() => sidebarForRole(user?.role), [user?.role]);
+  const sidebar = useMemo(() => {
+    const base = sidebarForRole(user?.role);
+    if (user?.role === "user" && !isFeaturePreviewUser(user.email)) {
+      return {
+        ...base,
+        items: base.items.filter(
+          (item) => item.path !== "/tournaments" && item.path !== "/open-play",
+        ),
+      };
+    }
+    return base;
+  }, [user?.role, user?.email]);
   const navItems = sidebar.items;
   const showSportPicker = sidebar.sectionLabel === null;
 

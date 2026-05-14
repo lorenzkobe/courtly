@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Layers,
   Shield,
-  Star,
   Trophy,
   Users,
   Zap,
@@ -22,8 +21,9 @@ const features = [
     icon: Calendar,
     title: "Court Booking",
     description:
-      "Reserve courts instantly. Pick your date, time, and location with real-time availability.",
+      "Browse venues, pick your date and time slots, and submit a booking request in minutes.",
     color: "bg-primary/10 text-primary",
+    comingSoon: false,
   },
   {
     icon: Trophy,
@@ -31,6 +31,7 @@ const features = [
     description:
       "Register for competitive events, track standings, and win prizes.",
     color: "bg-chart-3/15 text-chart-3",
+    comingSoon: true,
   },
   {
     icon: Users,
@@ -38,27 +39,31 @@ const features = [
     description:
       "Join casual drop-in sessions, meet other players, and improve your game.",
     color: "bg-chart-4/15 text-chart-4",
+    comingSoon: true,
   },
   {
     icon: BookOpen,
     title: "My Bookings",
     description:
-      "View, manage, and cancel all your reservations and registrations in one place.",
+      "View and manage all your reservations in one place with your booking history.",
     color: "bg-destructive/10 text-destructive",
+    comingSoon: false,
   },
   {
     icon: Zap,
-    title: "Instant Confirmation",
+    title: "Guest Booking",
     description:
-      "No waiting. Bookings are confirmed immediately with all details at your fingertips.",
+      "No account needed. Book a court as a guest — just fill in your details and you're set.",
     color: "bg-primary/10 text-primary",
+    comingSoon: false,
   },
   {
     icon: Shield,
     title: "Admin Tools",
     description:
-      "Facility managers get powerful tools to manage courts, bookings, and events.",
+      "Facility managers get powerful tools to manage courts, bookings, and revenue.",
     color: "bg-chart-4/15 text-chart-4",
+    comingSoon: false,
   },
 ];
 
@@ -71,23 +76,6 @@ const sports = [
   "Basketball",
 ];
 
-const testimonials = [
-  {
-    name: "Sarah M.",
-    text: "Booking a court used to be a hassle. Courtly made it effortless.",
-    sport: "Pickleball",
-  },
-  {
-    name: "James T.",
-    text: "The tournament registration flow is so smooth. Love competing on Courtly.",
-    sport: "Tennis",
-  },
-  {
-    name: "Priya K.",
-    text: "Found a great open play group through Courtly. Best decision ever!",
-    sport: "Padel",
-  },
-];
 
 export default async function HomePage() {
   const user = await readSessionUser();
@@ -168,27 +156,21 @@ export default async function HomePage() {
               className="h-12 px-8 font-heading text-base font-semibold shadow-xl shadow-primary/25"
               asChild
             >
-              <Link href="/login">
-                Start Booking Free <ArrowRight className="ml-2 h-4 w-4" />
+              <Link href="/book">
+                Book a Court <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
             <Button
               size="lg"
               variant="outline"
               className="h-12 border-white bg-white px-8 font-heading text-base font-semibold text-foreground hover:bg-white/90"
+              asChild
             >
-              See How It Works
+              <Link href="#how-it-works">See How It Works</Link>
             </Button>
           </div>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Mock auth: use the Sign in page. For admin tools,{" "}
-            <Link href="/login?role=admin" className="text-primary underline">
-              sign in as admin
-            </Link>
-            .
-          </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
-            {["No credit card required", "Instant confirmation", "Cancel anytime"].map(
+            {["No account required", "Venue-confirmed bookings", "Pay at booking"].map(
               (t) => (
                 <div key={t} className="flex items-center gap-1.5">
                   <CheckCircle className="h-4 w-4 text-primary" /> {t}
@@ -241,10 +223,17 @@ export default async function HomePage() {
                 className="group border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <CardContent className="p-7">
-                  <div
-                    className={`mb-5 flex h-12 w-12 items-center justify-center rounded-2xl ${feature.color}`}
-                  >
-                    <FeatureIcon className="h-6 w-6" />
+                  <div className="mb-5 flex items-start justify-between">
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-2xl ${feature.color}`}
+                    >
+                      <FeatureIcon className="h-6 w-6" />
+                    </div>
+                    {feature.comingSoon && (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        Coming soon
+                      </Badge>
+                    )}
                   </div>
                   <h3 className="mb-2 font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
                     {feature.title}
@@ -260,30 +249,30 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="bg-secondary px-6 py-24">
+      <section id="how-it-works" className="bg-secondary px-6 py-24">
         <div className="mx-auto max-w-4xl text-center">
           <h2 className="font-heading text-4xl font-bold text-secondary-foreground">
             How it works
           </h2>
           <p className="mb-16 text-muted-foreground">
-            Get on the court in three easy steps.
+            Get on the court in three easy steps — no account needed.
           </p>
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             {[
               {
                 step: "01",
-                title: "Create your account",
-                desc: "Sign up for free and set your sport preferences.",
+                title: "Browse courts",
+                desc: "Find venues near you. Filter by location, court type, and available hours.",
               },
               {
                 step: "02",
-                title: "Find & book",
-                desc: "Browse available courts, tournaments, or open play sessions.",
+                title: "Pick your slot",
+                desc: "Select your date and time slots, then confirm your booking instantly.",
               },
               {
                 step: "03",
                 title: "Play!",
-                desc: "Show up and enjoy. Your booking is confirmed instantly.",
+                desc: "Show up and enjoy. Your confirmation is sent right away.",
               },
             ].map((step) => (
               <div key={step.step} className="relative">
@@ -302,35 +291,63 @@ export default async function HomePage() {
 
       <section className="px-6 py-24">
         <div className="mx-auto max-w-5xl">
-          <h2 className="mb-12 text-center font-heading text-4xl font-bold text-foreground">
-            Loved by players
-          </h2>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {testimonials.map((testimonial) => (
-              <Card key={testimonial.name} className="border-border/50">
-                <CardContent className="p-6">
-                  <div className="mb-4 flex gap-0.5">
-                    {[...Array(5)].map((_, starIndex) => (
-                      <Star
-                        key={starIndex}
-                        className="h-4 w-4 fill-chart-3 text-chart-3"
-                      />
-                    ))}
-                  </div>
-                  <p className="mb-4 text-sm leading-relaxed text-foreground">
-                    &ldquo;{testimonial.text}&rdquo;
-                  </p>
-                  <div>
-                    <p className="font-heading text-sm font-semibold text-foreground">
-                      {testimonial.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {testimonial.sport} Player
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="mb-16 text-center">
+            <h2 className="font-heading text-4xl font-bold text-foreground md:text-5xl">
+              Designed for everyone on the court
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
+              Whether you&apos;re booking a slot or running a facility, Courtly has you covered.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <Card className="border-border/50">
+              <CardContent className="p-8">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Calendar className="h-6 w-6" />
+                </div>
+                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">For Players</h3>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  Find a court, pick your time, and play — no sign-up required.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    "Book courts without creating an account",
+                    "Browse venues by location and court type",
+                    "View and manage your reservations",
+                    "Favorite your go-to venues",
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2.5 text-sm text-foreground">
+                      <CheckCircle className="h-4 w-4 shrink-0 text-primary" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50">
+              <CardContent className="p-8">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-chart-4/15 text-chart-4">
+                  <Shield className="h-6 w-6" />
+                </div>
+                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">For Venue Managers</h3>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  Everything you need to run your facility — courts, bookings, and revenue in one place.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    "Manage courts and configure availability",
+                    "Review and confirm booking requests",
+                    "Track revenue and billing cycles",
+                    "Full admin dashboard and reporting",
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2.5 text-sm text-foreground">
+                      <CheckCircle className="h-4 w-4 shrink-0 text-primary" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </section>
@@ -341,17 +358,27 @@ export default async function HomePage() {
             Ready to hit the court?
           </h2>
           <p className="mb-8 text-lg text-muted-foreground">
-            Join players who book smarter with Courtly.
+            Browse available courts and book a slot in minutes.
           </p>
-          <Button
-            size="lg"
-            className="h-12 px-10 font-heading text-base font-semibold shadow-xl shadow-primary/25"
-            asChild
-          >
-            <Link href="/login">
-              Get Started Free <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <Button
+              size="lg"
+              className="h-12 px-10 font-heading text-base font-semibold shadow-xl shadow-primary/25"
+              asChild
+            >
+              <Link href="/book">
+                Browse Courts <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-12 px-8 font-heading text-base font-semibold"
+              asChild
+            >
+              <Link href="/login">Sign in for more</Link>
+            </Button>
+          </div>
         </div>
       </section>
 
