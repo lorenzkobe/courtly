@@ -110,6 +110,7 @@ export type VenueRequest = {
   id: string;
   name: string;
   location: string;
+  city?: string;
   contact_phone: string;
   facebook_url?: string;
   instagram_url?: string;
