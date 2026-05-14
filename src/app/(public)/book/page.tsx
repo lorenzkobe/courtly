@@ -25,9 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { courtRateRange } from "@/lib/court-pricing";
-import { formatPhpCompact } from "@/lib/format-currency";
-import { formatAmenityLabel } from "@/lib/format-amenity";
 import { cn } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
 

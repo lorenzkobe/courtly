@@ -57,12 +57,10 @@ function StatusBadge({ status }: { status: BillingCycleStatus }) {
 
 function CycleDetailDialog({
   cycleId,
-  venueId,
   open,
   onOpenChange,
 }: {
   cycleId: string | null;
-  venueId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -217,6 +215,7 @@ function CycleDetailDialog({
                   {cycle.payment_method ? ` via ${cycle.payment_method.toUpperCase()}` : ""}
                 </p>
                 {proofUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={proofUrl} alt="Payment proof" className="max-h-64 rounded-lg border object-contain" />
                 ) : (
                   <Button size="sm" variant="outline" onClick={handleViewProof} disabled={loadingProof}>
@@ -518,7 +517,6 @@ export default function VenueBillingDetailPage({
 
       <CycleDetailDialog
         cycleId={selectedCycleId}
-        venueId={venueId}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
       />

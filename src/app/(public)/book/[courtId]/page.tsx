@@ -25,7 +25,6 @@ import {
   MapPin,
   Trash2,
 } from "lucide-react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -293,9 +292,7 @@ export default function PublicBookCourtPage() {
   const isSlotMatrixPending =
     isBookingSurfacePending || matrixSurfaceQueries.some((q) => q.isPending);
 
-  useEffect(() => {
-    if (isSlotMatrixFetching) setDatePickerOpen(false);
-  }, [isSlotMatrixFetching]);
+  const effectiveDatePickerOpen = datePickerOpen && !isSlotMatrixFetching;
 
   const galleryUrls = useMemo(() => (court ? courtGalleryUrls(court) : []), [court]);
 
@@ -548,9 +545,6 @@ export default function PublicBookCourtPage() {
     court.map_longitude != null &&
     Number.isFinite(court.map_latitude) &&
     Number.isFinite(court.map_longitude);
-  const mapOpenHref = hasMapPin
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${court.map_latitude ?? 0},${court.map_longitude ?? 0}`)}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(court.location)}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:px-10">
@@ -826,7 +820,7 @@ export default function PublicBookCourtPage() {
                       <p className="text-sm font-semibold text-foreground">
                         {format(selectedDate, "EEE, MMM d")}
                       </p>
-                      <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                      <Popover open={effectiveDatePickerOpen} onOpenChange={setDatePickerOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             type="button"

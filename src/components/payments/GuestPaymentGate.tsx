@@ -44,11 +44,11 @@ export default function GuestPaymentGate() {
   };
 
   // Reload hold when the route changes or when the booking page signals a new hold
-  useEffect(() => { refreshHold(); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { refreshHold(); }, [pathname]);
   useEffect(() => {
     window.addEventListener("courtly:hold-updated", refreshHold);
     return () => window.removeEventListener("courtly:hold-updated", refreshHold);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Countdown ticker
   useEffect(() => {

@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
   let cycles: VenueBillingCycle[] = await listBillingCyclesByVenue(venueId);
   if (statusFilter === "unsettled" || statusFilter === "paid") {
-    cycles = cycles.filter((c) => c.status === statusFilter);
+    cycles = cycles.filter((cycle) => cycle.status === statusFilter);
   }
 
   const response: AdminBillingListResponse = {

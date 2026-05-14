@@ -404,8 +404,11 @@ export const courtlyApi = {
   },
 
   adminBookings: {
-    bulkStatus: (updates: Array<{ id: string; status: Booking["status"] }>) =>
-      http.patch<{ updates: Booking[] }>("/api/admin/bookings/bulk-status", { updates }),
+    updateGroupStatus: (bookingId: string, status: Booking["status"]) =>
+      http.patch<{ updates: Booking[] }>("/api/admin/bookings/group-status", {
+        booking_id: bookingId,
+        status,
+      }),
     listNotes: (bookingId: string) =>
       http.get<{ notes: BookingAdminNote[] }>(`/api/admin/bookings/${bookingId}/notes`),
     addNote: (bookingId: string, note: string) =>

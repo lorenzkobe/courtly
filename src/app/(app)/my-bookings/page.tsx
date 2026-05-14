@@ -5,7 +5,6 @@ import { format } from "date-fns";
 import {
   Calendar,
   Clock,
-  Loader2,
   RefreshCw,
   Users,
 } from "lucide-react";

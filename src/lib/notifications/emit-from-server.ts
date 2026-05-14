@@ -447,7 +447,7 @@ async function emitBookingLifecycleNotificationsInner(params: {
   }
 
   if (next.status === "completed" && prev.status !== "completed") {
-    if (!params.skipReviewReminder) {
+    if (!params.skipReviewReminder && prev.user_id) {
       await emitBookingCompletedReviewReminderIfNeeded({
         userId: uid,
         bookingId: params.bookingId,

@@ -69,8 +69,6 @@ export default function PublicBookingStatusPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    setError(null);
     fetch(`/api/public/b/${encodeURIComponent(bookingNumber)}`)
       .then(async (res) => {
         if (cancelled) return;

@@ -22,8 +22,6 @@ export async function GET(req: Request) {
     listVenues(),
   ]);
 
-  const venueMap = new Map(venues.map((v) => [v.id, v.name]));
-
   // Aggregate per venue
   const byVenue = new Map<string, {
     total_cycles: number;
@@ -68,20 +66,20 @@ export async function GET(req: Request) {
   }
 
   const platform_totals = {
-    total_fees_all_time: cycles.reduce((s, c) => s + c.total_booking_fees, 0),
+    total_fees_all_time: cycles.reduce((s, cycle) => s + cycle.total_booking_fees, 0),
     total_fees_unsettled: cycles
-      .filter((c) => c.status === "unsettled")
-      .reduce((s, c) => s + c.total_booking_fees, 0),
+      .filter((cycle) => cycle.status === "unsettled")
+      .reduce((s, cycle) => s + cycle.total_booking_fees, 0),
     total_fees_paid: cycles
-      .filter((c) => c.status === "paid")
-      .reduce((s, c) => s + c.total_booking_fees, 0),
-    unsettled_cycle_count: cycles.filter((c) => c.status === "unsettled").length,
+      .filter((cycle) => cycle.status === "paid")
+      .reduce((s, cycle) => s + cycle.total_booking_fees, 0),
+    unsettled_cycle_count: cycles.filter((cycle) => cycle.status === "unsettled").length,
   };
 
   let venue_cycles: VenueBillingCycle[] | undefined;
   if (venueIdFilter) {
     venue_cycles = cycles
-      .filter((c) => c.venue_id === venueIdFilter)
+      .filter((cycle) => cycle.venue_id === venueIdFilter)
       .sort((a, b) => a.period_start.localeCompare(b.period_start));
   }
 

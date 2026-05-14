@@ -7,7 +7,6 @@ import {
   Calendar,
   Clock,
   ExternalLink,
-  Loader2,
   MapPin,
   RefreshCw,
   Star,

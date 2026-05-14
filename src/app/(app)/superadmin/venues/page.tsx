@@ -111,7 +111,6 @@ export default function SuperadminVenuesPage() {
 
   const {
     data: directoryPages,
-    isLoading,
     isFetching,
     isFetchingNextPage,
     fetchNextPage,
@@ -149,7 +148,7 @@ export default function SuperadminVenuesPage() {
     directoryPages?.pages?.[directoryPages.pages.length - 1]?.venues.has_more ??
     false;
 
-  const { data: requestData, isLoading: isLoadingRequests, isFetching: isFetchingRequests, refetch: refetchPendingRequests } = useQuery({
+  const { data: requestData, isFetching: isFetchingRequests, refetch: refetchPendingRequests } = useQuery({
     queryKey: queryKeys.superadmin.venueRequests("pending"),
     queryFn: async () => {
       const { data } = await courtlyApi.superadminVenueRequests.list({
@@ -1316,6 +1315,7 @@ export default function SuperadminVenuesPage() {
                     key={url}
                     className="relative aspect-square overflow-hidden rounded-lg border border-border"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={url}
                       alt={`Photo ${i + 1}`}

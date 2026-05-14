@@ -340,6 +340,7 @@ export default function AdminBillingCyclePage({
                     </span>
                   </div>
                   {proofUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={proofUrl}
                       alt="Payment proof"
@@ -411,6 +412,7 @@ export default function AdminBillingCyclePage({
                   />
                   {optimizedProof ? (
                     <div className="relative overflow-hidden rounded-lg border border-border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={optimizedProof.dataUrl}
                         alt="Preview"

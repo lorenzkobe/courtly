@@ -1193,6 +1193,7 @@ export default function AdminVenueCourtsPage() {
                     key={url}
                     className="relative aspect-square overflow-hidden rounded-lg border border-border"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={url}
                       alt={`Photo ${i + 1}`}

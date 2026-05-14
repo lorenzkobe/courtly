@@ -79,7 +79,7 @@ export async function runGenerateMonthlyBilling(params?: {
       .select("id")
       .eq("venue_id", venue.id);
 
-    const courtIds = ((courts ?? []) as { id: string }[]).map((c) => c.id);
+    const courtIds = ((courts ?? []) as { id: string }[]).map((court) => court.id);
 
     let booking_count = 0;
     let total_booking_fees = 0;

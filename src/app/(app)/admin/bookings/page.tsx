@@ -384,15 +384,12 @@ export default function AdminBookingsPage() {
   );
   const [detailPanelTab, setDetailPanelTab] = useState<"notes" | "history">("notes");
   const [historyTabLoaded, setHistoryTabLoaded] = useState(false);
-  const [pendingDecisionById, setPendingDecisionById] = useState<
-    Record<string, "confirmed" | "cancelled">
-  >({});
-  const [completionDecisionById, setCompletionDecisionById] = useState<
-    Record<string, "completed" | "refund">
-  >({});
-  const [refundedDecisionById, setRefundedDecisionById] = useState<
-    Record<string, "refunded">
-  >({});
+  const [pendingGroupDecision, setPendingGroupDecision] = useState<
+    "confirmed" | "cancelled" | null
+  >(null);
+  const [completionGroupDecision, setCompletionGroupDecision] = useState<
+    "completed" | "refund" | null
+  >(null);
   const [paymentProofZoom, setPaymentProofZoom] = useState(1);
   const [isLoadingProof, setIsLoadingProof] = useState(false);
   const dismissPaymentProofPreview = useCallback(() => {
@@ -549,33 +546,6 @@ export default function AdminBookingsPage() {
   const refundSegments = useMemo(
     () => detailSegments.filter((segment) => segment.status === "refund"),
     [detailSegments],
-  );
-  const selectedPendingUpdates = useMemo(
-    () =>
-      pendingConfirmationSegments.flatMap((segment) => {
-        const status = pendingDecisionById[segment.id];
-        if (!status) return [];
-        return [{ id: segment.id, status }];
-      }),
-    [pendingConfirmationSegments, pendingDecisionById],
-  );
-  const selectedCompleteUpdates = useMemo(
-    () =>
-      confirmedSegments.flatMap((segment) => {
-        const decision = completionDecisionById[segment.id] as string | undefined;
-        if (!decision || decision === "skip") return [];
-        return [{ id: segment.id, status: decision as Booking["status"] }];
-      }),
-    [confirmedSegments, completionDecisionById],
-  );
-  const selectedRefundedUpdates = useMemo(
-    () =>
-      refundSegments.flatMap((segment) =>
-        refundedDecisionById[segment.id]
-          ? [{ id: segment.id, status: "refunded" as const }]
-          : [],
-      ),
-    [refundSegments, refundedDecisionById],
   );
 
   const adminBookingNotes = useMemo(() => {
@@ -744,27 +714,27 @@ export default function AdminBookingsPage() {
     [queryClient],
   );
 
-  const bulkUpdateStatuses = useMutation({
-    mutationFn: async (updates: Array<{ id: string; status: Booking["status"] }>) => {
-      const { data } = await courtlyApi.adminBookings.bulkStatus(updates);
+  const updateBookingGroupStatus = useMutation({
+    mutationFn: async ({ status }: { status: Booking["status"] }) => {
+      const { data } = await courtlyApi.adminBookings.updateGroupStatus(
+        detailBooking!.id,
+        status,
+      );
       return data.updates;
     },
     onSuccess: (updatedRows) => {
       for (const updated of updatedRows) {
         applyBookingUpdateToCaches(updated);
       }
-      void queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-detail"] });
-      toast.success("Booking decisions submitted");
-      setPendingDecisionById({});
-      setCompletionDecisionById({});
-      setRefundedDecisionById({});
+      toast.success("Booking updated");
+      setPendingGroupDecision(null);
+      setCompletionGroupDecision(null);
       setConfirmBulkPendingOpen(false);
       setConfirmBulkCompleteOpen(false);
       setConfirmBulkRefundedOpen(false);
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not submit bulk booking decisions"));
+      toast.error(apiErrorMessage(error, "Could not update booking"));
     },
   });
 
@@ -1001,38 +971,43 @@ export default function AdminBookingsPage() {
       <ConfirmDialog
         open={confirmBulkPendingOpen}
         onOpenChange={setConfirmBulkPendingOpen}
-        title="Submit slot decisions?"
-        description={`This will apply decisions to ${selectedPendingUpdates.length} slot${selectedPendingUpdates.length === 1 ? "" : "s"}.`}
-        confirmLabel="Submit decisions"
-        isPending={bulkUpdateStatuses.isPending}
+        title={pendingGroupDecision === "cancelled" ? "Cancel booking?" : "Confirm booking?"}
+        description={
+          pendingGroupDecision === "cancelled"
+            ? "This will cancel the booking."
+            : "This will confirm the booking."
+        }
+        confirmLabel={pendingGroupDecision === "cancelled" ? "Cancel booking" : "Confirm booking"}
+        isPending={updateBookingGroupStatus.isPending}
         onConfirm={() => {
-          if (selectedPendingUpdates.length === 0) return;
-          bulkUpdateStatuses.mutate(selectedPendingUpdates);
+          if (!pendingGroupDecision) return;
+          updateBookingGroupStatus.mutate({ status: pendingGroupDecision });
         }}
       />
       <ConfirmDialog
         open={confirmBulkCompleteOpen}
         onOpenChange={setConfirmBulkCompleteOpen}
-        title="Submit slot actions?"
-        description={`This will apply ${selectedCompleteUpdates.length} action${selectedCompleteUpdates.length === 1 ? "" : "s"} on confirmed slots.`}
-        confirmLabel="Submit"
-        isPending={bulkUpdateStatuses.isPending}
+        title={completionGroupDecision === "refund" ? "Refund booking?" : "Complete booking?"}
+        description={
+          completionGroupDecision === "refund"
+            ? "This will mark the booking for refund."
+            : "This will mark the booking as completed."
+        }
+        confirmLabel={completionGroupDecision === "refund" ? "Refund booking" : "Complete booking"}
+        isPending={updateBookingGroupStatus.isPending}
         onConfirm={() => {
-          if (selectedCompleteUpdates.length === 0) return;
-          bulkUpdateStatuses.mutate(selectedCompleteUpdates);
+          if (!completionGroupDecision) return;
+          updateBookingGroupStatus.mutate({ status: completionGroupDecision });
         }}
       />
       <ConfirmDialog
         open={confirmBulkRefundedOpen}
         onOpenChange={setConfirmBulkRefundedOpen}
         title="Mark as refunded?"
-        description={`This will mark ${selectedRefundedUpdates.length} slot${selectedRefundedUpdates.length === 1 ? "" : "s"} as refunded.`}
-        confirmLabel="Mark refunded"
-        isPending={bulkUpdateStatuses.isPending}
-        onConfirm={() => {
-          if (selectedRefundedUpdates.length === 0) return;
-          bulkUpdateStatuses.mutate(selectedRefundedUpdates);
-        }}
+        description="This will mark the booking as refunded."
+        confirmLabel="Mark as refunded"
+        isPending={updateBookingGroupStatus.isPending}
+        onConfirm={() => updateBookingGroupStatus.mutate({ status: "refunded" })}
       />
       <Dialog
         open={!!activeDetailId}
@@ -1268,20 +1243,6 @@ export default function AdminBookingsPage() {
                     <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {detailSegments.length > 1 ? "Items" : "Reservation"}
                     </h4>
-                    {pendingConfirmationSegments.length > 0 ? (
-                      <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Select pending slots to confirm or reject, then submit in bulk.
-                        </p>
-                      </div>
-                    ) : null}
-                    {confirmedSegments.length > 0 ? (
-                      <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Select confirmed slots to complete, then submit in bulk.
-                        </p>
-                      </div>
-                    ) : null}
                     <ul className="space-y-3">
                       {detailSegments.map((segment) => {
                         const segTiers =
@@ -1337,117 +1298,61 @@ export default function AdminBookingsPage() {
                                 ) : null}
                               </div>
                             ) : null}
-                            {segment.status === "pending_confirmation" ? (
-                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                                <Select
-                                  value={pendingDecisionById[segment.id] ?? ""}
-                                  onValueChange={(value) =>
-                                    setPendingDecisionById((current) => ({
-                                      ...current,
-                                      [segment.id]: value as "confirmed" | "cancelled",
-                                    }))
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 w-[220px]">
-                                    <SelectValue placeholder="Select decision" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="confirmed">Confirm payment</SelectItem>
-                                    <SelectItem value="cancelled">Reject payment</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ) : null}
-                            {segment.status === "confirmed" ? (
-                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                                <Select
-                                  value={completionDecisionById[segment.id] ?? ""}
-                                  onValueChange={(value) =>
-                                    setCompletionDecisionById((current) => {
-                                      const next = { ...current };
-                                      if (value === "completed" || value === "refund") {
-                                        next[segment.id] = value as "completed" | "refund";
-                                      } else {
-                                        delete next[segment.id];
-                                      }
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 w-[220px]">
-                                    <SelectValue placeholder="Select action" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="skip">No action</SelectItem>
-                                    <SelectItem value="completed">Complete slot</SelectItem>
-                                    <SelectItem value="refund">Refund slot</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ) : null}
-                            {segment.status === "refund" ? (
-                              <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
-                                <Select
-                                  value={refundedDecisionById[segment.id] ?? ""}
-                                  onValueChange={(value) =>
-                                    setRefundedDecisionById((current) => {
-                                      const next = { ...current };
-                                      if (value === "refunded") {
-                                        next[segment.id] = "refunded";
-                                      } else {
-                                        delete next[segment.id];
-                                      }
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 w-[220px]">
-                                    <SelectValue placeholder="Select action" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="skip">No action</SelectItem>
-                                    <SelectItem value="refunded">Mark as refunded</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ) : null}
                           </li>
                         );
                       })}
                     </ul>
                     {pendingConfirmationSegments.length > 0 ? (
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         <Button
                           type="button"
                           size="sm"
-                          disabled={selectedPendingUpdates.length === 0 || bulkUpdateStatuses.isPending}
+                          variant="outline"
+                          disabled={updateBookingGroupStatus.isPending}
                           onClick={() => {
-                            if (selectedPendingUpdates.length === 0) {
-                              toast.error("Select at least one pending slot decision.");
-                              return;
-                            }
+                            setPendingGroupDecision("cancelled");
                             setConfirmBulkPendingOpen(true);
                           }}
                         >
-                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit"}
+                          Cancel booking
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={updateBookingGroupStatus.isPending}
+                          onClick={() => {
+                            setPendingGroupDecision("confirmed");
+                            setConfirmBulkPendingOpen(true);
+                          }}
+                        >
+                          Confirm booking
                         </Button>
                       </div>
                     ) : null}
                     {confirmedSegments.length > 0 ? (
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         <Button
                           type="button"
                           size="sm"
-                          disabled={selectedCompleteUpdates.length === 0 || bulkUpdateStatuses.isPending}
+                          variant="outline"
+                          disabled={updateBookingGroupStatus.isPending}
                           onClick={() => {
-                            if (selectedCompleteUpdates.length === 0) {
-                              toast.error("Select at least one confirmed slot action.");
-                              return;
-                            }
+                            setCompletionGroupDecision("refund");
                             setConfirmBulkCompleteOpen(true);
                           }}
                         >
-                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit"}
+                          Refund booking
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={updateBookingGroupStatus.isPending}
+                          onClick={() => {
+                            setCompletionGroupDecision("completed");
+                            setConfirmBulkCompleteOpen(true);
+                          }}
+                        >
+                          Complete booking
                         </Button>
                       </div>
                     ) : null}
@@ -1456,16 +1361,10 @@ export default function AdminBookingsPage() {
                         <Button
                           type="button"
                           size="sm"
-                          disabled={selectedRefundedUpdates.length === 0 || bulkUpdateStatuses.isPending}
-                          onClick={() => {
-                            if (selectedRefundedUpdates.length === 0) {
-                              toast.error("Select at least one refund slot to mark as refunded.");
-                              return;
-                            }
-                            setConfirmBulkRefundedOpen(true);
-                          }}
+                          disabled={updateBookingGroupStatus.isPending}
+                          onClick={() => setConfirmBulkRefundedOpen(true)}
                         >
-                          {bulkUpdateStatuses.isPending ? "Submitting..." : "Submit refunded"}
+                          Mark as refunded
                         </Button>
                       </div>
                     ) : null}

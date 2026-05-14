@@ -87,7 +87,7 @@ export default function AdminVenuesPage() {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: venueCards = [], isLoading, isFetching: isFetchingVenues, refetch: refetchVenues } = useQuery({
+  const { data: venueCards = [], isFetching: isFetchingVenues, refetch: refetchVenues } = useQuery({
     queryKey: ["admin-venues"],
     queryFn: async () => {
       const { data } = await courtlyApi.assignedVenues.list();
@@ -763,6 +763,7 @@ export default function AdminVenuesPage() {
                     key={url}
                     className="relative aspect-square overflow-hidden rounded-lg border border-border"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={url}
                       alt={`Photo ${i + 1}`}

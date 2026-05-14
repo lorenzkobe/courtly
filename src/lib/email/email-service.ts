@@ -55,7 +55,7 @@ function h1(text: string): string {
   return `<h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#18181b;">${text}</h1>`;
 }
 
-function p(text: string): string {
+function para(text: string): string {
   return `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#3f3f46;">${text}</p>`;
 }
 
@@ -143,10 +143,10 @@ export async function sendGuestBookingStatusUpdate(params: {
 
   function formatTime(t?: string) {
     if (!t) return "";
-    const [h, m] = t.split(":").map(Number);
+    const [h, min] = t.split(":").map(Number);
     const period = h >= 12 ? "PM" : "AM";
     const hour = h % 12 || 12;
-    return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+    return `${hour}:${String(min).padStart(2, "0")} ${period}`;
   }
 
   const activeSlots = slots && slots.length > 0 ? slots : null;
@@ -177,14 +177,14 @@ export async function sendGuestBookingStatusUpdate(params: {
 
   const body = `
     ${h1("Booking Update")}
-    ${p(`Hi ${playerName}, here's an update on your booking.`)}
+    ${para(`Hi ${playerName}, here's an update on your booking.`)}
     ${detailTable(
       detail("Booking #", bookingNumber) +
       detail("Venue", venueName) +
       slotRows +
       detail("Status", badge(info.label, info.color))
     )}
-    ${p(info.message)}
+    ${para(info.message)}
     ${button("View Booking", bookingUrl)}
   `;
 
