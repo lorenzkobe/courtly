@@ -31,11 +31,13 @@ export default function CourtCard({
   isFavorite = false,
   onToggleFavorite,
   bookHref,
+  priority = false,
 }: {
   court: Court;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   bookHref?: string;
+  priority?: boolean;
 }) {
   const photos =
     court.venue_photo_urls && court.venue_photo_urls.length > 0
@@ -57,6 +59,7 @@ export default function CourtCard({
             alt={court.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             referrerPolicy="no-referrer"
+            loading={priority ? "eager" : "lazy"}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">

@@ -663,12 +663,13 @@ export default function CourtsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((court) => (
+          {filtered.map((court, i) => (
             <CourtCard
               key={court.venue_id}
               court={court}
               isFavorite={isFavorite(court.venue_id)}
               onToggleFavorite={() => toggleFavorite(court.venue_id)}
+              priority={i === 0}
             />
           ))}
         </div>
