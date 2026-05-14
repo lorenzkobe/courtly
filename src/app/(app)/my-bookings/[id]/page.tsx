@@ -38,6 +38,7 @@ import {
 import { segmentPricingTiers } from "@/lib/court-pricing";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isFeaturePreviewUser } from "@/lib/auth/feature-preview";
 import {
   bookingSegmentStartMs,
   segmentStatusForDisplay,
@@ -633,7 +634,9 @@ export default function BookingDetailPage() {
     myReview.user_id === user.id,
   );
   const canCreateOpenPlay =
-    openPlayFromBookingEligible && openPlaySelectableCourts.length > 0;
+    openPlayFromBookingEligible &&
+    openPlaySelectableCourts.length > 0 &&
+    isFeaturePreviewUser(user?.email);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
