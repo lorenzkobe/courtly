@@ -81,6 +81,7 @@ export default function BookingCartPage() {
 
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
     null,
   );
@@ -535,6 +536,19 @@ export default function BookingCartPage() {
                   preserved in your cart.
                 </p>
               ) : null}
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={bookingConfirmed}
+                  onChange={(e) => setBookingConfirmed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  I confirm that my booking details are correct. I understand that once
+                  submitted, any mistakes are my responsibility and the venue is not
+                  obligated to accommodate changes or issue refunds.
+                </span>
+              </label>
               <Button
                 className="w-full font-heading font-semibold"
                 size="lg"
@@ -543,7 +557,8 @@ export default function BookingCartPage() {
                   isAnyLoading ||
                   hasBlockingConflicts ||
                   createBookings.isPending ||
-                  cartLines.length === 0
+                  cartLines.length === 0 ||
+                  !bookingConfirmed
                 }
               >
                 {createBookings.isPending ? "Checking out..." : "Confirm all bookings"}

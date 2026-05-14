@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   confirmVariant?: "default" | "destructive" | "secondary" | "outline";
   isPending?: boolean;
+  countdownSeconds?: number;
   onConfirm: () => void;
 };
 
@@ -31,8 +33,31 @@ export default function ConfirmDialog({
   cancelLabel = "Cancel",
   confirmVariant = "destructive",
   isPending = false,
+  countdownSeconds,
   onConfirm,
 }: ConfirmDialogProps) {
+  const [remaining, setRemaining] = useState(countdownSeconds ?? 0);
+
+  useEffect(() => {
+    if (!open || !countdownSeconds) {
+      setRemaining(countdownSeconds ?? 0);
+      return;
+    }
+    setRemaining(countdownSeconds);
+    const interval = setInterval(() => {
+      setRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [open, countdownSeconds]);
+
+  const isCountingDown = remaining > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" linkDescription={!!description}>
@@ -47,10 +72,14 @@ export default function ConfirmDialog({
           <Button
             type="button"
             variant={confirmVariant}
-            disabled={isPending}
+            disabled={isPending || isCountingDown}
             onClick={onConfirm}
           >
-            {isPending ? "Please wait..." : confirmLabel}
+            {isPending
+              ? "Please wait..."
+              : isCountingDown
+                ? `${confirmLabel} (${remaining}s)`
+                : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

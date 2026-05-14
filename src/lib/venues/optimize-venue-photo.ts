@@ -51,7 +51,7 @@ export async function optimizeVenuePhoto(file: File): Promise<OptimizedVenuePhot
     throw new Error("Unsupported image format. Use JPEG, PNG, or WebP.");
   }
   if (file.size > VENUE_PHOTO_RAW_MAX_BYTES) {
-    throw new Error("Image is too large. Maximum 5 MB per photo.");
+    throw new Error("Image is too large. Maximum 10 MB per photo.");
   }
 
   const image = await readImage(file);

@@ -834,6 +834,48 @@ export async function emitNewBillingCycleToVenueAdmins(params: {
   );
 }
 
+export async function emitVenueDeletedToVenueAdmins(params: {
+  venueId: string;
+  venueName: string;
+  adminIds: string[];
+}): Promise<void> {
+  if (params.adminIds.length === 0) return;
+  await safeEmitMany(
+    params.adminIds.map((user_id) => ({
+      user_id,
+      type: "venue_deleted_admin",
+      category: "platform" as const,
+      title: "Venue deleted",
+      body: `"${params.venueName}" has been deleted by a platform admin.`,
+      metadata: {
+        venue_id: params.venueId,
+        target_path: "/admin/venues",
+      },
+    })),
+  );
+}
+
+export async function emitVenueUpdatedToVenueAdmins(params: {
+  venueId: string;
+  venueName: string;
+  adminIds: string[];
+}): Promise<void> {
+  if (params.adminIds.length === 0) return;
+  await safeEmitMany(
+    params.adminIds.map((user_id) => ({
+      user_id,
+      type: "venue_updated_admin",
+      category: "platform" as const,
+      title: "Venue updated",
+      body: `"${params.venueName}" was updated by a platform admin.`,
+      metadata: {
+        venue_id: params.venueId,
+        target_path: `/admin/venues/${params.venueId}`,
+      },
+    })),
+  );
+}
+
 export async function emitVenueRequestCreatedToSuperadmins(params: {
   requestId: string;
   venueName: string;

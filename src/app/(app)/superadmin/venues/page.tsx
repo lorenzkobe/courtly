@@ -51,6 +51,7 @@ const emptyForm = {
   facebook_url: "",
   instagram_url: "",
   sport: "pickleball" as Venue["sport"],
+  status: "active" as Venue["status"],
   amenities: [] as string[],
   customAmenityDraft: "",
   photo_urls: [] as string[],
@@ -223,7 +224,7 @@ export default function SuperadminVenuesPage() {
   const paymentSettingsValidation = useMemo(
     () =>
       validateVenuePaymentSettings(form, {
-        requireAtLeastOne: true,
+        requireAtLeastOne: form.status === "active",
       }),
     [form],
   );
@@ -267,6 +268,7 @@ export default function SuperadminVenuesPage() {
         facebook_url: form.facebook_url.trim(),
         instagram_url: form.instagram_url.trim(),
         sport: form.sport,
+        status: form.status,
         hourly_rate_windows: parsed.windows,
         amenities: [
           ...new Set(form.amenities.map((amenity) => amenity.trim()).filter(Boolean)),
@@ -393,6 +395,7 @@ export default function SuperadminVenuesPage() {
       facebook_url: a.facebook_url ?? "",
       instagram_url: a.instagram_url ?? "",
       sport: a.sport,
+      status: a.status,
       amenities: [...(a.amenities ?? [])],
       customAmenityDraft: "",
       photo_urls: a.photo_urls ?? [],
@@ -501,8 +504,9 @@ export default function SuperadminVenuesPage() {
           if (!open) setConfirmRemoveVenueId(null);
         }}
         title="Delete venue?"
-        description="This removes the venue and related assignments."
+        description="This permanently removes the venue and all related assignments. This cannot be undone."
         confirmLabel="Delete venue"
+        countdownSeconds={5}
         isPending={removeAccount.isPending}
         onConfirm={() => {
           if (!confirmRemoveVenueId) return;
@@ -931,6 +935,28 @@ export default function SuperadminVenuesPage() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. BGC Makati Sports Center"
               />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(value) =>
+                  setForm({ ...form, status: value as Venue["status"] })
+                }
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="closed">Inactive (closed)</SelectItem>
+                </SelectContent>
+              </Select>
+              {form.status === "closed" ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Inactive venues are hidden from players and cannot accept new bookings.
+                </p>
+              ) : null}
             </div>
             <div>
               <Label>Location *</Label>

@@ -12,6 +12,10 @@ import {
   listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
+import {
+  emitVenueDeletedToVenueAdmins,
+  emitVenueUpdatedToVenueAdmins,
+} from "@/lib/notifications/emit-from-server";
 import type { Venue } from "@/lib/types/courtly";
 import {
   applyVenueMapCoordsToPatch,
@@ -314,6 +318,19 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const next = await updateRow<Venue>("venues", venueId, venuePatch);
 
+  if (user.role === "superadmin") {
+    const venueAdminIds = assignments
+      .filter((a) => a.venue_id === venueId && a.admin_user_id !== user.id)
+      .map((a) => a.admin_user_id);
+    if (venueAdminIds.length > 0) {
+      void emitVenueUpdatedToVenueAdmins({
+        venueId,
+        venueName: cur.name,
+        adminIds: venueAdminIds,
+      });
+    }
+  }
+
   if (user.role === "superadmin" && hasAssignmentPatch) {
     const supabase = await createSupabaseServerClient();
     if (addAdminIds.length > 0) {
@@ -345,14 +362,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
-  if (user?.role !== "superadmin") {
+  if (!user || (user.role !== "superadmin" && user.role !== "admin")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { venueId } = await ctx.params;
-  const [venue, courtsAtVenue, hasActiveBookings] = await Promise.all([
+  if (user.role === "admin") {
+    const assignments = await listVenueAdminAssignmentsByVenue(venueId);
+    const isAssigned = assignments.some((a) => a.admin_user_id === user.id);
+    if (!isAssigned) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+  const [venue, courtsAtVenue, hasActiveBookings, assignments] = await Promise.all([
     getVenueById(venueId),
     listCourtsByVenue(venueId),
     hasConfirmedBookingsForVenue(venueId),
+    listVenueAdminAssignmentsByVenue(venueId),
   ]);
   if (!venue) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -366,9 +391,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
       { status: 409 },
     );
   }
-
-  const linked = courtsAtVenue.length > 0;
-  if (linked) {
+  if (courtsAtVenue.length > 0) {
     return NextResponse.json(
       {
         error:
@@ -378,6 +401,19 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     );
   }
 
+  const adminIds = assignments
+    .map((a) => a.admin_user_id)
+    .filter((id) => id !== user.id);
+
   await deleteRow("venues", venueId);
+
+  if (user.role === "superadmin" && adminIds.length > 0) {
+    void emitVenueDeletedToVenueAdmins({
+      venueId,
+      venueName: venue.name,
+      adminIds,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

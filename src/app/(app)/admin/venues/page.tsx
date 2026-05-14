@@ -82,6 +82,7 @@ export default function AdminVenuesPage() {
   >(null);
   const [form, setForm] = useState(emptyRequestForm);
   const [confirmCancelRequestId, setConfirmCancelRequestId] = useState<string | null>(null);
+  const [confirmDeleteVenueId, setConfirmDeleteVenueId] = useState<string | null>(null);
   const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -196,6 +197,19 @@ export default function AdminVenuesPage() {
     },
   });
 
+  const deleteVenue = useMutation({
+    mutationFn: async (id: string) => {
+      await courtlyApi.venues.remove(id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
+      toast.success("Venue deleted");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not delete venue"));
+    },
+  });
+
   async function handlePhotoSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -260,6 +274,22 @@ export default function AdminVenuesPage() {
           if (!confirmCancelRequestId) return;
           cancelRequest.mutate(confirmCancelRequestId);
           setConfirmCancelRequestId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!confirmDeleteVenueId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteVenueId(null);
+        }}
+        title="Delete venue?"
+        description="This permanently removes the venue and all its data. You must remove all courts first. This cannot be undone."
+        confirmLabel="Delete venue"
+        countdownSeconds={5}
+        isPending={deleteVenue.isPending}
+        onConfirm={() => {
+          if (!confirmDeleteVenueId) return;
+          deleteVenue.mutate(confirmDeleteVenueId);
+          setConfirmDeleteVenueId(null);
         }}
       />
       <PageHeader
@@ -336,11 +366,22 @@ export default function AdminVenuesPage() {
                         {venue.court_count === 0 ? " — add one from Manage courts" : ""}
                       </div>
                     </div>
-                    <Button asChild variant="outline" className="w-full">
-                      <Link href={`/admin/venues/${venue.id}`}>
-                        Manage courts <ChevronRight className="ml-1 h-4 w-4" />
-                      </Link>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button asChild variant="outline" className="flex-1">
+                        <Link href={`/admin/venues/${venue.id}`}>
+                          Manage courts <ChevronRight className="ml-1 h-4 w-4" />
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0 border-destructive/25 text-destructive hover:bg-destructive/5"
+                        aria-label="Delete venue"
+                        onClick={() => setConfirmDeleteVenueId(venue.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}

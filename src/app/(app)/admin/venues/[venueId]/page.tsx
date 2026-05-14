@@ -129,6 +129,7 @@ export default function AdminVenueCourtsPage() {
   >({});
   const [closureDateOpen, setClosureDateOpen] = useState(false);
   const [confirmDeleteCourtId, setConfirmDeleteCourtId] = useState<string | null>(null);
+  const [confirmDeleteVenueOpen, setConfirmDeleteVenueOpen] = useState(false);
 
   const {
     data: workspace,
@@ -268,6 +269,20 @@ export default function AdminVenueCourtsPage() {
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Could not delete court"));
+    },
+  });
+
+  const deleteVenue = useMutation({
+    mutationFn: async () => {
+      await courtlyApi.venues.remove(venueId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-venues"] });
+      toast.success("Venue deleted");
+      router.replace("/admin/venues");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not delete venue"));
     },
   });
 
@@ -538,6 +553,19 @@ export default function AdminVenueCourtsPage() {
           setConfirmDeleteCourtId(null);
         }}
       />
+      <ConfirmDialog
+        open={confirmDeleteVenueOpen}
+        onOpenChange={(open) => setConfirmDeleteVenueOpen(open)}
+        title="Delete venue?"
+        description="This permanently removes the venue and all its data. You must remove all courts first. This cannot be undone."
+        confirmLabel="Delete venue"
+        countdownSeconds={5}
+        isPending={deleteVenue.isPending}
+        onConfirm={() => {
+          deleteVenue.mutate();
+          setConfirmDeleteVenueOpen(false);
+        }}
+      />
       <Button variant="ghost" className="mb-4 -ml-2" asChild>
         <Link href="/admin/venues">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to venues
@@ -585,6 +613,14 @@ export default function AdminVenueCourtsPage() {
         title={venueName}
         subtitle="Manage courts for this venue"
       >
+        <Button
+          variant="outline"
+          className="border-destructive/25 text-destructive hover:bg-destructive/5"
+          onClick={() => setConfirmDeleteVenueOpen(true)}
+        >
+          <Trash2 className="mr-1.5 h-4 w-4" />
+          Delete venue
+        </Button>
         <Button variant="outline" onClick={() => setClosureOpen(true)}>
           Set unavailability
         </Button>
