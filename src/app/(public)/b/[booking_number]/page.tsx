@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import {
   Dialog,
   DialogContent,
@@ -126,15 +127,6 @@ export default function PublicBookingStatusPage() {
     booking.map_longitude != null &&
     Number.isFinite(booking.map_latitude) &&
     Number.isFinite(booking.map_longitude);
-
-  const mapOpenHref =
-    booking
-      ? hasMapPin
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${booking.map_latitude},${booking.map_longitude}`)}`
-        : booking.location
-          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.location)}`
-          : null
-      : null;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:px-6">
@@ -289,36 +281,6 @@ export default function PublicBookingStatusPage() {
                     <p className="mt-0.5 text-sm text-muted-foreground">{booking.contact_phone}</p>
                   ) : null}
                 </div>
-                {(hasMapPin || booking.location) ? (
-                  <div className="space-y-2">
-                    <iframe
-                      src={
-                        hasMapPin
-                          ? `https://maps.google.com/maps?q=${booking.map_latitude},${booking.map_longitude}&z=15&output=embed`
-                          : `https://maps.google.com/maps?q=${encodeURIComponent(booking.location!)}&z=15&output=embed`
-                      }
-                      className="w-full rounded-xl border border-border/60"
-                      height="200"
-                      loading="lazy"
-                      title="Venue location"
-                      referrerPolicy="no-referrer-when-downgrade"
-                    />
-                    {booking.location ? (
-                      <p className="flex items-start gap-2 text-sm text-foreground">
-                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0">{booking.location}</span>
-                      </p>
-                    ) : null}
-                    {mapOpenHref ? (
-                      <Button variant="outline" size="sm" className="w-fit" asChild>
-                        <a href={mapOpenHref} target="_blank" rel="noopener noreferrer">
-                          Open in Map
-                          <ExternalLink className="ml-1.5 h-3 w-3 opacity-70" />
-                        </a>
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
                 {(booking.facebook_url || booking.instagram_url) ? (
                   <div className="flex flex-wrap gap-2">
                     {booking.facebook_url ? (
@@ -340,6 +302,45 @@ export default function PublicBookingStatusPage() {
                       >
                         Instagram <ExternalLink className="h-3 w-3" />
                       </a>
+                    ) : null}
+                  </div>
+                ) : null}
+                {(hasMapPin || booking.location) ? (
+                  <div className="space-y-2">
+                    {hasMapPin && (
+                      <VenueMapPinPicker
+                        value={{ lat: booking.map_latitude!, lng: booking.map_longitude! }}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
+                    {booking.location ? (
+                      <p className="flex items-start gap-2 text-sm text-foreground">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">{booking.location}</span>
+                      </p>
+                    ) : null}
+                    {hasMapPin ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" className="w-fit" asChild>
+                          <a
+                            href={`https://maps.google.com/?q=${booking.map_latitude},${booking.map_longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Google Maps
+                          </a>
+                        </Button>
+                        <Button variant="outline" size="sm" className="w-fit" asChild>
+                          <a
+                            href={`https://maps.apple.com/?ll=${booking.map_latitude},${booking.map_longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Apple Maps
+                          </a>
+                        </Button>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}

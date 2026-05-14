@@ -141,6 +141,14 @@ export async function sendGuestBookingStatusUpdate(params: {
       : "";
   }
 
+  function formatTime(t?: string) {
+    if (!t) return "";
+    const [h, m] = t.split(":").map(Number);
+    const period = h >= 12 ? "PM" : "AM";
+    const hour = h % 12 || 12;
+    return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+  }
+
   const activeSlots = slots && slots.length > 0 ? slots : null;
 
   let slotRows: string;
@@ -150,7 +158,7 @@ export async function sendGuestBookingStatusUpdate(params: {
         const parts = [
           slot.courtName,
           formatDate(slot.date),
-          slot.startTime && slot.endTime ? `${slot.startTime} – ${slot.endTime}` : "",
+          slot.startTime && slot.endTime ? `${formatTime(slot.startTime)} – ${formatTime(slot.endTime)}` : "",
         ].filter(Boolean);
         return detail(`Slot ${i + 1}`, parts.join(" · "));
       })
@@ -159,7 +167,7 @@ export async function sendGuestBookingStatusUpdate(params: {
     const s = activeSlots ? activeSlots[0] : null;
     const dateLabel = formatDate(s?.date ?? date);
     const timeRange = (s?.startTime ?? startTime) && (s?.endTime ?? endTime)
-      ? `${s?.startTime ?? startTime} – ${s?.endTime ?? endTime}`
+      ? `${formatTime(s?.startTime ?? startTime)} – ${formatTime(s?.endTime ?? endTime)}`
       : "";
     slotRows =
       detail("Court", courtName) +

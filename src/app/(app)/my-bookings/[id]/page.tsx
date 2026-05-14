@@ -1111,6 +1111,39 @@ export default function BookingDetailPage() {
                   <p className="mt-0.5 text-sm text-muted-foreground">{court.contact_phone}</p>
                 ) : null}
               </div>
+              {court.facebook_url || court.instagram_url ? (
+                <div className="flex flex-wrap gap-2">
+                  {court.facebook_url ? (
+                    <a
+                      href={court.facebook_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                    >
+                      Facebook <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                  {court.instagram_url ? (
+                    <a
+                      href={court.instagram_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
+                    >
+                      Instagram <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+              {court.amenities?.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {court.amenities.map((amenity) => (
+                    <Badge key={amenity} variant="outline" className="font-normal">
+                      {formatAmenityLabel(amenity)}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
               {(hasMapPin || court.location) ? (
                 <div className="space-y-2">
                   {hasMapPin && (
@@ -1148,39 +1181,6 @@ export default function BookingDetailPage() {
                       </Button>
                     </div>
                   )}
-                </div>
-              ) : null}
-              {court.facebook_url || court.instagram_url ? (
-                <div className="flex flex-wrap gap-2">
-                  {court.facebook_url ? (
-                    <a
-                      href={court.facebook_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                    >
-                      Facebook <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : null}
-                  {court.instagram_url ? (
-                    <a
-                      href={court.instagram_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/20 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40 hover:underline"
-                    >
-                      Instagram <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
-              {court.amenities?.length ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {court.amenities.map((amenity) => (
-                    <Badge key={amenity} variant="outline" className="font-normal">
-                      {formatAmenityLabel(amenity)}
-                    </Badge>
-                  ))}
                 </div>
               ) : null}
             </CardContent>
