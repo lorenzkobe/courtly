@@ -4,10 +4,11 @@ import {
   listConfirmedBookingsByGroupIds,
   listConfirmedBookingsForAutoCompletion,
   listPendingConfirmationBookingsForAutoDecline,
-  markBookingsAutoDeclinedPendingConfirmationByIds,
+  markBookingsPendingConfirmationAutoConfirmedByIds,
   markBookingsCompletedByIds,
 } from "@/lib/data/courtly-db";
 import {
+  emitBookingAutoConfirmedToVenueAdmins,
   emitBookingCompletedReviewReminderIfNeeded,
   emitBookingLifecycleNotifications,
 } from "@/lib/notifications/emit-from-server";
@@ -97,7 +98,7 @@ export async function runCompleteBookingsJob(): Promise<{
   now_manila_date: string;
   now_manila_time: string;
   expired_pending_deleted: number;
-  pending_confirmation_declined: number;
+  pending_confirmation_auto_confirmed: number;
   seed_count: number;
   candidate_entities: number;
   selected_entities: number;
@@ -124,42 +125,40 @@ export async function runCompleteBookingsJob(): Promise<{
     batchLimit * 2,
   );
 
-  const AUTO_DECLINE_CANCEL_REASON =
-    "auto_declined_pending_confirmation_at_slot_start" as const;
-
   const pendingConfirmationSeed = await listPendingConfirmationBookingsForAutoDecline({
     upToDate: nowDate,
     limit: seedLimit,
   });
-  const pendingDeclineCandidates = pendingConfirmationSeed.filter((row) =>
+  const pendingAutoConfirmCandidates = pendingConfirmationSeed.filter((row) =>
     hasReachedStart(row.date, row.start_time, nowDate, nowTime),
   );
-  const pendingDeclineIds = pendingDeclineCandidates
+  const pendingAutoConfirmIds = pendingAutoConfirmCandidates
     .slice(0, batchLimit)
     .map((row) => row.id);
-  const prevDeclineBookings =
-    pendingDeclineIds.length > 0 ? await listBookingsByIdsAdmin(pendingDeclineIds) : [];
-  const prevDeclineById = new Map(prevDeclineBookings.map((booking) => [booking.id, booking]));
-  const declinedRows =
-    pendingDeclineIds.length > 0
-      ? await markBookingsAutoDeclinedPendingConfirmationByIds(
-          pendingDeclineIds,
-          AUTO_DECLINE_CANCEL_REASON,
-        )
+  const prevAutoConfirmBookings =
+    pendingAutoConfirmIds.length > 0 ? await listBookingsByIdsAdmin(pendingAutoConfirmIds) : [];
+  const prevAutoConfirmById = new Map(prevAutoConfirmBookings.map((booking) => [booking.id, booking]));
+  const autoConfirmedRows =
+    pendingAutoConfirmIds.length > 0
+      ? await markBookingsPendingConfirmationAutoConfirmedByIds(pendingAutoConfirmIds)
       : [];
-  const declinedIdSet = new Set(declinedRows.map((row) => row.id));
-  for (const bookingId of declinedIdSet) {
-    const prev = prevDeclineById.get(bookingId);
+  const autoConfirmedIdSet = new Set(autoConfirmedRows.map((row) => row.id));
+  for (const bookingId of autoConfirmedIdSet) {
+    const prev = prevAutoConfirmById.get(bookingId);
     if (!prev) continue;
     await emitBookingLifecycleNotifications({
       prev,
-      nextRow: {
-        ...prev,
-        status: "cancelled",
-        cancel_reason: AUTO_DECLINE_CANCEL_REASON,
-      },
+      nextRow: { ...prev, status: "confirmed" },
       bookingId,
     });
+    if (prev.venue_id) {
+      await emitBookingAutoConfirmedToVenueAdmins({
+        venueId: prev.venue_id,
+        bookingId,
+        courtName: prev.court_name ?? "Court",
+        venueName: prev.establishment_name ?? "your venue",
+      });
+    }
   }
 
   const seedRows = await listConfirmedBookingsForAutoCompletion({
@@ -261,7 +260,7 @@ export async function runCompleteBookingsJob(): Promise<{
     now_manila_date: nowDate,
     now_manila_time: nowTime,
     expired_pending_deleted: expiredPendingDeleted,
-    pending_confirmation_declined: declinedIdSet.size,
+    pending_confirmation_auto_confirmed: autoConfirmedIdSet.size,
     seed_count: seedRows.length,
     candidate_entities: entities.length,
     selected_entities: selected.length,

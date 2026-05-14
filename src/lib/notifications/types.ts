@@ -32,7 +32,8 @@ export type NotificationEventType =
   | "billing_proof_rejected"
   | "billing_new_cycle"
   | "venue_deleted_admin"
-  | "venue_updated_admin";
+  | "venue_updated_admin"
+  | "booking_auto_confirmed_admin";
 
 export type NotificationMetadata = {
   booking_id?: string;

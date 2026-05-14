@@ -566,6 +566,7 @@ export type VenueDetailResponse = {
 
 export type DashboardOverviewResponse = {
   today_bookings: Booking[];
+  future_bookings_count: number;
   tournaments_open: Tournament[];
   open_play_sessions: OpenPlaySession[];
 };

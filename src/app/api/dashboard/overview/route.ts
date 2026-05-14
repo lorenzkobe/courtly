@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
+  countFutureBookingsByPlayer,
   listBookingsByPlayerOnDate,
   listOpenPlayByStatus,
   listOpenTournaments,
@@ -24,8 +25,9 @@ export async function GET(req: Request) {
   const nowDate = new Date().toISOString().slice(0, 10);
   const effectiveDate = date || nowDate;
 
-  const [todayBookings, tournamentsOpen, openPlaySessions] = await Promise.all([
+  const [todayBookings, futureBookingsCount, tournamentsOpen, openPlaySessions] = await Promise.all([
     listBookingsByPlayerOnDate(user.email, effectiveDate, sport),
+    countFutureBookingsByPlayer(user.email, effectiveDate, sport),
     listOpenTournaments(sport, 2),
     listOpenPlayByStatus("open", sport, 3),
   ]);
@@ -37,6 +39,7 @@ export async function GET(req: Request) {
 
   const payload: DashboardOverviewResponse = {
     today_bookings: todayBookings,
+    future_bookings_count: futureBookingsCount,
     tournaments_open: tournamentsOpen,
     open_play_sessions: dashboardOpenPlaySessions,
   };

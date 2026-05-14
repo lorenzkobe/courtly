@@ -38,7 +38,8 @@ function categoryForEmit(input: EmitNotificationInput): NotificationCategory {
     t === "booking_cancelled" ||
     t === "booking_changed" ||
     t === "booking_completed_review_reminder" ||
-    t === "booking_created_admin"
+    t === "booking_created_admin" ||
+    t === "booking_auto_confirmed_admin"
   ) {
     return "booking";
   }

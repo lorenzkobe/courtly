@@ -229,6 +229,35 @@ export async function emitBookingCreatedToVenueAdmins(params: {
   await safeEmitMany(inputs);
 }
 
+export async function emitBookingAutoConfirmedToVenueAdmins(params: {
+  venueId: string;
+  bookingId: string;
+  courtName: string;
+  venueName: string;
+}): Promise<void> {
+  const assignments = await listVenueAdminAssignments();
+  const adminIds = [
+    ...new Set(
+      assignments
+        .filter((a) => a.venue_id === params.venueId)
+        .map((a) => a.admin_user_id),
+    ),
+  ];
+  const inputs = adminIds.map(
+    (user_id): EmitNotificationInput => ({
+      user_id,
+      type: "booking_auto_confirmed_admin",
+      title: "Booking auto-confirmed",
+      body: `A booking for ${params.courtName} at ${params.venueName} was auto-confirmed at slot start — please verify the payment proof.`,
+      metadata: {
+        booking_id: params.bookingId,
+        target_path: `/admin/bookings?detail=${params.bookingId}`,
+      },
+    }),
+  );
+  await safeEmitMany(inputs);
+}
+
 export async function emitBookingLifecycleNotifications(params: {
   prev: Booking;
   nextRow: Record<string, unknown>;

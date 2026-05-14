@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Heart, ListFilter, X } from "lucide-react";
 import CourtCard from "@/components/courts/CourtCard";
 import EmptyState from "@/components/shared/EmptyState";
@@ -25,6 +25,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
+import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
@@ -32,7 +35,12 @@ import { formatAmenityLabel } from "@/lib/format-amenity";
 import { useFavoriteVenueIds } from "@/hooks/use-favorite-venue-ids";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import { queryKeys } from "@/lib/query/query-keys";
+import { useAuth } from "@/lib/auth/auth-context";
+import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
+import { optimizePaymentProofImage } from "@/lib/payments/optimize-payment-proof";
+import { PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES } from "@/lib/payments/payment-proof-constraints";
 import { cn } from "@/lib/utils";
+import type { Booking, Court } from "@/lib/types/courtly";
 
 const ANY_VALUE = "__any__";
 
@@ -128,6 +136,167 @@ export default function CourtsPage() {
 
   const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteVenueIds();
   const selectedSport = useSelectedSport((s) => s.sport);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Payment overlay state
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(null);
+  const [optimizedProof, setOptimizedProof] = useState<{
+    dataUrl: string;
+    mimeType: "image/jpeg";
+    bytes: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [proofOptimizing, setProofOptimizing] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const { data: myPendingBookings = [] } = useQuery({
+    queryKey: queryKeys.bookings.list({ player_email: user?.email }),
+    queryFn: async () => {
+      if (!user?.email) return [] as Booking[];
+      const { data } = await courtlyApi.bookings.list({ player_email: user.email });
+      return data;
+    },
+    enabled: !!user?.email,
+  });
+
+  const activePendingBooking = useMemo(() => {
+    const now = countdownNow;
+    return (
+      myPendingBookings
+        .filter(
+          (b) =>
+            b.status === "pending_payment" &&
+            b.hold_expires_at &&
+            new Date(b.hold_expires_at).getTime() > now,
+        )
+        .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""))[0] ?? null
+    );
+  }, [myPendingBookings, countdownNow]);
+
+  const pendingPaymentCourtId = activePendingBooking?.court_id ?? null;
+  const { data: pendingPaymentCourt } = useQuery({
+    queryKey: pendingPaymentCourtId
+      ? queryKeys.courts.detail(pendingPaymentCourtId)
+      : queryKeys.courts.detail(""),
+    queryFn: async () => {
+      if (!pendingPaymentCourtId) return null as Court | null;
+      const { data } = await courtlyApi.courts.get(pendingPaymentCourtId);
+      return data;
+    },
+    enabled: !!pendingPaymentCourtId,
+  });
+
+  const paymentMethodsForOverlay = useMemo(
+    () => (pendingPaymentCourt ? venuePaymentMethodsForCheckout(pendingPaymentCourt) : []),
+    [pendingPaymentCourt],
+  );
+
+  const overlayRemainingSeconds = activePendingBooking
+    ? Math.max(
+        0,
+        Math.ceil(
+          (new Date(activePendingBooking.hold_expires_at!).getTime() - countdownNow) / 1000,
+        ),
+      )
+    : 0;
+
+  const overlayTotalDue = useMemo(() => {
+    if (!activePendingBooking) return 0;
+    return myPendingBookings
+      .filter(
+        (b) =>
+          (b.booking_group_id === activePendingBooking.booking_group_id ||
+            b.id === activePendingBooking.id) &&
+          b.status === "pending_payment",
+      )
+      .reduce((sum, b) => sum + Number(b.total_cost ?? 0), 0);
+  }, [activePendingBooking, myPendingBookings]);
+
+  useEffect(() => {
+    if (paymentMethodsForOverlay.length === 0) return;
+    setSelectedPaymentMethod((current) => {
+      if (current && paymentMethodsForOverlay.some((m) => m.method === current)) return current;
+      return paymentMethodsForOverlay[0]?.method ?? null;
+    });
+  }, [paymentMethodsForOverlay]);
+
+  useEffect(() => {
+    if (activePendingBooking && overlayRemainingSeconds <= 0) {
+      window.location.reload();
+    }
+  }, [activePendingBooking, overlayRemainingSeconds]);
+
+  const submitPaymentProof = useMutation({
+    mutationFn: async () => {
+      if (!activePendingBooking) throw new Error("No active booking hold.");
+      if (!selectedPaymentMethod) throw new Error("Select a payment method.");
+      if (!optimizedProof) throw new Error("Upload a payment screenshot first.");
+      const { data } = await courtlyApi.bookings.submitPaymentProof(activePendingBooking.id, {
+        payment_method: selectedPaymentMethod,
+        payment_proof_data_url: optimizedProof.dataUrl,
+        payment_proof_mime_type: optimizedProof.mimeType,
+        payment_proof_bytes: optimizedProof.bytes,
+        payment_proof_width: optimizedProof.width,
+        payment_proof_height: optimizedProof.height,
+      });
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      toast.success("Payment submitted. Waiting for venue confirmation.");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not submit payment proof."));
+    },
+  });
+
+  const cancelPendingPayment = useMutation({
+    mutationFn: async () => {
+      if (!activePendingBooking) throw new Error("No active booking.");
+      await courtlyApi.bookings.cancelPending({
+        booking_id: activePendingBooking.id,
+        booking_group_id: activePendingBooking.booking_group_id ?? activePendingBooking.id,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      setOptimizedProof(null);
+      setSelectedPaymentMethod(null);
+      toast.success("Pending booking cancelled. Slots are now available again.");
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
+    },
+  });
+
+  const processProofFile = async (file: File) => {
+    const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
+    if (!allowed.includes(file.type)) {
+      toast.error("Please use a JPG, PNG, or WebP photo.");
+      return;
+    }
+    setProofOptimizing(true);
+    setOptimizedProof(null);
+    try {
+      const optimized = await optimizePaymentProofImage(file);
+      setOptimizedProof(optimized);
+      toast.success("Photo uploaded");
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Could not use that image. Try another photo."));
+      setOptimizedProof(null);
+    } finally {
+      setProofOptimizing(false);
+    }
+  };
 
   const { data: courts = [], isLoading } = useQuery({
     queryKey: queryKeys.courts.list({
@@ -310,6 +479,7 @@ export default function CourtsPage() {
   const activeFilterCount = appliedChips.length;
 
   return (
+    <>
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 md:px-10">
       <PageHeader
         title="Book a Court"
@@ -675,5 +845,31 @@ export default function CourtsPage() {
         </div>
       )}
     </div>
+    {activePendingBooking ? (
+      <PaymentLockOverlay
+        description="Send the amount to the account below, then add a clear photo of your receipt or transfer screen."
+        remainingSeconds={overlayRemainingSeconds}
+        totalDue={overlayTotalDue}
+        paymentMethods={paymentMethodsForOverlay}
+        selectedPaymentMethod={selectedPaymentMethod}
+        onPaymentMethodChange={(value) => setSelectedPaymentMethod(value)}
+        onPickProofFile={processProofFile}
+        proofPreviewUrl={optimizedProof?.dataUrl ?? null}
+        proofOptimizing={proofOptimizing}
+        onClearProof={() => setOptimizedProof(null)}
+        onSubmit={() => submitPaymentProof.mutate()}
+        submitDisabled={
+          submitPaymentProof.isPending ||
+          proofOptimizing ||
+          !selectedPaymentMethod ||
+          !optimizedProof
+        }
+        submitPending={submitPaymentProof.isPending}
+        onCancel={() => cancelPendingPayment.mutate()}
+        cancelDisabled={submitPaymentProof.isPending}
+        cancelPending={cancelPendingPayment.isPending}
+      />
+    ) : null}
+    </>
   );
 }

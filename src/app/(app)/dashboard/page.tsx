@@ -157,14 +157,16 @@ export default function DashboardPage() {
                 Book Now <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="font-heading font-semibold border-white bg-white text-foreground hover:bg-white/90"
-              asChild
-            >
-              <Link href="/open-play">Find Open Play</Link>
-            </Button>
+            {previewUser && (
+              <Button
+                size="lg"
+                variant="outline"
+                className="font-heading font-semibold border-white bg-white text-foreground hover:bg-white/90"
+                asChild
+              >
+                <Link href="/open-play">Find Open Play</Link>
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -196,19 +198,28 @@ export default function DashboardPage() {
 
         <section>
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="font-heading text-2xl font-bold text-foreground">
-              Bookings today
-            </h2>
-            <Link
-              href="/my-bookings"
-              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
-              My bookings <ArrowRight className="h-3 w-3" />
-            </Link>
+            <div>
+              <h2 className="font-heading text-2xl font-bold text-foreground">
+                Bookings today
+              </h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {format(new Date(`${todayIso}T12:00:00`), "EEEE, MMM d, yyyy")}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-0.5">
+              <Link
+                href="/my-bookings"
+                className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                My bookings <ArrowRight className="h-3 w-3" />
+              </Link>
+              {!loadingTodayBookings && (overview?.future_bookings_count ?? 0) > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {overview!.future_bookings_count} upcoming
+                </span>
+              )}
+            </div>
           </div>
-          <p className="mb-4 text-sm text-muted-foreground">
-            {format(new Date(`${todayIso}T12:00:00`), "EEEE, MMM d, yyyy")}
-          </p>
           {loadingTodayBookings ? (
             <div className="space-y-3">
               <Skeleton className="h-24 rounded-xl" />
@@ -367,7 +378,7 @@ export default function DashboardPage() {
           </section>
         ) : null}
 
-        {sessions.length > 0 ? (
+        {previewUser && sessions.length > 0 ? (
           <section>
             <div className="mb-5 flex items-center justify-between">
               <h2 className="font-heading text-2xl font-bold text-foreground">

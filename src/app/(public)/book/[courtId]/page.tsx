@@ -539,7 +539,9 @@ export default function PublicBookCourtPage() {
     );
   }
 
-  const timeSlots = bookableHourTokensFromRanges(court.hourly_rate_windows ?? []);
+  const timeSlots = bookableHourTokensFromRanges(court.hourly_rate_windows ?? []).filter(
+    (time) => !isBookableHourStartInPast(time, selectedDate),
+  );
 
   const hasMapPin =
     court.map_latitude != null &&
@@ -611,6 +613,11 @@ export default function PublicBookCourtPage() {
               {formatPhp(cartGrandTotal)}
             </span>
           </div>
+          {cartHasConflicts ? (
+            <p className="border-t border-amber-500/30 bg-amber-500/8 px-6 py-2 text-xs text-amber-900 dark:text-amber-200">
+              Some lines are no longer available. Close this dialog and update your selections.
+            </p>
+          ) : null}
           <div className="border-t border-border/60 px-6 py-4">
             <label className="flex cursor-pointer items-start gap-3">
               <input

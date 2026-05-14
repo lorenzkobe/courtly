@@ -34,6 +34,7 @@ import {
 } from "@/lib/booking-range";
 import { segmentStatusForDisplay } from "@/lib/bookings/booking-time-display";
 import { useAuth } from "@/lib/auth/auth-context";
+import { isFeaturePreviewUser } from "@/lib/auth/feature-preview";
 import { useSelectedSport } from "@/lib/stores/selected-sport";
 import type { Booking, MyBookingsOverviewResponse } from "@/lib/types/courtly";
 import { formatBookingStatusLabel, formatStatusLabel } from "@/lib/utils";
@@ -203,6 +204,7 @@ export default function MyBookingsPage() {
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "court">("recent");
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const { user } = useAuth();
+  const isPreviewUser = isFeaturePreviewUser(user?.email);
   const selectedSport = useSelectedSport((s) => s.sport);
 
   useEffect(() => {
@@ -302,9 +304,11 @@ export default function MyBookingsPage() {
           <TabsTrigger value="bookings" className="font-heading">
             Court Bookings ({bookings.length})
           </TabsTrigger>
-          <TabsTrigger value="tournaments" className="font-heading">
-            Tournaments ({registrations.length})
-          </TabsTrigger>
+          {isPreviewUser && (
+            <TabsTrigger value="tournaments" className="font-heading">
+              Tournaments ({registrations.length})
+            </TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
 
@@ -414,11 +418,22 @@ export default function MyBookingsPage() {
                           </p>
                         ) : null}
                       </div>
-                      <Button size="sm" variant="outline" className="shrink-0" asChild>
-                        <Link href={`/my-bookings/${group.detailBookingId}`}>
-                          Details
-                        </Link>
-                      </Button>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {group.items.some((item) => item.status === "pending_payment") ? (
+                          <Button size="sm" className="shrink-0 bg-amber-600 text-white hover:bg-amber-700" asChild>
+                            <Link
+                              href={`/courts/${group.items.find((item) => item.status === "pending_payment")!.court_id}/book`}
+                            >
+                              Pay now
+                            </Link>
+                          </Button>
+                        ) : null}
+                        <Button size="sm" variant="outline" className="shrink-0" asChild>
+                          <Link href={`/my-bookings/${group.detailBookingId}`}>
+                            Details
+                          </Link>
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-0 border-t border-border/60">

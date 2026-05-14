@@ -973,6 +973,25 @@ export async function listBookingsByPlayerOnDate(
   return rows.filter((booking) => booking.sport === sport);
 }
 
+export async function countFutureBookingsByPlayer(
+  playerEmail: string,
+  afterDate: string,
+  sport?: CourtSport | null,
+): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("bookings")
+    .select("id, courts(id,venues(sport))", { count: "exact", head: false })
+    .eq("player_email", playerEmail)
+    .gt("date", afterDate)
+    .not("status", "in", '("cancelled","completed")');
+  const { data, error, count } = await query;
+  if (error) throw error;
+  if (!sport) return count ?? 0;
+  const rows = (data ?? []) as unknown as Array<{ courts: { venues: { sport: string } | null } | null }>;
+  return rows.filter((r) => r.courts?.venues?.sport === sport).length;
+}
+
 export async function getBookingById(id: string): Promise<Booking | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -1212,9 +1231,8 @@ export async function listPendingConfirmationBookingsForAutoDecline(params: {
   return (data ?? []) as PendingConfirmationDeclineSeedRow[];
 }
 
-export async function markBookingsAutoDeclinedPendingConfirmationByIds(
+export async function markBookingsPendingConfirmationAutoConfirmedByIds(
   bookingIds: string[],
-  cancelReason: string,
 ): Promise<Array<{ id: string }>> {
   if (bookingIds.length === 0) return [];
   const supabase = createSupabaseAdminClient();
@@ -1222,8 +1240,7 @@ export async function markBookingsAutoDeclinedPendingConfirmationByIds(
   const { data, error } = await supabase
     .from("bookings")
     .update({
-      status: "cancelled",
-      cancel_reason: cancelReason,
+      status: "confirmed",
       status_updated_by_user_id: null,
       status_updated_by_name: "System",
       status_updated_at: nowIso,

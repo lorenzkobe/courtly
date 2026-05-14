@@ -265,6 +265,7 @@ export default function BookCourtPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState("");
   const [cartCheckoutReviewOpen, setCartCheckoutReviewOpen] = useState(false);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
@@ -945,7 +946,9 @@ export default function BookCourtPage() {
   }
 
   const timeSlots = court
-    ? bookableHourTokensFromRanges(court.hourly_rate_windows ?? [])
+    ? bookableHourTokensFromRanges(court.hourly_rate_windows ?? []).filter(
+        (time) => !isBookableHourStartInPast(time, selectedDate),
+      )
     : [];
 
   if (!court) {
@@ -988,7 +991,7 @@ export default function BookCourtPage() {
       />
       <Dialog
         open={cartCheckoutReviewOpen}
-        onOpenChange={setCartCheckoutReviewOpen}
+        onOpenChange={(open) => { setCartCheckoutReviewOpen(open); if (!open) setBookingConfirmed(false); }}
       >
         <DialogContent
           className="flex max-h-[min(90dvh,36rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
@@ -1023,11 +1026,6 @@ export default function BookCourtPage() {
                             <p className="text-sm text-foreground/75">
                               {cartLineLabel(line.item.slots)}
                             </p>
-                            {line.item.notes?.trim() ? (
-                              <p className="text-xs text-muted-foreground">
-                                Note: {line.item.notes.trim()}
-                              </p>
-                            ) : null}
                           </div>
                           <div className="shrink-0 text-right">
                             <p className="font-heading text-sm font-bold tabular-nums text-primary">
@@ -1060,6 +1058,21 @@ export default function BookCourtPage() {
               selections.
             </p>
           ) : null}
+          <div className="border-t border-border/60 px-6 py-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={bookingConfirmed}
+                onChange={(e) => setBookingConfirmed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+              />
+              <span className="text-xs leading-relaxed text-muted-foreground">
+                I confirm that my booking details are correct. I understand that once
+                submitted, any mistakes are my responsibility and the venue is not
+                obligated to accommodate changes or issue refunds.
+              </span>
+            </label>
+          </div>
           <DialogFooter className="gap-2 border-t border-border/60 px-6 py-4 sm:gap-0">
             <Button
               type="button"
@@ -1076,7 +1089,8 @@ export default function BookCourtPage() {
               disabled={
                 createBookings.isPending ||
                 cartHasConflicts ||
-                cartLines.length === 0
+                cartLines.length === 0 ||
+                !bookingConfirmed
               }
             >
               {createBookings.isPending ? "Booking…" : "Confirm all bookings"}
