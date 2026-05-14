@@ -240,7 +240,7 @@ export default function AppLayout({
             </span>
           </Link>
           <div className="flex items-center gap-1">
-            {isDesktop === false ? <NotificationBell /> : null}
+            {isDesktop === false ? <NotificationBell className="text-secondary-foreground" /> : null}
             <Button
               variant="ghost"
               size="icon"

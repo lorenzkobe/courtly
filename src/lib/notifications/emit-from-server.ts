@@ -385,6 +385,15 @@ async function emitBookingLifecycleNotificationsInner(params: {
     courtName: params.prev.court_name ?? "",
     venueName: params.prev.establishment_name ?? "",
   };
+  if (next.status === "confirmed" && prev.status !== "confirmed" && playerEmail) {
+    void sendGuestBookingStatusUpdate({
+      ...emailBase,
+      status: "confirmed",
+      date: params.prev.date ?? undefined,
+      startTime: params.prev.start_time ?? undefined,
+      endTime: params.prev.end_time ?? undefined,
+    });
+  }
   if (next.status === "refund" && prev.status !== "refund" && playerEmail) {
     void sendBookingRefundInitiated(emailBase);
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import {
-  getBookingById,
+  getBookingByIdAdmin,
   getCourtById,
   listBookingsByGroupIdAdmin,
   listVenueAdminAssignmentsByAdminUser,
@@ -26,7 +26,7 @@ export async function PATCH(req: Request) {
     );
   }
 
-  const booking = await getBookingById(bookingId);
+  const booking = await getBookingByIdAdmin(bookingId);
   if (!booking) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }

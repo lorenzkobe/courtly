@@ -15,7 +15,6 @@ import {
   updateRow,
 } from "@/lib/data/courtly-db";
 import { emitBookingLifecycleNotifications } from "@/lib/notifications/emit-from-server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Booking } from "@/lib/types/courtly";
 
 function hydrateBooking(booking: Booking): Booking {
@@ -320,20 +319,5 @@ export async function PATCH(req: Request, ctx: Ctx) {
     nextRow: updated as Record<string, unknown>,
     bookingId: id,
   });
-  if (patch.status === "confirmed" && booking.player_email?.trim()) {
-    const admin = createSupabaseAdminClient();
-    await admin
-      .from("outbound_emails")
-      .insert({
-        to_email: booking.player_email.trim(),
-        subject: "Your booking is confirmed",
-        body: `Hi ${booking.player_name ?? "there"}, your booking #${booking.booking_number ?? id} has been confirmed.`,
-        metadata: {
-          booking_id: id,
-          booking_number: booking.booking_number ?? null,
-        },
-        status: "queued",
-      } as never);
-  }
   return NextResponse.json(hydrateBooking(updated as Booking));
 }

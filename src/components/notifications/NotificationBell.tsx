@@ -98,7 +98,7 @@ function NotificationRow({
   );
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ className }: { className?: string }) {
   const PAGE_LIMIT = 15;
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -186,7 +186,7 @@ export default function NotificationBell() {
           variant="ghost"
           size="icon"
           aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
-          className="relative"
+          className={cn("relative", className)}
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
