@@ -4,7 +4,6 @@ import {
   BookOpen,
   Calendar,
   CheckCircle,
-  Layers,
   Shield,
   Trophy,
   Users,
@@ -15,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { homePathForRole } from "@/lib/auth/management";
 import { Card, CardContent } from "@/components/ui/card";
+import Image from "next/image";
 
 const features = [
   {
@@ -89,9 +89,12 @@ export default async function HomePage() {
             href="/"
             className="flex items-center gap-2 transition-opacity hover:opacity-90"
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <Layers className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="font-heading text-xl font-bold tracking-tight text-foreground">
                 Courtly
@@ -146,9 +149,9 @@ export default async function HomePage() {
             <span className="text-primary">Play your sport.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-xl text-muted-foreground">
-            Courtly is the all-in-one platform for booking sports courts, joining
-            tournaments, and finding open play — built for players and facility
-            managers alike.
+            Courtly is the all-in-one platform for booking sports courts,
+            joining tournaments, and finding open play — built for players and
+            facility managers alike.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Button
@@ -170,13 +173,15 @@ export default async function HomePage() {
             </Button>
           </div>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
-            {["No account required", "Venue-confirmed bookings", "Pay at booking"].map(
-              (t) => (
-                <div key={t} className="flex items-center gap-1.5">
-                  <CheckCircle className="h-4 w-4 text-primary" /> {t}
-                </div>
-              ),
-            )}
+            {[
+              "No account required",
+              "Venue-confirmed bookings",
+              "Pay at booking",
+            ].map((t) => (
+              <div key={t} className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-primary" /> {t}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -218,31 +223,34 @@ export default async function HomePage() {
             {features.map((feature) => {
               const FeatureIcon = feature.icon;
               return (
-              <Card
-                key={feature.title}
-                className="group border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
-              >
-                <CardContent className="p-7">
-                  <div className="mb-5 flex items-start justify-between">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-2xl ${feature.color}`}
-                    >
-                      <FeatureIcon className="h-6 w-6" />
+                <Card
+                  key={feature.title}
+                  className="group border-border/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+                >
+                  <CardContent className="p-7">
+                    <div className="mb-5 flex items-start justify-between">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-2xl ${feature.color}`}
+                      >
+                        <FeatureIcon className="h-6 w-6" />
+                      </div>
+                      {feature.comingSoon && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs text-muted-foreground"
+                        >
+                          Coming soon
+                        </Badge>
+                      )}
                     </div>
-                    {feature.comingSoon && (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">
-                        Coming soon
-                      </Badge>
-                    )}
-                  </div>
-                  <h3 className="mb-2 font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
-                    {feature.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {feature.description}
-                  </p>
-                </CardContent>
-              </Card>
+                    <h3 className="mb-2 font-heading text-lg font-bold text-foreground transition-colors group-hover:text-primary">
+                      {feature.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {feature.description}
+                    </p>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
@@ -296,7 +304,8 @@ export default async function HomePage() {
               Designed for everyone on the court
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-              Whether you&apos;re booking a slot or running a facility, Courtly has you covered.
+              Whether you&apos;re booking a slot or running a facility, Courtly
+              has you covered.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -305,7 +314,9 @@ export default async function HomePage() {
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                   <Calendar className="h-6 w-6" />
                 </div>
-                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">For Players</h3>
+                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">
+                  For Players
+                </h3>
                 <p className="mb-6 text-sm text-muted-foreground">
                   Find a court, pick your time, and play — no sign-up required.
                 </p>
@@ -316,7 +327,10 @@ export default async function HomePage() {
                     "View and manage your reservations",
                     "Favorite your go-to venues",
                   ].map((item) => (
-                    <li key={item} className="flex items-center gap-2.5 text-sm text-foreground">
+                    <li
+                      key={item}
+                      className="flex items-center gap-2.5 text-sm text-foreground"
+                    >
                       <CheckCircle className="h-4 w-4 shrink-0 text-primary" />
                       {item}
                     </li>
@@ -329,9 +343,12 @@ export default async function HomePage() {
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-chart-4/15 text-chart-4">
                   <Shield className="h-6 w-6" />
                 </div>
-                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">For Venue Managers</h3>
+                <h3 className="mb-1 font-heading text-xl font-bold text-foreground">
+                  For Venue Managers
+                </h3>
                 <p className="mb-6 text-sm text-muted-foreground">
-                  Everything you need to run your facility — courts, bookings, and revenue in one place.
+                  Everything you need to run your facility — courts, bookings,
+                  and revenue in one place.
                 </p>
                 <ul className="space-y-3">
                   {[
@@ -340,7 +357,10 @@ export default async function HomePage() {
                     "Track revenue and billing cycles",
                     "Full admin dashboard and reporting",
                   ].map((item) => (
-                    <li key={item} className="flex items-center gap-2.5 text-sm text-foreground">
+                    <li
+                      key={item}
+                      className="flex items-center gap-2.5 text-sm text-foreground"
+                    >
                       <CheckCircle className="h-4 w-4 shrink-0 text-primary" />
                       {item}
                     </li>
@@ -385,9 +405,12 @@ export default async function HomePage() {
       <footer className="border-t border-border/50 px-6 py-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
-              <Layers className="h-3 w-3 text-primary-foreground" />
-            </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
             <span className="font-heading font-bold text-foreground">
               Courtly
             </span>

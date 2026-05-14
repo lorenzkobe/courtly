@@ -12,7 +12,6 @@ import {
   Flag,
   PhilippinePeso,
   LayoutDashboard,
-  Layers,
   LogOut,
   Menu,
   Receipt,
@@ -31,6 +30,7 @@ import { cn, formatStatusLabel } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
 import { isFeaturePreviewUser } from "@/lib/auth/feature-preview";
 import type { SessionUser } from "@/lib/types/courtly";
+import Image from "next/image";
 
 const PLAYER_NAV = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -48,7 +48,7 @@ type NavEntry = (typeof PLAYER_NAV)[number] | {
 
 function venueAdminNav(): NavEntry[] {
   return [
-    { path: "/admin/venues", label: "Venues", icon: Layers },
+    { path: "/admin/venues", label: "Venues", icon: Building2 },
     { path: "/admin/bookings", label: "Court bookings", icon: Calendar },
     { path: "/admin/revenue", label: "Revenue", icon: PhilippinePeso },
     { path: "/admin/billing", label: "Billing", icon: Receipt },
@@ -184,9 +184,12 @@ export default function AppLayout({
             href={homePath}
             className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6 transition-opacity hover:opacity-90"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-              <Layers className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
             <div>
               <h1 className="font-heading text-lg font-bold tracking-tight text-secondary-foreground">
                 Courtly
@@ -239,9 +242,12 @@ export default function AppLayout({
       <div className="fixed left-0 right-0 top-0 z-50 border-b border-sidebar-border bg-secondary/95 backdrop-blur-xl lg:hidden">
         <div className="flex items-center justify-between px-4 py-3">
           <Link href={homePath} className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <Layers className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="font-heading font-bold text-secondary-foreground">
                 Courtly

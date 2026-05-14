@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { format } from "date-fns";
 import axios from "axios";
-import { ArrowLeft, CalendarIcon, Layers, Loader2 } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -210,9 +211,12 @@ function LoginContent() {
 
       <div className="mb-8 flex flex-col items-center gap-1 text-center">
         <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-            <Layers className="h-5 w-5 text-primary-foreground" />
-          </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
           <span className="font-heading text-2xl font-bold tracking-tight text-secondary-foreground">
             Courtly
           </span>

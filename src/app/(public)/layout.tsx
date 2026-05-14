@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Layers } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import GuestPaymentGate from "@/components/payments/GuestPaymentGate";
 
@@ -12,9 +12,12 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             href="/"
             className="flex items-center gap-2 transition-opacity hover:opacity-90"
           >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <Layers className="h-3.5 w-3.5 text-primary-foreground" />
-            </div>
+            <Image
+              src="/courtly-logo.svg"
+              alt="Courtly logo"
+              width={42}
+              height={42}
+            />
             <span className="font-heading text-lg font-bold tracking-tight text-foreground">
               Courtly
             </span>
