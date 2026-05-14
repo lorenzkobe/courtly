@@ -504,7 +504,7 @@ export default function SuperadminVenuesPage() {
           if (!open) setConfirmRemoveVenueId(null);
         }}
         title="Delete venue?"
-        description="This permanently removes the venue and all related assignments. This cannot be undone."
+        description="This hides the venue from all listings and unassigns all admins. Booking history is preserved. Not allowed while there are pending, confirmed, or in-progress refund bookings."
         confirmLabel="Delete venue"
         countdownSeconds={5}
         isPending={removeAccount.isPending}
@@ -954,7 +954,7 @@ export default function SuperadminVenuesPage() {
               </Select>
               {form.status === "closed" ? (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Inactive venues are hidden from players and cannot accept new bookings.
+                  Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
                 </p>
               ) : null}
             </div>

@@ -40,5 +40,6 @@ export async function GET(_req: Request, ctx: Ctx) {
     instagram_url: court?.instagram_url ?? null,
     map_latitude: court?.map_latitude ?? null,
     map_longitude: court?.map_longitude ?? null,
+    venue_status: court?.venue_status ?? null,
   });
 }

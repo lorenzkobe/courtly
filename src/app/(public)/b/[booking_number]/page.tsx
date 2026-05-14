@@ -49,6 +49,7 @@ type PublicBookingDetail = {
   instagram_url: string | null;
   map_latitude: number | null;
   map_longitude: number | null;
+  venue_status: string | null;
 };
 
 export default function PublicBookingStatusPage() {
@@ -271,6 +272,11 @@ export default function PublicBookingStatusPage() {
                 <h2 className="font-heading text-base font-semibold text-foreground">
                   Venue
                 </h2>
+                {booking.venue_status === "closed" ? (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-950 dark:text-amber-100">
+                    This venue is currently closed and may not be accepting new bookings. Your existing booking is unaffected, but we recommend contacting the venue to confirm your reservation.
+                  </div>
+                ) : null}
                 <div>
                   <p className="text-base font-semibold text-foreground">
                     {booking.establishment_name ?? booking.court_name ?? "—"}

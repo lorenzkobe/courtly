@@ -55,7 +55,7 @@ export type CourtReviewSummary = {
   review_count: number;
 };
 
-export type VenueStatus = "active" | "closed";
+export type VenueStatus = "active" | "closed" | "deleted";
 export type VenueRequestStatus =
   | "pending"
   | "approved"
@@ -192,6 +192,8 @@ export type Court = {
   amenities: string[];
   /** Earliest range start / latest range end (filters); gaps between ranges may exist. */
   available_hours: { open: string; close: string };
+  /** Derived on read from linked venue. */
+  venue_status?: VenueStatus;
   /** Populated on read APIs from reviews table — not stored on court row. */
   review_summary?: CourtReviewSummary;
 };

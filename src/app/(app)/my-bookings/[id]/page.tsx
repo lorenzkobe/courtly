@@ -1102,6 +1102,11 @@ export default function BookingDetailPage() {
               <h2 className="font-heading text-lg font-semibold text-foreground">
                 Venue
               </h2>
+              {court.venue_status === "closed" ? (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-950 dark:text-amber-100">
+                  This venue is currently closed and may not be accepting new bookings. Your existing booking is unaffected, but we recommend contacting the venue to confirm your reservation.
+                </div>
+              ) : null}
               <div>
                 <p className="text-base font-semibold text-foreground">
                   {court.establishment_name ?? booking.establishment_name ?? "—"}

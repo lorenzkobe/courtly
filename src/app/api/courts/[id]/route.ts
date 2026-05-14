@@ -5,7 +5,7 @@ import {
   deleteRow,
   getCourtById,
   getCourtWithReviewSummary,
-  hasActiveConfirmedBookingsForCourt,
+  hasAnyBookingsForCourt,
   listCourtsByVenue,
   listVenueAdminAssignments,
   updateRow,
@@ -76,12 +76,12 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const hasActiveBookings = await hasActiveConfirmedBookingsForCourt(court.id);
-  if (hasActiveBookings) {
+  const hasBookings = await hasAnyBookingsForCourt(court.id);
+  if (hasBookings) {
     return NextResponse.json(
       {
         error:
-          "Cannot delete this court while it has active bookings. Cancel or complete those bookings first.",
+          "Cannot delete this court while it has active bookings (pending, confirmed, or refund in progress). Mark the court inactive instead.",
       },
       { status: 409 },
     );

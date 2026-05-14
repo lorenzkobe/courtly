@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  deleteRow,
   getVenueById,
-  hasConfirmedBookingsForVenue,
+  hasAnyBookingsForVenue,
   listCourtsByVenue,
   listManagedUsersByIds,
   listVenueAdminAssignments,
@@ -148,19 +148,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
       );
     }
   }
-  if (patch.status === "closed") {
-    const hasConfirmed = await hasConfirmedBookingsForVenue(venueId);
-    if (hasConfirmed) {
-      return NextResponse.json(
-        {
-          error:
-            "Cannot set this venue inactive while it has confirmed bookings. Cancel or complete those bookings first.",
-        },
-        { status: 409 },
-      );
-    }
-  }
-
   const mapParse = parseVenueMapCoordsForPatch(patch);
   if (!mapParse.ok) {
     return NextResponse.json({ error: mapParse.error }, { status: 400 });
@@ -366,36 +353,25 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { venueId } = await ctx.params;
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   if (user.role === "admin") {
-    const assignments = await listVenueAdminAssignmentsByVenue(venueId);
     const isAssigned = assignments.some((a) => a.admin_user_id === user.id);
     if (!isAssigned) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
-  const [venue, courtsAtVenue, hasActiveBookings, assignments] = await Promise.all([
+  const [venue, hasBookings] = await Promise.all([
     getVenueById(venueId),
-    listCourtsByVenue(venueId),
-    hasConfirmedBookingsForVenue(venueId),
-    listVenueAdminAssignmentsByVenue(venueId),
+    hasAnyBookingsForVenue(venueId),
   ]);
   if (!venue) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (hasActiveBookings) {
+  if (hasBookings) {
     return NextResponse.json(
       {
         error:
-          "Cannot delete this venue while it has active bookings on its courts. Cancel or complete those bookings first.",
-      },
-      { status: 409 },
-    );
-  }
-  if (courtsAtVenue.length > 0) {
-    return NextResponse.json(
-      {
-        error:
-          "Cannot delete a venue that still has courts assigned. Reassign or remove courts first.",
+          "Cannot delete this venue while it has active bookings (pending, confirmed, or refund in progress). Mark the venue inactive instead.",
       },
       { status: 409 },
     );
@@ -405,7 +381,16 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     .map((a) => a.admin_user_id)
     .filter((id) => id !== user.id);
 
-  await deleteRow("venues", venueId);
+  await updateRow("venues", venueId, { status: "deleted" } as never);
+
+  if (assignments.length > 0) {
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase
+      .from("venue_admin_assignments")
+      .delete()
+      .eq("venue_id", venueId);
+    if (error) throw error;
+  }
 
   if (user.role === "superadmin" && adminIds.length > 0) {
     void emitVenueDeletedToVenueAdmins({

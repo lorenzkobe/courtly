@@ -557,7 +557,7 @@ export default function AdminVenueCourtsPage() {
         open={confirmDeleteVenueOpen}
         onOpenChange={(open) => setConfirmDeleteVenueOpen(open)}
         title="Delete venue?"
-        description="This permanently removes the venue and all its data. You must remove all courts first. This cannot be undone."
+        description="This hides the venue from all listings and unassigns all admins. Booking history is preserved. Not allowed while there are pending, confirmed, or in-progress refund bookings."
         confirmLabel="Delete venue"
         countdownSeconds={5}
         isPending={deleteVenue.isPending}
@@ -938,7 +938,7 @@ export default function AdminVenueCourtsPage() {
                 </SelectContent>
               </Select>
               <p className="mt-1 text-xs text-muted-foreground">
-                Inactive venues are unavailable for user bookings.
+                Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
               </p>
             </div>
             <div>

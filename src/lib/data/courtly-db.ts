@@ -79,6 +79,7 @@ function mapCourtRow(row: unknown): Court {
     accepts_maya: venue?.accepts_maya,
     maya_account_name: venue?.maya_account_name,
     maya_account_number: venue?.maya_account_number,
+    venue_status: venue?.status as "active" | "closed" | undefined,
   };
 }
 
@@ -408,7 +409,7 @@ function mapVenueRequestRow(row: unknown): VenueRequest {
 
 export async function listVenues(): Promise<Venue[]> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.from("venues").select("*");
+  const { data, error } = await supabase.from("venues").select("*").neq("status", "deleted");
   if (error) throw error;
   return (data ?? []).map((row) => {
     const v = row as Venue;
@@ -440,7 +441,8 @@ export async function listVenuesByIds(venueIds: string[]): Promise<Venue[]> {
   const { data, error } = await supabase
     .from("venues")
     .select("*")
-    .in("id", venueIds);
+    .in("id", venueIds)
+    .neq("status", "deleted");
   if (error) throw error;
   return (data ?? []).map((row) => {
     const v = row as Venue;
@@ -699,7 +701,7 @@ export async function listCourtsDirectory(
   if (params.venueIds && params.venueIds.length === 0) return [];
 
   const supabase = createSupabaseAdminClient();
-  let query = supabase.from("courts").select("*, venues!inner(*)");
+  let query = supabase.from("courts").select("*, venues!inner(*)").neq("venues.status", "deleted");
   if (params.status) {
     query = query.eq("status", params.status);
   }
@@ -1250,13 +1252,33 @@ export async function markBookingsAutoDeclinedPendingConfirmationByIds(
   return (data ?? []) as Array<{ id: string }>;
 }
 
-export async function hasActiveConfirmedBookingsForCourt(courtId: string): Promise<boolean> {
+const ACTIVE_BOOKING_STATUSES = ["pending_payment", "pending_confirmation", "confirmed", "refund"] as const;
+
+export async function hasAnyBookingsForCourt(courtId: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
   const { count, error } = await supabase
     .from("bookings")
     .select("id", { count: "exact", head: true })
     .eq("court_id", courtId)
-    .eq("status", "confirmed");
+    .in("status", ACTIVE_BOOKING_STATUSES);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+export async function hasAnyBookingsForVenue(venueId: string): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  const { data: courtRows, error: courtError } = await supabase
+    .from("courts")
+    .select("id")
+    .eq("venue_id", venueId);
+  if (courtError) throw courtError;
+  const courtIds = (courtRows ?? []).map((row) => (row as { id: string }).id);
+  if (courtIds.length === 0) return false;
+  const { count, error } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .in("court_id", courtIds)
+    .in("status", ACTIVE_BOOKING_STATUSES);
   if (error) throw error;
   return (count ?? 0) > 0;
 }
@@ -1358,24 +1380,6 @@ export async function hasConfirmedBookingConflictForVenue(
     .eq("status", "confirmed")
     .lt("start_time", endTime)
     .gt("end_time", startTime);
-  if (error) throw error;
-  return (count ?? 0) > 0;
-}
-
-export async function hasConfirmedBookingsForVenue(venueId: string): Promise<boolean> {
-  const supabase = await createSupabaseServerClient();
-  const { data: courtRows, error: courtError } = await supabase
-    .from("courts")
-    .select("id")
-    .eq("venue_id", venueId);
-  if (courtError) throw courtError;
-  const courtIds = (courtRows ?? []).map((row) => (row as { id: string }).id);
-  if (courtIds.length === 0) return false;
-  const { count, error } = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .in("court_id", courtIds)
-    .eq("status", "confirmed");
   if (error) throw error;
   return (count ?? 0) > 0;
 }
@@ -1711,6 +1715,7 @@ export async function listVenuesPage(params: PaginationParams): Promise<{
   const { data, error } = await supabase
     .from("venues")
     .select("*")
+    .neq("status", "deleted")
     .order("created_at", { ascending: false })
     .range(start, end);
   if (error) throw error;
@@ -2188,6 +2193,7 @@ export async function deleteRow(table: string, id: string) {
   const { error } = await supabase.from(table).delete().eq("id", id);
   if (error) throw error;
 }
+
 
 /** Cron: persist `started` / `closed` from time + approved join counts (admin client). */
 export async function syncOpenPlayLifecycleStatuses(nowMs: number): Promise<{
