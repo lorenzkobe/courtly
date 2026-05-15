@@ -52,7 +52,7 @@ function buildCourtRateBreakdownMap(
       byCourtRate.get(booking.court_id) ??
       new Map<number, { hours_booked: number; court_subtotal: number }>();
     for (let hour = startHour; hour < endHour; hour += 1) {
-      const hourlyRate = hourlyRateForHourStart(court, formatHourToken(hour));
+      const hourlyRate = hourlyRateForHourStart(court, formatHourToken(hour), booking.date);
       const current = rateMap.get(hourlyRate) ?? { hours_booked: 0, court_subtotal: 0 };
       current.hours_booked += 1;
       current.court_subtotal += hourlyRate;

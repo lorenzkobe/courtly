@@ -155,6 +155,7 @@ function StarRow({ rating, className }: { rating: number; className?: string }) 
 
 function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) {
   const [index, setIndex] = useState(0);
+  const [isPhotoLoading, setIsPhotoLoading] = useState(true);
   const n = urls.length;
   const safeIndex = n > 0 ? index % n : 0;
 
@@ -170,9 +171,11 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
     );
   }
 
-  const go = (dir: -1 | 1) => {
-    setIndex((i) => (i + dir + n) % n);
+  const goTo = (next: number) => {
+    setIsPhotoLoading(true);
+    setIndex(next);
   };
+  const go = (dir: -1 | 1) => goTo((safeIndex + dir + n) % n);
 
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-border/80 bg-muted shadow-sm">
@@ -180,11 +183,25 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
       <img
         src={urls[safeIndex]}
         alt={`${name} — photo ${safeIndex + 1} of ${n}`}
-        className="h-full w-full object-cover transition-opacity duration-300"
+        className={cn(
+          "h-full w-full object-cover transition-opacity duration-300",
+          isPhotoLoading ? "opacity-0" : "opacity-100",
+        )}
         referrerPolicy="no-referrer"
         loading="eager"
         decoding="async"
+        onLoad={() => setIsPhotoLoading(false)}
+        onError={() => setIsPhotoLoading(false)}
       />
+      {isPhotoLoading ? (
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-muted"
+          aria-live="polite"
+          aria-label="Loading photo"
+        >
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : null}
       {n > 1 ? (
         <>
           <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/25 to-transparent" />
@@ -220,7 +237,7 @@ function CourtGalleryCarousel({ urls, name }: { urls: string[]; name: string }) 
                 role="tab"
                 aria-selected={i === safeIndex}
                 aria-label={`Show photo ${i + 1}`}
-                onClick={() => setIndex(i)}
+                onClick={() => goTo(i)}
                 className={cn(
                   "h-2 rounded-full transition-all",
                   i === safeIndex
@@ -274,6 +291,7 @@ export default function BookCourtPage() {
     data: bookingSurface,
     isPending: isBookingSurfacePending,
     isFetching: isFetchingBookingSurface,
+    isPlaceholderData: isBookingSurfacePlaceholder,
     isError: isBookingSurfaceError,
     error: bookingSurfaceError,
   } = useQuery({
@@ -383,7 +401,7 @@ export default function BookCourtPage() {
 
   const isSlotMatrixFetching = isFetchingBookingSurface;
 
-  const isSlotMatrixPending = isBookingSurfacePending;
+  const isSlotMatrixPending = isBookingSurfacePending || isBookingSurfacePlaceholder;
 
   useEffect(() => {
     if (isSlotMatrixFetching) setDatePickerOpen(false);
@@ -479,7 +497,9 @@ export default function BookCourtPage() {
         );
       });
       const unavailableSlots = item.slots.filter((slot) => occupiedForLine.has(slot));
-      const subtotal = lineCourt ? segmentsTotalCost(lineCourt, lineSegments) : 0;
+      const subtotal = lineCourt
+        ? segmentsTotalCost(lineCourt, lineSegments, item.date)
+        : 0;
       const flatFee = surface?.flat_booking_fee;
       const numHours = lineSegments.reduce(
         (sum, seg) => sum + hourFromTime(seg.end_time) - hourFromTime(seg.start_time),
@@ -702,6 +722,14 @@ export default function BookCourtPage() {
         (time) => !isBookableHourStartInPast(time, selectedDate),
       )
     : [];
+  const dayActiveHourSet = new Set(
+    court
+      ? bookableHourTokensFromRanges(
+          court.hourly_rate_windows ?? [],
+          selectedDate.getDay(),
+        )
+      : [],
+  );
 
   if (!court) {
     return (
@@ -1335,6 +1363,7 @@ export default function BookCourtPage() {
                         const isClosureBlocked = occupation.closureBlocked.has(time);
                         const isUnavailable = isBookedOrPending || isClosureBlocked;
                         const isPastHour = isBookableHourStartInPast(time, selectedDate);
+                        const isClosedForDay = !dayActiveHourSet.has(time);
                         const line =
                           cartItems.find(
                             (item) =>
@@ -1346,32 +1375,45 @@ export default function BookCourtPage() {
                             <button
                               type="button"
                               onClick={() => toggleMatrixSlotForCourt(matrixCourt, time)}
-                              disabled={isUnavailable || isPastHour}
+                              disabled={isUnavailable || isPastHour || isClosedForDay}
                               className={cn(
                                 "h-10 w-full rounded-md border text-[11px] font-medium transition-colors",
                                 isSelected &&
                                   !isUnavailable &&
                                   !isPastHour &&
+                                  !isClosedForDay &&
                                   "border-primary bg-primary text-primary-foreground",
                                 !isSelected &&
                                   !isUnavailable &&
                                   !isPastHour &&
+                                  !isClosedForDay &&
                                   "border-border bg-background hover:border-primary/40 hover:bg-primary/5",
-                                isUnavailable &&
+                                isClosedForDay &&
+                                  !isUnavailable &&
+                                  !isPastHour &&
+                                  "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
+                                isBookedOrPending &&
+                                  "cursor-not-allowed border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200",
+                                isClosureBlocked &&
+                                  !isBookedOrPending &&
                                   "cursor-not-allowed border-border bg-muted text-muted-foreground/70",
                                 isPastHour &&
+                                  !isUnavailable &&
+                                  !isClosedForDay &&
                                   "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
                               )}
                             >
                               {isUnavailable
-                                ? isClosureBlocked
-                                  ? "Blocked"
-                                  : "Booked"
-                                : isPastHour
-                                  ? "Past"
-                                  : isSelected
-                                    ? "Selected"
-                                    : "Open"}
+                                ? isBookedOrPending
+                                  ? "Booked"
+                                  : "Unavailable"
+                                : isClosedForDay
+                                  ? "Closed"
+                                  : isPastHour
+                                    ? "Past"
+                                    : isSelected
+                                      ? "Selected"
+                                      : "Open"}
                             </button>
                           </td>
                         );
@@ -1380,6 +1422,28 @@ export default function BookCourtPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-border bg-background" />
+                Open
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-primary bg-primary" />
+                Selected
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40" />
+                Booked
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-border bg-muted" />
+                Unavailable
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-border bg-muted/60" />
+                Past
+              </span>
             </div>
             <p className="text-xs text-muted-foreground">
               Tap cells to build your booking across courts. Selected cells are added

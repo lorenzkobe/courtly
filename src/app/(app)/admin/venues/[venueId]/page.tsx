@@ -42,16 +42,24 @@ import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import {
   formatBookableHourSlotRange,
+  formatHourToken,
   formatTimeShort,
+  hourFromTime,
   isBookableHourStartInPast,
   occupiedHourStarts,
   occupiedHourStartsFromClosures,
 } from "@/lib/booking-range";
 import { formatPhpCompact } from "@/lib/format-currency";
-import type { Court, Venue } from "@/lib/types/courtly";
+import type { Court, CourtClosure, VenueClosure, Venue } from "@/lib/types/courtly";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import {
+  ALL_DAYS_OF_WEEK,
   bookableHourTokensFromRanges,
+  dayOfWeekInitialLabel,
+  formatDaysOfWeekLabel,
+  formRowFromRateWindow,
+  makeEmptyPriceRangeFormRow,
+  type PriceRangeFormRow,
   validatePriceRangeFormRows,
 } from "@/lib/venue-price-ranges";
 import { validateSocialUrl } from "@/lib/social-url";
@@ -71,6 +79,17 @@ const defaultClosureForm = {
   note: "",
 };
 
+const CLOSURE_REASON_LABELS: Record<string, string> = {
+  owner_use: "Owner use",
+  maintenance: "Maintenance",
+  special_event: "Special event",
+  other: "Other",
+};
+
+function formatClosureReason(reason: string): string {
+  return CLOSURE_REASON_LABELS[reason] ?? reason;
+}
+
 const defaultVenueForm = {
   name: "",
   location: "",
@@ -82,7 +101,7 @@ const defaultVenueForm = {
   amenities: [] as string[],
   customAmenityDraft: "",
   photo_urls: [] as string[],
-  hourly_rate_windows: [] as Array<{ start: string; end: string; rate: string }>,
+  hourly_rate_windows: [] as PriceRangeFormRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
   city: "",
@@ -286,6 +305,138 @@ export default function AdminVenueCourtsPage() {
     },
   });
 
+  const venueCourtIdsKey = useMemo(
+    () =>
+      venueCourts
+        .map((c) => c.id)
+        .sort()
+        .join(","),
+    [venueCourts],
+  );
+  const upcomingUnavailabilityQuery = useQuery({
+    queryKey: ["venue-unavailability", venueId, venueCourtIdsKey],
+    enabled: Boolean(venueId) && venueCourts.length > 0,
+    queryFn: async () => {
+      const [venueClosures, ...perCourt] = await Promise.all([
+        courtlyApi.venueClosures.list(venueId).then((r) => r.data),
+        ...venueCourts.map((court) =>
+          courtlyApi.courtClosures
+            .list(court.id)
+            .then((r) => ({ court, rows: r.data })),
+        ),
+      ]);
+      return { venueClosures, perCourt };
+    },
+  });
+  type UnavailabilityRow = {
+    key: string;
+    scope: "venue" | "court";
+    date: string;
+    start_time: string;
+    end_time: string;
+    reason: string;
+    note?: string | null;
+    venueClosureId?: string;
+    courtEntries: Array<{ courtId: string; closureId: string; courtName: string }>;
+  };
+  const upcomingUnavailabilityRows = useMemo<UnavailabilityRow[]>(() => {
+    const data = upcomingUnavailabilityQuery.data;
+    if (!data) return [];
+    const today = format(new Date(), "yyyy-MM-dd");
+    const rows: UnavailabilityRow[] = [];
+    for (const closure of data.venueClosures) {
+      if (closure.date < today) continue;
+      rows.push({
+        key: `v-${closure.id}`,
+        scope: "venue",
+        date: closure.date,
+        start_time: closure.start_time,
+        end_time: closure.end_time,
+        reason: closure.reason,
+        note: closure.note ?? null,
+        venueClosureId: closure.id,
+        courtEntries: [],
+      });
+    }
+    const grouped = new Map<string, UnavailabilityRow>();
+    for (const { court, rows: closures } of data.perCourt) {
+      for (const closure of closures) {
+        if (closure.date < today) continue;
+        const groupKey = `c-${closure.date}-${closure.start_time}-${closure.end_time}-${closure.reason}-${closure.note ?? ""}`;
+        const existing = grouped.get(groupKey);
+        if (existing) {
+          existing.courtEntries.push({
+            courtId: court.id,
+            closureId: closure.id,
+            courtName: court.name,
+          });
+        } else {
+          const row: UnavailabilityRow = {
+            key: groupKey,
+            scope: "court",
+            date: closure.date,
+            start_time: closure.start_time,
+            end_time: closure.end_time,
+            reason: closure.reason,
+            note: closure.note ?? null,
+            courtEntries: [
+              { courtId: court.id, closureId: closure.id, courtName: court.name },
+            ],
+          };
+          grouped.set(groupKey, row);
+          rows.push(row);
+        }
+      }
+    }
+    rows.sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      if (d !== 0) return d;
+      return a.start_time.localeCompare(b.start_time);
+    });
+    for (const row of rows) {
+      row.courtEntries.sort((a, b) => a.courtName.localeCompare(b.courtName));
+    }
+    return rows;
+  }, [upcomingUnavailabilityQuery.data]);
+
+  const existingClosureDates = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of upcomingUnavailabilityRows) set.add(row.date);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [upcomingUnavailabilityRows]);
+
+  const removeUnavailability = useMutation({
+    mutationFn: async (row: UnavailabilityRow) => {
+      if (row.scope === "venue" && row.venueClosureId) {
+        await courtlyApi.venueClosures.remove(venueId, row.venueClosureId);
+        return;
+      }
+      await Promise.all(
+        row.courtEntries.map((entry) =>
+          courtlyApi.courtClosures.remove(entry.courtId, entry.closureId),
+        ),
+      );
+    },
+    onSuccess: () => {
+      toast.success("Unavailability removed");
+      void queryClient.invalidateQueries({
+        queryKey: ["venue-unavailability", venueId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["court-closures"] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.venueWorkspace(venueId),
+      });
+      venueCourts.forEach((court) => {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(court.id, closureForm.date),
+        });
+      });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Could not remove unavailability"));
+    },
+  });
+
   const closureLeaderCourtId = venueCourts[0]?.id ?? "";
   const closureSurfaceQuery = useQuery({
     queryKey: queryKeys.bookingSurface.courtDay(closureLeaderCourtId, closureForm.date),
@@ -307,6 +458,7 @@ export default function AdminVenueCourtsPage() {
         venueClosed: Set<string>;
         existingCourtClosed: Set<string>;
         existingCourtClosureIds: string[];
+        existingClosureByHour: Map<string, { reason: string; note?: string | null }>;
       }
     >();
     const venueClosed = closureSurface
@@ -319,11 +471,27 @@ export default function AdminVenueCourtsPage() {
         ? occupiedHourStartsFromClosures(slot.court_closures ?? [], closureForm.date)
         : new Set<string>();
       const existingCourtClosureIds = (slot?.court_closures ?? []).map((closure) => closure.id);
+      const existingClosureByHour = new Map<
+        string,
+        { reason: string; note?: string | null }
+      >();
+      for (const closure of slot?.court_closures ?? []) {
+        if (closure.date !== closureForm.date) continue;
+        const sh = hourFromTime(closure.start_time);
+        const eh = hourFromTime(closure.end_time);
+        for (let h = sh; h < eh; h++) {
+          existingClosureByHour.set(formatHourToken(h), {
+            reason: closure.reason,
+            note: closure.note,
+          });
+        }
+      }
       out.set(court.id, {
         booked,
         venueClosed,
         existingCourtClosed,
         existingCourtClosureIds,
+        existingClosureByHour,
       });
     });
     return out;
@@ -343,7 +511,10 @@ export default function AdminVenueCourtsPage() {
       if (touchedCourtIds.length === 0) {
         throw new Error("No courts available for update.");
       }
+      const updatedClosuresByCourtId = new Map<string, CourtClosure[]>();
+      const removedClosureIdsByCourtId = new Map<string, Set<string>>();
       for (const court of touchedCourtIds) {
+        updatedClosuresByCourtId.set(court.id, []);
         const summary = closureTokenSummaryByCourtId.get(court.id);
         const selected = new Set(
           closureTokensByCourtId[court.id] ??
@@ -360,47 +531,107 @@ export default function AdminVenueCourtsPage() {
               !isBookableHourStartInPast(token, new Date(`${date}T12:00:00`)),
           )
           .sort((a, b) => a.localeCompare(b));
+        const removedIds = new Set<string>(
+          summary?.existingCourtClosureIds ?? [],
+        );
+        removedClosureIdsByCourtId.set(court.id, removedIds);
         for (const closureId of summary?.existingCourtClosureIds ?? []) {
           await courtlyApi.courtClosures.remove(court.id, closureId);
         }
         if (desired.length === 0) continue;
-        const contiguousRanges: Array<{ start_time: string; end_time: string }> = [];
-        let rangeStart = desired[0]!;
-        let previous = desired[0]!;
-        for (let i = 1; i <= desired.length; i++) {
-          const current = desired[i];
-          const prevHour = Number.parseInt(previous.split(":")[0] ?? "0", 10);
-          const expectedNext = `${String(prevHour + 1).padStart(2, "0")}:00`;
-          if (!current || current !== expectedNext) {
-            contiguousRanges.push({
-              start_time: rangeStart,
-              end_time: `${String(prevHour + 1).padStart(2, "0")}:00`,
+        const existingByHour = summary?.existingClosureByHour ?? new Map();
+        const bucketsByKey = new Map<
+          string,
+          { reason: string; note: string | null; hours: string[] }
+        >();
+        for (const token of desired) {
+          const prior = existingByHour.get(token);
+          const hourReason = prior ? prior.reason : reason;
+          const hourNote = prior ? (prior.note ?? null) : note ? note : null;
+          const bucketKey = `${hourReason} ${hourNote ?? ""}`;
+          const bucket = bucketsByKey.get(bucketKey);
+          if (bucket) {
+            bucket.hours.push(token);
+          } else {
+            bucketsByKey.set(bucketKey, {
+              reason: hourReason,
+              note: hourNote,
+              hours: [token],
             });
-            rangeStart = current ?? rangeStart;
           }
-          previous = current ?? previous;
         }
-        for (const range of contiguousRanges) {
-          await courtlyApi.courtClosures.create(court.id, {
-            date,
-            reason,
-            note: note || undefined,
-            start_time: range.start_time,
-            end_time: range.end_time,
-          });
+        for (const bucket of bucketsByKey.values()) {
+          const sortedHours = [...bucket.hours].sort((a, b) =>
+            a.localeCompare(b),
+          );
+          const contiguousRanges: Array<{
+            start_time: string;
+            end_time: string;
+          }> = [];
+          let rangeStart = sortedHours[0]!;
+          let previous = sortedHours[0]!;
+          for (let i = 1; i <= sortedHours.length; i++) {
+            const current = sortedHours[i];
+            const prevHour = Number.parseInt(
+              previous.split(":")[0] ?? "0",
+              10,
+            );
+            const expectedNext = `${String(prevHour + 1).padStart(2, "0")}:00`;
+            if (!current || current !== expectedNext) {
+              contiguousRanges.push({
+                start_time: rangeStart,
+                end_time: `${String(prevHour + 1).padStart(2, "0")}:00`,
+              });
+              rangeStart = current ?? rangeStart;
+            }
+            previous = current ?? previous;
+          }
+          for (const range of contiguousRanges) {
+            const { data: createdClosure } = await courtlyApi.courtClosures.create(
+              court.id,
+              {
+                date,
+                reason: bucket.reason,
+                note: bucket.note || undefined,
+                start_time: range.start_time,
+                end_time: range.end_time,
+              },
+            );
+            updatedClosuresByCourtId.get(court.id)!.push(createdClosure);
+          }
         }
       }
+      return { updatedClosuresByCourtId, removedClosureIdsByCourtId };
     },
-    onSuccess: () => {
+    onSuccess: ({ updatedClosuresByCourtId, removedClosureIdsByCourtId }) => {
       toast.success("Court unavailability updated");
+      const submittedDate = closureForm.date;
       setClosureOpen(false);
       setClosureTokensByCourtId({});
       setClosureForm(defaultClosureForm);
+      queryClient.setQueryData<{
+        venueClosures: VenueClosure[];
+        perCourt: Array<{ court: Court; rows: CourtClosure[] }>;
+      }>(["venue-unavailability", venueId, venueCourtIdsKey], (prev) => {
+        if (!prev) return prev;
+        return {
+          venueClosures: prev.venueClosures,
+          perCourt: prev.perCourt.map((entry) => {
+            const created = updatedClosuresByCourtId.get(entry.court.id);
+            if (!created) return entry;
+            const removed = removedClosureIdsByCourtId.get(entry.court.id);
+            const retained = removed
+              ? entry.rows.filter((row) => !removed.has(row.id))
+              : entry.rows;
+            return { court: entry.court, rows: [...retained, ...created] };
+          }),
+        };
+      });
       void queryClient.invalidateQueries({ queryKey: ["court-closures"] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.admin.venueWorkspace(venueId) });
       venueCourts.forEach((court) => {
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.bookingSurface.courtDay(court.id, closureForm.date),
+          queryKey: queryKeys.bookingSurface.courtDay(court.id, submittedDate),
         });
       });
     },
@@ -445,11 +676,9 @@ export default function AdminVenueCourtsPage() {
           ? venue.map_longitude
           : null,
       city: (venue as { city?: string }).city ?? "",
-      hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((rateWindow) => ({
-        start: rateWindow.start,
-        end: rateWindow.end,
-        rate: String(rateWindow.hourly_rate),
-      })),
+      hourly_rate_windows: (venue.hourly_rate_windows ?? []).map((rateWindow) =>
+        formRowFromRateWindow(rateWindow),
+      ),
       accepts_gcash: venue.accepts_gcash ?? false,
       gcash_account_name: venue.gcash_account_name ?? "",
       gcash_account_number: venue.gcash_account_number ?? "",
@@ -460,13 +689,17 @@ export default function AdminVenueCourtsPage() {
     setVenueOpen(true);
   };
 
-  const closureTimeSlots = useMemo(
-    () => bookableHourTokensFromRanges(venue?.hourly_rate_windows ?? []),
-    [venue?.hourly_rate_windows],
-  );
   const closureSelectedDate = useMemo(
     () => new Date(`${closureForm.date}T12:00:00`),
     [closureForm.date],
+  );
+  const closureTimeSlots = useMemo(
+    () =>
+      bookableHourTokensFromRanges(
+        venue?.hourly_rate_windows ?? [],
+        closureSelectedDate.getDay(),
+      ),
+    [venue?.hourly_rate_windows, closureSelectedDate],
   );
   const closureGridLoading = closureSurfaceQuery.isLoading;
 
@@ -613,9 +846,6 @@ export default function AdminVenueCourtsPage() {
           <Trash2 className="mr-1.5 h-4 w-4" />
           Delete venue
         </Button>
-        <Button variant="outline" onClick={() => setClosureOpen(true)}>
-          Set unavailability
-        </Button>
         <Button variant="outline" onClick={openVenueEdit}>
           Edit venue
         </Button>
@@ -694,9 +924,17 @@ export default function AdminVenueCourtsPage() {
               {(venue.hourly_rate_windows?.length ?? 0) > 0 ? (
                 <ul className="mt-1 space-y-1 text-foreground">
                   {venue.hourly_rate_windows!.map((rateWindow) => (
-                    <li key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}>
-                      {formatTimeShort(rateWindow.start)} – {formatTimeShort(rateWindow.end)}:{" "}
-                      {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                    <li
+                      key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                      className="flex flex-wrap items-baseline gap-x-2"
+                    >
+                      <span>
+                        {formatTimeShort(rateWindow.start)} – {formatTimeShort(rateWindow.end)}:{" "}
+                        {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        · {formatDaysOfWeekLabel(rateWindow)}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -707,6 +945,86 @@ export default function AdminVenueCourtsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card className="mb-6 border-border/50">
+        <CardContent className="p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="font-heading text-base font-semibold text-foreground">
+              Upcoming unavailability
+            </h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClosureOpen(true)}
+            >
+              Set unavailability
+            </Button>
+          </div>
+          {upcomingUnavailabilityQuery.isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : upcomingUnavailabilityRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No upcoming court or venue unavailability.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {upcomingUnavailabilityRows.map((row) => {
+                const isRemoving =
+                  removeUnavailability.isPending &&
+                  removeUnavailability.variables?.key === row.key;
+                return (
+                  <li
+                    key={row.key}
+                    className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-sm font-medium text-foreground">
+                        {format(new Date(`${row.date}T12:00:00`), "EEE, MMM d, yyyy")}
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {formatTimeShort(row.start_time)} – {formatTimeShort(row.end_time)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {row.scope === "venue"
+                          ? "All courts (venue-wide)"
+                          : row.courtEntries.map((e) => e.courtName).join(", ")}
+                      </p>
+                      {row.note ? (
+                        <p className="text-xs italic text-muted-foreground">
+                          {row.note}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 self-start">
+                      <Badge variant="outline" className="font-normal">
+                        {formatClosureReason(row.reason)}
+                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-destructive/25 px-2 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                        disabled={removeUnavailability.isPending}
+                        onClick={() => removeUnavailability.mutate(row)}
+                        aria-label="Remove unavailability"
+                      >
+                        {isRemoving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {!isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -1104,7 +1422,7 @@ export default function AdminVenueCourtsPage() {
                       ...prev,
                       hourly_rate_windows: [
                         ...prev.hourly_rate_windows,
-                        { start: "07:00", end: "22:00", rate: "" },
+                        makeEmptyPriceRangeFormRow(),
                       ],
                     }))
                   }
@@ -1121,48 +1439,67 @@ export default function AdminVenueCourtsPage() {
                   {venueForm.hourly_rate_windows.map((row, i) => (
                     <div
                       key={i}
-                      className="rounded-xl border border-border/50 bg-background p-4 shadow-sm"
+                      className="relative rounded-xl border border-border/50 bg-background p-4 pr-12 shadow-sm"
                     >
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
-                        <div className="min-w-0 space-y-1.5">
-                          <Label
-                            className="text-xs text-muted-foreground"
-                            htmlFor={`admin-range-start-${i}`}
-                          >
-                            Start
-                          </Label>
-                          <VenueTimeInput
-                            id={`admin-range-start-${i}`}
-                            value={row.start}
-                            onChange={(value) =>
-                              setVenueForm((prev) => {
-                                const next = [...prev.hourly_rate_windows];
-                                next[i] = { ...next[i]!, start: value };
-                                return { ...prev, hourly_rate_windows: next };
-                              })
-                            }
-                          />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Remove range"
+                        className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() =>
+                          setVenueForm((prev) => ({
+                            ...prev,
+                            hourly_rate_windows: prev.hourly_rate_windows.filter(
+                              (_, idx) => idx !== i,
+                            ),
+                          }))
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="min-w-0 space-y-1.5">
+                            <Label
+                              className="text-xs text-muted-foreground"
+                              htmlFor={`admin-range-start-${i}`}
+                            >
+                              Start
+                            </Label>
+                            <VenueTimeInput
+                              id={`admin-range-start-${i}`}
+                              value={row.start}
+                              onChange={(value) =>
+                                setVenueForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, start: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1.5">
+                            <Label
+                              className="text-xs text-muted-foreground"
+                              htmlFor={`admin-range-end-${i}`}
+                            >
+                              End
+                            </Label>
+                            <VenueTimeInput
+                              id={`admin-range-end-${i}`}
+                              value={row.end}
+                              onChange={(value) =>
+                                setVenueForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, end: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
                         </div>
                         <div className="min-w-0 space-y-1.5">
-                          <Label
-                            className="text-xs text-muted-foreground"
-                            htmlFor={`admin-range-end-${i}`}
-                          >
-                            End
-                          </Label>
-                          <VenueTimeInput
-                            id={`admin-range-end-${i}`}
-                            value={row.end}
-                            onChange={(value) =>
-                              setVenueForm((prev) => {
-                                const next = [...prev.hourly_rate_windows];
-                                next[i] = { ...next[i]!, end: value };
-                                return { ...prev, hourly_rate_windows: next };
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="min-w-0 space-y-1.5 sm:col-span-2">
                           <Label
                             className="text-xs text-muted-foreground"
                             htmlFor={`admin-range-rate-${i}`}
@@ -1185,22 +1522,44 @@ export default function AdminVenueCourtsPage() {
                             placeholder="e.g. 450"
                           />
                         </div>
-                        <div className="flex justify-end sm:col-span-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-11 shrink-0 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() =>
-                              setVenueForm((prev) => ({
-                                ...prev,
-                                hourly_rate_windows: prev.hourly_rate_windows.filter(
-                                  (_, idx) => idx !== i,
-                                ),
-                              }))
-                            }
-                          >
-                            Remove
-                          </Button>
+                        <div className="space-y-1.5 border-t border-border/50 pt-3">
+                          <Label className="text-xs text-muted-foreground">
+                            Active days
+                          </Label>
+                          <div className="flex items-center gap-1">
+                            {ALL_DAYS_OF_WEEK.map((day) => {
+                              const selected = row.days_of_week.includes(day);
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
+                                  onClick={() =>
+                                    setVenueForm((prev) => {
+                                      const next = [...prev.hourly_rate_windows];
+                                      const current = new Set(next[i]!.days_of_week);
+                                      if (current.has(day)) current.delete(day);
+                                      else current.add(day);
+                                      next[i] = {
+                                        ...next[i]!,
+                                        days_of_week: [...current].sort((a, b) => a - b),
+                                      };
+                                      return { ...prev, hourly_rate_windows: next };
+                                    })
+                                  }
+                                  className={cn(
+                                    "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
+                                    selected
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                  )}
+                                >
+                                  {dayOfWeekInitialLabel(day)}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1346,10 +1705,43 @@ export default function AdminVenueCourtsPage() {
                       setClosureTokensByCourtId({});
                       setClosureDateOpen(false);
                     }}
+                    modifiers={{
+                      hasClosure: (date) =>
+                        existingClosureDates.includes(format(date, "yyyy-MM-dd")),
+                    }}
+                    modifiersClassNames={{
+                      hasClosure:
+                        "relative after:absolute after:bottom-1 after:left-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
+                    }}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
+              {existingClosureDates.length > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">
+                    Existing:
+                  </span>
+                  {existingClosureDates.map((dateIso) => {
+                    const isActive = dateIso === closureForm.date;
+                    return (
+                      <Button
+                        key={dateIso}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                          setClosureForm((prev) => ({ ...prev, date: dateIso }));
+                          setClosureTokensByCourtId({});
+                        }}
+                      >
+                        {format(new Date(`${dateIso}T12:00:00`), "MMM d")}
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
             <div className="space-y-3">
               <div>
@@ -1419,6 +1811,12 @@ export default function AdminVenueCourtsPage() {
                             );
                             const isLocked = isBooked || isVenueClosed || isPastOrCurrent;
                             const isSelected = selected.has(time) || isLocked;
+                            const existing = summary?.existingClosureByHour.get(time);
+                            const existingReasonTitle = existing
+                              ? `Reason: ${formatClosureReason(existing.reason)}${
+                                  existing.note ? ` — ${existing.note}` : ""
+                                }`
+                              : undefined;
                             return (
                               <Button
                                 key={`${court.id}-${time}`}
@@ -1436,7 +1834,12 @@ export default function AdminVenueCourtsPage() {
                                 )}
                                 onClick={() =>
                                   setClosureTokensByCourtId((prev) => {
-                                    const current = new Set(prev[court.id] ?? []);
+                                    const current = new Set(
+                                      prev[court.id] ?? [
+                                        ...(summary?.existingCourtClosed ??
+                                          new Set<string>()),
+                                      ],
+                                    );
                                     if (current.has(time)) current.delete(time);
                                     else current.add(time);
                                     return {
@@ -1454,7 +1857,7 @@ export default function AdminVenueCourtsPage() {
                                       ? "Venue-level closure"
                                       : isPastOrCurrent
                                         ? "Past or current slot (cannot modify)"
-                                      : undefined
+                                      : existingReasonTitle
                                 }
                               >
                                 {formatBookableHourSlotRange(time)}

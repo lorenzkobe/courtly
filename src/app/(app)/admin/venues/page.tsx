@@ -28,14 +28,22 @@ import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
-import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
+import {
+  ALL_DAYS_OF_WEEK,
+  dayOfWeekInitialLabel,
+  formatDaysOfWeekLabel,
+  formRowFromRateWindow,
+  makeEmptyPriceRangeFormRow,
+  type PriceRangeFormRow,
+  validatePriceRangeFormRows,
+} from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
-import { formatStatusLabel } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
 import { optimizeVenuePhoto } from "@/lib/venues/optimize-venue-photo";
 import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 import type { Venue } from "@/lib/types/courtly";
 
-type PriceRangeRow = { start: string; end: string; rate: string };
+type PriceRangeRow = PriceRangeFormRow;
 
 const emptyRequestForm = {
   name: "",
@@ -47,7 +55,7 @@ const emptyRequestForm = {
   amenities: [] as string[],
   customAmenityDraft: "",
   photo_urls: [] as string[],
-  hourly_rate_windows: [{ start: "07:00", end: "22:00", rate: "" }] as PriceRangeRow[],
+  hourly_rate_windows: [makeEmptyPriceRangeFormRow()] as PriceRangeRow[],
   map_latitude: null as number | null,
   map_longitude: null as number | null,
   city: "",
@@ -453,12 +461,10 @@ export default function AdminVenuesPage() {
                               photo_urls: request.photo_urls ?? [],
                               hourly_rate_windows:
                                 request.hourly_rate_windows.length > 0
-                                  ? request.hourly_rate_windows.map((window) => ({
-                                      start: window.start,
-                                      end: window.end,
-                                      rate: String(window.hourly_rate),
-                                    }))
-                                  : [{ start: "07:00", end: "22:00", rate: "" }],
+                                  ? request.hourly_rate_windows.map((window) =>
+                                      formRowFromRateWindow(window),
+                                    )
+                                  : [makeEmptyPriceRangeFormRow()],
                               map_latitude: request.map_latitude ?? null,
                               map_longitude: request.map_longitude ?? null,
                               city: (request as { city?: string }).city ?? "",
@@ -604,7 +610,7 @@ export default function AdminVenuesPage() {
                       ...prev,
                       hourly_rate_windows: [
                         ...prev.hourly_rate_windows,
-                        { start: "07:00", end: "22:00", rate: "" },
+                        makeEmptyPriceRangeFormRow(),
                       ],
                     }))
                   }
@@ -639,27 +645,29 @@ export default function AdminVenuesPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <VenueTimeInput
-                        value={row.start}
-                        onChange={(value) =>
-                          setForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[idx] = { ...next[idx]!, start: value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                      />
-                      <VenueTimeInput
-                        value={row.end}
-                        onChange={(value) =>
-                          setForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[idx] = { ...next[idx]!, end: value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                      />
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <VenueTimeInput
+                          value={row.start}
+                          onChange={(value) =>
+                            setForm((prev) => {
+                              const next = [...prev.hourly_rate_windows];
+                              next[idx] = { ...next[idx]!, start: value };
+                              return { ...prev, hourly_rate_windows: next };
+                            })
+                          }
+                        />
+                        <VenueTimeInput
+                          value={row.end}
+                          onChange={(value) =>
+                            setForm((prev) => {
+                              const next = [...prev.hourly_rate_windows];
+                              next[idx] = { ...next[idx]!, end: value };
+                              return { ...prev, hourly_rate_windows: next };
+                            })
+                          }
+                        />
+                      </div>
                       <Input
                         type="number"
                         inputMode="decimal"
@@ -672,8 +680,46 @@ export default function AdminVenuesPage() {
                           })
                         }
                         placeholder="Rate (PHP / hr)"
-                        className="sm:col-span-2"
                       />
+                      <div className="space-y-1.5 border-t border-border/50 pt-3">
+                        <span className="block text-xs text-muted-foreground">
+                          Active days
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {ALL_DAYS_OF_WEEK.map((day) => {
+                            const selected = row.days_of_week.includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                aria-pressed={selected}
+                                aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
+                                onClick={() =>
+                                  setForm((prev) => {
+                                    const next = [...prev.hourly_rate_windows];
+                                    const current = new Set(next[idx]!.days_of_week);
+                                    if (current.has(day)) current.delete(day);
+                                    else current.add(day);
+                                    next[idx] = {
+                                      ...next[idx]!,
+                                      days_of_week: [...current].sort((a, b) => a - b),
+                                    };
+                                    return { ...prev, hourly_rate_windows: next };
+                                  })
+                                }
+                                className={cn(
+                                  "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
+                                  selected
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                )}
+                              >
+                                {dayOfWeekInitialLabel(day)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}

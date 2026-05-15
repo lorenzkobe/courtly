@@ -1294,7 +1294,7 @@ export default function AdminBookingsPage() {
                               {courtSegs.map((segment) => {
                                 const segTiers =
                                   detailCourt && segment.court_id === detailCourt.id
-                                    ? segmentPricingTiers(detailCourt, segment)
+                                    ? segmentPricingTiers(detailCourt, segment, segment.date)
                                     : [];
                                 return (
                                   <li

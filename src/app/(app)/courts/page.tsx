@@ -26,6 +26,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { courtlyApi } from "@/lib/api/courtly-client";
+import { useAuth } from "@/lib/auth/auth-context";
+import {
+  isFeaturePreviewUser,
+  isPreviewOnlyVenueName,
+} from "@/lib/auth/feature-preview";
 import { courtRateRange } from "@/lib/court-pricing";
 import { formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
@@ -128,6 +133,8 @@ export default function CourtsPage() {
 
   const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteVenueIds();
   const selectedSport = useSelectedSport((s) => s.sport);
+  const { user } = useAuth();
+  const previewUser = isFeaturePreviewUser(user?.email);
 
   const { data: courts = [], isLoading } = useQuery({
     queryKey: queryKeys.courts.list({
@@ -146,12 +153,15 @@ export default function CourtsPage() {
   const venueCards = useMemo(() => {
     const byVenue = new Map<string, (typeof courts)[number]>();
     for (const court of courts) {
+      if (!previewUser && isPreviewOnlyVenueName(court.establishment_name)) {
+        continue;
+      }
       if (!byVenue.has(court.venue_id)) {
         byVenue.set(court.venue_id, court);
       }
     }
     return [...byVenue.values()];
-  }, [courts]);
+  }, [courts, previewUser]);
 
   const uniqueCities = useMemo(
     () =>

@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isPreviewOnlyVenueName } from "@/lib/auth/feature-preview";
 import { cn } from "@/lib/utils";
 import type { Court } from "@/lib/types/courtly";
 
@@ -56,6 +57,7 @@ export default function PublicBookPage() {
   const venueCards = useMemo(() => {
     const byVenue = new Map<string, Court>();
     for (const court of courts) {
+      if (isPreviewOnlyVenueName(court.establishment_name)) continue;
       if (!byVenue.has(court.venue_id)) byVenue.set(court.venue_id, court);
     }
     return [...byVenue.values()];

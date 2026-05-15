@@ -5,6 +5,8 @@ export type CourtRateWindow = {
   start: string;
   end: string;
   hourly_rate: number;
+  /** Day-of-week (0=Sun..6=Sat) the window is active on. Omitted/empty = every day. */
+  days_of_week?: number[];
 };
 
 /** Whole-venue block (all courts at the venue unbookable for the window). */

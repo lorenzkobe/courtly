@@ -223,6 +223,7 @@ export default function PublicBookCourtPage() {
     data: bookingSurface,
     isPending: isBookingSurfacePending,
     isFetching: isFetchingBookingSurface,
+    isPlaceholderData: isBookingSurfacePlaceholder,
   } = useQuery({
     queryKey: bookingSurfaceKey,
     queryFn: async () => {
@@ -308,7 +309,7 @@ export default function PublicBookCourtPage() {
 
   const isSlotMatrixFetching = isFetchingBookingSurface;
 
-  const isSlotMatrixPending = isBookingSurfacePending;
+  const isSlotMatrixPending = isBookingSurfacePending || isBookingSurfacePlaceholder;
 
   const effectiveDatePickerOpen = datePickerOpen && !isSlotMatrixFetching;
 
@@ -357,7 +358,9 @@ export default function PublicBookCourtPage() {
         );
       });
       const unavailableSlots = item.slots.filter((slot) => occupiedForLine.has(slot));
-      const subtotal = lineCourt ? segmentsTotalCost(lineCourt, lineSegments) : 0;
+      const subtotal = lineCourt
+        ? segmentsTotalCost(lineCourt, lineSegments, item.date)
+        : 0;
       const flatFee = surface?.flat_booking_fee;
       const numHours = lineSegments.reduce(
         (sum, seg) => sum + hourFromTime(seg.end_time) - hourFromTime(seg.start_time),
@@ -557,6 +560,12 @@ export default function PublicBookCourtPage() {
     );
   }
 
+  const dayActiveHourSet = new Set(
+    bookableHourTokensFromRanges(
+      court.hourly_rate_windows ?? [],
+      selectedDate.getDay(),
+    ),
+  );
   const timeSlots = bookableHourTokensFromRanges(court.hourly_rate_windows ?? []).filter(
     (time) => !isBookableHourStartInPast(time, selectedDate),
   );
@@ -938,6 +947,7 @@ export default function PublicBookCourtPage() {
                               const isClosureBlocked = occupation.closureBlocked.has(time);
                               const isUnavailable = isBookedOrPending || isClosureBlocked;
                               const isPastHour = isBookableHourStartInPast(time, selectedDate);
+                              const isClosedForDay = !dayActiveHourSet.has(time);
                               const line =
                                 cartItems.find(
                                   (item) => item.courtId === mc.id && item.date === dateIso,
@@ -948,32 +958,45 @@ export default function PublicBookCourtPage() {
                                   <button
                                     type="button"
                                     onClick={() => toggleMatrixSlotForCourt(mc, time)}
-                                    disabled={isUnavailable || isPastHour}
+                                    disabled={isUnavailable || isPastHour || isClosedForDay}
                                     className={cn(
                                       "h-10 w-full rounded-md border text-[11px] font-medium transition-colors",
                                       isSelected &&
                                         !isUnavailable &&
                                         !isPastHour &&
+                                        !isClosedForDay &&
                                         "border-primary bg-primary text-primary-foreground",
                                       !isSelected &&
                                         !isUnavailable &&
                                         !isPastHour &&
+                                        !isClosedForDay &&
                                         "border-border bg-background hover:border-primary/40 hover:bg-primary/5",
-                                      isUnavailable &&
+                                      isClosedForDay &&
+                                        !isUnavailable &&
+                                        !isPastHour &&
+                                        "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
+                                      isBookedOrPending &&
+                                        "cursor-not-allowed border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200",
+                                      isClosureBlocked &&
+                                        !isBookedOrPending &&
                                         "cursor-not-allowed border-border bg-muted text-muted-foreground/70",
                                       isPastHour &&
+                                        !isUnavailable &&
+                                        !isClosedForDay &&
                                         "cursor-not-allowed border-dashed border-border bg-muted/60 text-muted-foreground/70",
                                     )}
                                   >
                                     {isUnavailable
-                                      ? isClosureBlocked
-                                        ? "Blocked"
-                                        : "Booked"
-                                      : isPastHour
-                                        ? "Past"
-                                        : isSelected
-                                          ? "Selected"
-                                          : "Open"}
+                                      ? isBookedOrPending
+                                        ? "Booked"
+                                        : "Unavailable"
+                                      : isClosedForDay
+                                        ? "Closed"
+                                        : isPastHour
+                                          ? "Past"
+                                          : isSelected
+                                            ? "Selected"
+                                            : "Open"}
                                   </button>
                                 </td>
                               );
@@ -982,6 +1005,28 @@ export default function PublicBookCourtPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-sm border border-border bg-background" />
+                      Open
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-sm border border-primary bg-primary" />
+                      Selected
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-sm border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40" />
+                      Booked
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-sm border border-border bg-muted" />
+                      Unavailable
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-border bg-muted/60" />
+                      Past
+                    </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Tap cells to build your booking. Selected slots are added to the

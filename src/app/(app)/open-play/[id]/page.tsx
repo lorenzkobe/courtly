@@ -46,6 +46,7 @@ import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { httpStatusOf } from "@/lib/api/http-status";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { formatTimeShort } from "@/lib/booking-range";
+import { formatDaysOfWeekLabel } from "@/lib/venue-price-ranges";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -1195,10 +1196,16 @@ export default function OpenPlayDetailPage() {
                         (court.hourly_rate_windows ?? []).map((rateWindow) => (
                           <div
                             key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                            className="flex flex-wrap items-baseline gap-x-2"
                           >
-                            {formatTimeShort(rateWindow.start)} –{" "}
-                            {formatTimeShort(rateWindow.end)}:{" "}
-                            {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                            <span>
+                              {formatTimeShort(rateWindow.start)} –{" "}
+                              {formatTimeShort(rateWindow.end)}:{" "}
+                              {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                            </span>
+                            <span className="text-xs font-normal text-muted-foreground">
+                              · {formatDaysOfWeekLabel(rateWindow)}
+                            </span>
                           </div>
                         ))
                       ) : (

@@ -18,7 +18,7 @@ export function buildBookingPayloads(
   },
 ): Partial<Booking>[] {
   return segments.map((seg) => {
-    const court_subtotal = segmentTotalCost(court, seg);
+    const court_subtotal = segmentTotalCost(court, seg, ctx.date);
     const numHours = hourFromTime(seg.end_time) - hourFromTime(seg.start_time);
     const { booking_fee, total_cost } = splitBookingAmounts(
       court_subtotal,

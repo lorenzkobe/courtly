@@ -721,7 +721,7 @@ export default function BookingDetailPage() {
                   );
                   const segTiers =
                     court && segment.court_id === court.id
-                      ? segmentPricingTiers(court, segment)
+                      ? segmentPricingTiers(court, segment, segment.date)
                       : [];
                         return (
                           <li

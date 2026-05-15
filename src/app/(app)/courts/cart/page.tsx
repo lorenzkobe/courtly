@@ -133,7 +133,7 @@ export default function BookingCartPage() {
       const unavailableSlots = item.slots.filter((slot) => occupied.has(slot));
       const billableHours = totalBillableHours(segments);
       const requestedHours = item.slots.length;
-      const subtotal = court ? segmentsTotalCost(court, segments) : 0;
+      const subtotal = court ? segmentsTotalCost(court, segments, item.date) : 0;
       const flatFee = surface?.flat_booking_fee;
       const totals = splitBookingAmounts(subtotal, flatFee, billableHours);
 

@@ -36,13 +36,21 @@ import { queryKeys } from "@/lib/query/query-keys";
 import { formatAmenityLabel } from "@/lib/format-amenity";
 import { validateSocialUrl } from "@/lib/social-url";
 import type { ManagedUser, Venue, VenueRequest } from "@/lib/types/courtly";
-import { validatePriceRangeFormRows } from "@/lib/venue-price-ranges";
+import {
+  ALL_DAYS_OF_WEEK,
+  dayOfWeekInitialLabel,
+  formatDaysOfWeekLabel,
+  formRowFromRateWindow,
+  makeEmptyPriceRangeFormRow,
+  type PriceRangeFormRow,
+  validatePriceRangeFormRows,
+} from "@/lib/venue-price-ranges";
 import { validateVenuePaymentSettings } from "@/lib/venue-payment-methods";
-import { formatStatusLabel } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
 import { optimizeVenuePhoto } from "@/lib/venues/optimize-venue-photo";
 import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 
-type PriceRangeRow = { start: string; end: string; rate: string };
+type PriceRangeRow = PriceRangeFormRow;
 
 const emptyForm = {
   name: "",
@@ -426,12 +434,8 @@ export default function SuperadminVenuesPage() {
       city: (a as { city?: string }).city ?? "",
       hourly_rate_windows:
         (a.hourly_rate_windows ?? []).length > 0
-          ? (a.hourly_rate_windows ?? []).map((w) => ({
-              start: w.start,
-              end: w.end,
-              rate: String(w.hourly_rate),
-            }))
-          : [{ start: "07:00", end: "22:00", rate: "" }],
+          ? (a.hourly_rate_windows ?? []).map((w) => formRowFromRateWindow(w))
+          : [makeEmptyPriceRangeFormRow()],
       accepts_gcash: a.accepts_gcash ?? false,
       gcash_account_name: a.gcash_account_name ?? "",
       gcash_account_number: a.gcash_account_number ?? "",
@@ -831,9 +835,14 @@ export default function SuperadminVenuesPage() {
                     {selectedRequest.hourly_rate_windows.map((window, index) => (
                       <div
                         key={`${selectedRequest.id}-window-${index}`}
-                        className="rounded-md border border-border/60 px-3 py-2 text-sm"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
                       >
-                        {window.start} - {window.end}: PHP {window.hourly_rate}/hr
+                        <span>
+                          {window.start} - {window.end}: PHP {window.hourly_rate}/hr
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDaysOfWeekLabel(window)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1092,7 +1101,7 @@ export default function SuperadminVenuesPage() {
                       ...prev,
                       hourly_rate_windows: [
                         ...prev.hourly_rate_windows,
-                        { start: "07:00", end: "22:00", rate: "" },
+                        makeEmptyPriceRangeFormRow(),
                       ],
                     }))
                   }
@@ -1110,48 +1119,67 @@ export default function SuperadminVenuesPage() {
                   {form.hourly_rate_windows.map((row, i) => (
                     <div
                       key={i}
-                      className="rounded-xl border border-border/50 bg-background p-4 shadow-sm"
+                      className="relative rounded-xl border border-border/50 bg-background p-4 pr-12 shadow-sm"
                     >
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
-                        <div className="min-w-0 space-y-1.5">
-                          <Label
-                            className="text-xs text-muted-foreground"
-                            htmlFor={`superadmin-range-start-${i}`}
-                          >
-                            Start
-                          </Label>
-                          <VenueTimeInput
-                            id={`superadmin-range-start-${i}`}
-                            value={row.start}
-                            onChange={(value) =>
-                              setForm((prev) => {
-                                const next = [...prev.hourly_rate_windows];
-                                next[i] = { ...next[i]!, start: value };
-                                return { ...prev, hourly_rate_windows: next };
-                              })
-                            }
-                          />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Remove range"
+                        className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            hourly_rate_windows: prev.hourly_rate_windows.filter(
+                              (_, idx) => idx !== i,
+                            ),
+                          }))
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="min-w-0 space-y-1.5">
+                            <Label
+                              className="text-xs text-muted-foreground"
+                              htmlFor={`superadmin-range-start-${i}`}
+                            >
+                              Start
+                            </Label>
+                            <VenueTimeInput
+                              id={`superadmin-range-start-${i}`}
+                              value={row.start}
+                              onChange={(value) =>
+                                setForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, start: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1.5">
+                            <Label
+                              className="text-xs text-muted-foreground"
+                              htmlFor={`superadmin-range-end-${i}`}
+                            >
+                              End
+                            </Label>
+                            <VenueTimeInput
+                              id={`superadmin-range-end-${i}`}
+                              value={row.end}
+                              onChange={(value) =>
+                                setForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[i] = { ...next[i]!, end: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
                         </div>
                         <div className="min-w-0 space-y-1.5">
-                          <Label
-                            className="text-xs text-muted-foreground"
-                            htmlFor={`superadmin-range-end-${i}`}
-                          >
-                            End
-                          </Label>
-                          <VenueTimeInput
-                            id={`superadmin-range-end-${i}`}
-                            value={row.end}
-                            onChange={(value) =>
-                              setForm((prev) => {
-                                const next = [...prev.hourly_rate_windows];
-                                next[i] = { ...next[i]!, end: value };
-                                return { ...prev, hourly_rate_windows: next };
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="min-w-0 space-y-1.5 sm:col-span-2">
                           <Label
                             className="text-xs text-muted-foreground"
                             htmlFor={`superadmin-range-rate-${i}`}
@@ -1174,24 +1202,44 @@ export default function SuperadminVenuesPage() {
                             placeholder="e.g. 450"
                           />
                         </div>
-                        <div className="flex justify-end sm:col-span-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-11 w-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            aria-label="Remove range"
-                            onClick={() =>
-                              setForm((prev) => ({
-                                ...prev,
-                                hourly_rate_windows: prev.hourly_rate_windows.filter(
-                                  (_, idx) => idx !== i,
-                                ),
-                              }))
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        <div className="space-y-1.5 border-t border-border/50 pt-3">
+                          <Label className="text-xs text-muted-foreground">
+                            Active days
+                          </Label>
+                          <div className="flex items-center gap-1">
+                            {ALL_DAYS_OF_WEEK.map((day) => {
+                              const selected = row.days_of_week.includes(day);
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
+                                  onClick={() =>
+                                    setForm((prev) => {
+                                      const next = [...prev.hourly_rate_windows];
+                                      const current = new Set(next[i]!.days_of_week);
+                                      if (current.has(day)) current.delete(day);
+                                      else current.add(day);
+                                      next[i] = {
+                                        ...next[i]!,
+                                        days_of_week: [...current].sort((a, b) => a - b),
+                                      };
+                                      return { ...prev, hourly_rate_windows: next };
+                                    })
+                                  }
+                                  className={cn(
+                                    "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
+                                    selected
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                  )}
+                                >
+                                  {dayOfWeekInitialLabel(day)}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     </div>
