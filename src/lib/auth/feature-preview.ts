@@ -5,6 +5,7 @@
 export const FEATURE_PREVIEW_EMAILS: readonly string[] = [
   // e.g. "yourname@example.com",
   "142924+1@gmail.com",
+  "142924+3@gmail.com"
 ];
 
 export function isFeaturePreviewUser(email: string | undefined): boolean {
