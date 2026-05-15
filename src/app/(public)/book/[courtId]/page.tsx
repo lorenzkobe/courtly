@@ -70,7 +70,13 @@ import { buildBookingPayloads } from "@/lib/bookings/booking-payloads";
 import { useBookingCart } from "@/lib/stores/booking-cart";
 import { loadGuestHold, saveGuestHold } from "@/lib/guest-booking-storage";
 import { cn } from "@/lib/utils";
-import type { Booking, Court, CourtClosure, VenueClosure } from "@/lib/types/courtly";
+import type {
+  Booking,
+  Court,
+  CourtBookingSurfaceResponse,
+  CourtClosure,
+  VenueClosure,
+} from "@/lib/types/courtly";
 import { formatStatusLabel } from "@/lib/utils";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -78,6 +84,10 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMPTY_BOOKINGS: Booking[] = [];
 const EMPTY_COURT_CLOSURES: CourtClosure[] = [];
 const EMPTY_VENUE_CLOSURES: VenueClosure[] = [];
+const EMPTY_AVAILABILITY = {
+  bookings: EMPTY_BOOKINGS,
+  court_closures: EMPTY_COURT_CLOSURES,
+};
 
 function courtGalleryUrls(court: Court): string[] {
   if (court.venue_photo_urls && court.venue_photo_urls.length > 0)
@@ -238,40 +248,49 @@ export default function PublicBookCourtPage() {
     return Array.from(unique.values());
   }, [court, establishmentCourts]);
 
-  const matrixSurfaceQueries = useQueries({
-    queries: matrixCourts.map((mc) => ({
-      queryKey: queryKeys.bookingSurface.courtDay(mc.id, dateIso),
-      queryFn: async () => {
-        const { data } = await courtlyApi.courts.bookingSurface(mc.id, { date: dateIso });
-        return data;
-      },
-      staleTime: 15_000,
-      enabled: !!mc.id,
-      placeholderData: keepPreviousData,
-    })),
-  });
+  const cartFetchGroups = useMemo(() => {
+    const seen = new Map<
+      string,
+      { leaderCourtId: string; date: string }
+    >();
+    for (const item of cartItems) {
+      const groupKey = `${item.venueId}__${item.date}`;
+      if (seen.has(groupKey)) continue;
+      seen.set(groupKey, { leaderCourtId: item.courtId, date: item.date });
+    }
+    return Array.from(seen.values());
+  }, [cartItems]);
 
-  const cartSurfaceQueries = useQueries({
-    queries: cartItems.map((item) => ({
-      queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
+  const cartGroupQueries = useQueries({
+    queries: cartFetchGroups.map((group) => ({
+      queryKey: queryKeys.bookingSurface.courtDay(group.leaderCourtId, group.date),
       queryFn: async () => {
-        const { data } = await courtlyApi.courts.bookingSurface(item.courtId, {
-          date: item.date,
+        const { data } = await courtlyApi.courts.bookingSurface(group.leaderCourtId, {
+          date: group.date,
         });
         return data;
       },
       staleTime: 15_000,
-      enabled: !!item.courtId,
+      enabled: !!group.leaderCourtId,
     })),
   });
 
+  const cartSurfaceByCourtAndDate = useMemo(() => {
+    const out = new Map<string, CourtBookingSurfaceResponse>();
+    cartFetchGroups.forEach((group, index) => {
+      const data = cartGroupQueries[index]?.data;
+      if (!data) return;
+      for (const cid of Object.keys(data.availability_by_court_id)) {
+        out.set(`${cid}__${group.date}`, data);
+      }
+    });
+    return out;
+  }, [cartFetchGroups, cartGroupQueries]);
+
   const matrixBookingSurfaceKeys = useMemo(() => {
-    if (matrixCourts.length > 0) {
-      return matrixCourts.map((c) => queryKeys.bookingSurface.courtDay(c.id, dateIso));
-    }
     if (courtId) return [queryKeys.bookingSurface.courtDay(courtId, dateIso)];
     return [];
-  }, [matrixCourts, courtId, dateIso]);
+  }, [courtId, dateIso]);
 
   const bookingCourtRealtimeFilter = useMemo(() => {
     const ids = matrixCourts.map((c) => c.id).filter(Boolean);
@@ -287,11 +306,9 @@ export default function PublicBookCourtPage() {
     queryKeysToInvalidate: matrixBookingSurfaceKeys,
   });
 
-  const isSlotMatrixFetching =
-    isFetchingBookingSurface || matrixSurfaceQueries.some((q) => q.isFetching);
+  const isSlotMatrixFetching = isFetchingBookingSurface;
 
-  const isSlotMatrixPending =
-    isBookingSurfacePending || matrixSurfaceQueries.some((q) => q.isPending);
+  const isSlotMatrixPending = isBookingSurfacePending;
 
   const effectiveDatePickerOpen = datePickerOpen && !isSlotMatrixFetching;
 
@@ -299,30 +316,31 @@ export default function PublicBookCourtPage() {
 
   const matrixOccupationByCourtId = useMemo(() => {
     const out = new Map<string, { bookingBlocked: Set<string>; closureBlocked: Set<string> }>();
-    matrixCourts.forEach((mc, idx) => {
-      const surface = matrixSurfaceQueries[idx]?.data;
-      const bookings = surface?.availability.bookings ?? EMPTY_BOOKINGS;
-      const courtClosures = surface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
-      const venueClosures = surface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
-      const bookingBlocked = occupiedHourStarts(bookings);
-      const closureBlocked = occupiedHourStartsFromClosures(courtClosures, dateIso);
-      for (const token of occupiedHourStartsFromClosures(venueClosures, dateIso)) {
-        closureBlocked.add(token);
-      }
+    const venueClosures = bookingSurface?.venue_closures ?? EMPTY_VENUE_CLOSURES;
+    const venueClosureTokens = occupiedHourStartsFromClosures(venueClosures, dateIso);
+    matrixCourts.forEach((mc) => {
+      const slot =
+        bookingSurface?.availability_by_court_id?.[mc.id] ?? EMPTY_AVAILABILITY;
+      const bookingBlocked = occupiedHourStarts(slot.bookings);
+      const closureBlocked = occupiedHourStartsFromClosures(slot.court_closures, dateIso);
+      for (const token of venueClosureTokens) closureBlocked.add(token);
       out.set(mc.id, { bookingBlocked, closureBlocked });
     });
     return out;
-  }, [dateIso, matrixCourts, matrixSurfaceQueries]);
+  }, [dateIso, matrixCourts, bookingSurface]);
 
   const cartLines = useMemo(() => {
-    return cartItems.map((item, index) => {
-      const surface = cartSurfaceQueries[index]?.data;
-      const lineCourt = (surface?.court ?? null) as Court | null;
-      const bookings = surface?.availability.bookings ?? EMPTY_BOOKINGS;
-      const courtClosures = surface?.availability.court_closures ?? EMPTY_COURT_CLOSURES;
-      const venueClosures = surface?.availability.venue_closures ?? EMPTY_VENUE_CLOSURES;
-      const occupiedForLine = occupiedHourStarts(bookings);
-      for (const token of occupiedHourStartsFromClosures(courtClosures, item.date)) {
+    return cartItems.map((item) => {
+      const surface = cartSurfaceByCourtAndDate.get(`${item.courtId}__${item.date}`);
+      const lineCourt = surface
+        ? surface.court.id === item.courtId
+          ? surface.court
+          : (surface.sibling_courts.find((c) => c.id === item.courtId) ?? null)
+        : null;
+      const slot = surface?.availability_by_court_id?.[item.courtId] ?? EMPTY_AVAILABILITY;
+      const venueClosures = surface?.venue_closures ?? EMPTY_VENUE_CLOSURES;
+      const occupiedForLine = occupiedHourStarts(slot.bookings);
+      for (const token of occupiedHourStartsFromClosures(slot.court_closures, item.date)) {
         occupiedForLine.add(token);
       }
       for (const token of occupiedHourStartsFromClosures(venueClosures, item.date)) {
@@ -354,7 +372,7 @@ export default function PublicBookCourtPage() {
         totals: splitBookingAmounts(subtotal, flatFee, numHours),
       };
     });
-  }, [cartItems, cartSurfaceQueries]);
+  }, [cartItems, cartSurfaceByCourtAndDate]);
 
   const groupedCartLines = useMemo(() => {
     const byDate = new Map<string, typeof cartLines>();

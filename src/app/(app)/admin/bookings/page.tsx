@@ -1791,68 +1791,68 @@ export default function AdminBookingsPage() {
               }}
             >
               <CardContent className="p-4 sm:p-5">
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                       <p className="font-heading text-base font-semibold leading-snug text-foreground">
                         {group.courtsSummary}
                       </p>
                       {group.venueLabel ? (
-                        <p className="text-sm text-muted-foreground">{group.venueLabel}</p>
+                        <>
+                          <span className="text-muted-foreground/40" aria-hidden>·</span>
+                          <p className="text-sm text-muted-foreground">{group.venueLabel}</p>
+                        </>
+                      ) : null}
+                      {group.leader.booking_number ? (
+                        <>
+                          <span className="text-muted-foreground/40" aria-hidden>·</span>
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {group.leader.booking_number}
+                          </span>
+                        </>
                       ) : null}
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className="font-heading text-lg font-bold tabular-nums text-foreground">
-                        {formatPhp(group.totalCost)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">View details</p>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+                      <span className="font-medium text-foreground">
+                        {group.leader.player_name ?? "—"}
+                      </span>
+                      <span className="text-muted-foreground/40" aria-hidden>·</span>
+                      <span className="text-muted-foreground">{group.leader.player_email}</span>
+                      <span className="text-muted-foreground/40" aria-hidden>·</span>
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                        <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                        {group.dateMin === group.dateMax
+                          ? format(new Date(group.dateMin), "MMM d, yyyy")
+                          : `${format(new Date(group.dateMin), "MMM d, yyyy")} – ${format(new Date(group.dateMax), "MMM d, yyyy")}`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={`px-2 py-0 text-[10px] ${
+                          statusStyles[
+                            group.statusKey === "__mixed_status__"
+                              ? "__mixed_status__"
+                              : group.statusKey
+                          ] ?? ""
+                        }`}
+                      >
+                        {group.statusKey === "__mixed_status__"
+                          ? "Mixed statuses"
+                          : formatBookingStatusLabel(group.statusKey)}
+                      </Badge>
+                      {group.segmentCount > 1 ? (
+                        <Badge variant="secondary" className="px-2 py-0 text-[10px] font-medium">
+                          {group.segmentCount} items
+                        </Badge>
+                      ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.segmentCount > 1 ? (
-                      <Badge variant="secondary" className="px-2 py-0 text-[10px] font-medium">
-                        {group.segmentCount} items
-                      </Badge>
-                    ) : null}
-                    {group.leader.booking_number ? (
-                      <Badge variant="outline" className="px-2 py-0 font-mono text-[10px]">
-                        {group.leader.booking_number}
-                      </Badge>
-                    ) : null}
-                    <Badge
-                      variant="outline"
-                      className={`px-2 py-0 text-[10px] ${
-                        statusStyles[
-                          group.statusKey === "__mixed_status__"
-                            ? "__mixed_status__"
-                            : group.statusKey
-                        ] ?? ""
-                      }`}
-                    >
-                      {group.statusKey === "__mixed_status__"
-                        ? "Mixed statuses"
-                        : formatBookingStatusLabel(group.statusKey)}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                    <span className="font-medium text-foreground">
-                      {group.leader.player_name ?? "—"}
-                    </span>
-                    <span className="text-muted-foreground">{group.leader.player_email}</span>
-                    <span className="inline-flex items-center gap-1 text-muted-foreground">
-                      <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                      {group.dateMin === group.dateMax
-                        ? format(new Date(group.dateMin), "MMM d, yyyy")
-                        : `${format(new Date(group.dateMin), "MMM d, yyyy")} – ${format(new Date(group.dateMax), "MMM d, yyyy")}`}
-                    </span>
-                    {group.leader.notes?.trim() ? (
-                      <span
-                        className="max-w-full truncate text-xs text-muted-foreground"
-                        title={group.leader.notes.trim()}
-                      >
-                        {group.leader.notes.trim()}
-                      </span>
-                    ) : null}
+                  <div className="shrink-0 text-right">
+                    <p className="font-heading text-lg font-bold tabular-nums text-foreground">
+                      {formatPhp(group.totalCost)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">View details</p>
                   </div>
                 </div>
               </CardContent>

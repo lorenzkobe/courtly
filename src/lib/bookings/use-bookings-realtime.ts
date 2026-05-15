@@ -126,13 +126,19 @@ export function useBookingsRealtime({
       payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
     ): CourtBookingSurfaceResponse | undefined => {
       if (!current) return current;
-      const bookings = patchList(current.availability.bookings, payload);
+      const newRow = (payload.new ?? {}) as Record<string, unknown>;
+      const oldRow = (payload.old ?? {}) as Record<string, unknown>;
+      const rowCourtId = String(newRow["court_id"] ?? oldRow["court_id"] ?? "");
+      if (!rowCourtId) return current;
+      const slot = current.availability_by_court_id[rowCourtId];
+      if (!slot) return current;
+      const bookings = patchList(slot.bookings, payload);
       if (!bookings) return current;
       return {
         ...current,
-        availability: {
-          ...current.availability,
-          bookings,
+        availability_by_court_id: {
+          ...current.availability_by_court_id,
+          [rowCourtId]: { ...slot, bookings },
         },
       };
     };
@@ -144,9 +150,12 @@ export function useBookingsRealtime({
       const rowDate = String(newRow["date"] ?? oldRow["date"] ?? "").slice(0, 10);
       for (const queryKey of queryKeysRef.current) {
         const expected = expectedFromKey(queryKey);
-        if (expected.courtId && rowCourtId && expected.courtId !== rowCourtId) continue;
         if (expected.date && rowDate && expected.date !== rowDate) continue;
-        if (Array.isArray(queryKey) && queryKey[0] === "booking-surface") {
+        const isSurfaceKey = Array.isArray(queryKey) && queryKey[0] === "booking-surface";
+        if (!isSurfaceKey && expected.courtId && rowCourtId && expected.courtId !== rowCourtId) {
+          continue;
+        }
+        if (isSurfaceKey) {
           queryClient.setQueryData<CourtBookingSurfaceResponse | undefined>(
             queryKey,
             (current) => patchSurface(current, payload),

@@ -15,6 +15,36 @@ import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 import type { Booking, BookingCheckoutResponse } from "@/lib/types/courtly";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MANILA_TZ = "Asia/Manila";
+
+function readManilaNowParts(now = new Date()): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MANILA_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    date: `${pick("year")}-${pick("month")}-${pick("day")}`,
+    time: `${pick("hour")}:${pick("minute")}`,
+  };
+}
+
+function isSlotInPast(
+  date: string,
+  startTime: string,
+  nowDate: string,
+  nowTime: string,
+): boolean {
+  if (date < nowDate) return true;
+  if (date > nowDate) return false;
+  return startTime <= nowTime;
+}
 
 function toBookingPayloadList(body: unknown): Partial<Booking>[] {
   if (Array.isArray(body)) return body as Partial<Booking>[];
@@ -79,6 +109,7 @@ export async function POST(req: Request) {
     getPlatformDefaultBookingFeeAmount(),
   ]);
   const holdExpiresAt = holdExpiresAtFrom();
+  const { date: nowDate, time: nowTime } = readManilaNowParts();
   const bookingGroupId = crypto.randomUUID();
   let bookingNumber = generateBookingNumber(payloads[0]?.date ?? null);
   const rows: Array<Record<string, unknown>> = [];
@@ -99,6 +130,15 @@ export async function POST(req: Request) {
     }
     if (!item.date || !item.start_time || !item.end_time) {
       return NextResponse.json({ error: "Missing booking date/time." }, { status: 400 });
+    }
+    if (isSlotInPast(item.date, item.start_time, nowDate, nowTime)) {
+      return NextResponse.json(
+        {
+          error:
+            "One or more selected times have already passed. Please refresh and pick a new time.",
+        },
+        { status: 409 },
+      );
     }
     const hasConflict = await hasBlockingBookingConflictForCourt(
       court.id,

@@ -10,7 +10,10 @@ import {
   listCourtsByVenue,
   listVenueClosuresByVenue,
 } from "@/lib/data/courtly-db";
-import type { CourtBookingSurfaceResponse } from "@/lib/types/courtly";
+import type {
+  CourtAvailabilityForDate,
+  CourtBookingSurfaceResponse,
+} from "@/lib/types/courtly";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -26,16 +29,35 @@ export async function GET(req: Request, ctx: Ctx) {
   const court = await getCourtWithReviewSummary(courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [siblingCourts, bookings, courtClosures, venueClosures, reviews, venue, defaultFee] =
-    await Promise.all([
-      listCourtsByVenue(court.venue_id),
-      listBlockingBookingsByCourtOnDate(courtId, date),
-      listCourtClosuresByCourt(courtId, date),
-      listVenueClosuresByVenue(court.venue_id, date),
-      listCourtReviewsByVenue(court.venue_id),
-      getVenueById(court.venue_id),
-      getPlatformDefaultBookingFeeAmount(),
-    ]);
+  const [siblingCourts, venueClosures, reviews, venue, defaultFee] = await Promise.all([
+    listCourtsByVenue(court.venue_id),
+    listVenueClosuresByVenue(court.venue_id, date),
+    listCourtReviewsByVenue(court.venue_id),
+    getVenueById(court.venue_id),
+    getPlatformDefaultBookingFeeAmount(),
+  ]);
+
+  const courtIdsInVenue = new Set<string>([
+    court.id,
+    ...siblingCourts.map((sibling) => sibling.id),
+  ]);
+  const courtIdsList = Array.from(courtIdsInVenue);
+
+  const perCourt = await Promise.all(
+    courtIdsList.map(async (id) => {
+      const [bookings, courtClosures] = await Promise.all([
+        listBlockingBookingsByCourtOnDate(id, date),
+        listCourtClosuresByCourt(id, date),
+      ]);
+      return [id, { bookings, court_closures: courtClosures }] as const;
+    }),
+  );
+
+  const availability_by_court_id: Record<string, CourtAvailabilityForDate> = {};
+  for (const [id, value] of perCourt) {
+    availability_by_court_id[id] = value;
+  }
+
   const flat_booking_fee = effectiveFlatBookingFeePhp(
     defaultFee,
     venue?.booking_fee_override,
@@ -45,11 +67,8 @@ export async function GET(req: Request, ctx: Ctx) {
     court,
     sibling_courts: siblingCourts.sort((a, b) => a.name.localeCompare(b.name)),
     flat_booking_fee,
-    availability: {
-      bookings,
-      court_closures: courtClosures,
-      venue_closures: venueClosures,
-    },
+    venue_closures: venueClosures,
+    availability_by_court_id,
     reviews,
   };
   return NextResponse.json(body);

@@ -807,25 +807,6 @@ export default function BookingDetailPage() {
                 {formatPhp(sessionTotal)}
               </span>
             </div>
-            {(() => {
-              const pendingSegment = segments.find((s) => s.status === "pending_payment");
-              if (!pendingSegment) return null;
-              return (
-                <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                    Payment pending
-                  </p>
-                  <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-200/80">
-                    Submit your payment proof before the hold expires.
-                  </p>
-                  <Button size="sm" className="mt-3 bg-amber-600 text-white hover:bg-amber-700" asChild>
-                    <Link href={`/courts/${pendingSegment.court_id}/book`}>
-                      Submit payment proof
-                    </Link>
-                  </Button>
-                </div>
-              );
-            })()}
             {segments.some((s) => s.status === "pending_confirmation") ? (
               <div className="border-t border-border/60 pt-4">
                 <p className="text-sm text-muted-foreground">

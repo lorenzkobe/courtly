@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
@@ -14,13 +13,7 @@ import { queryKeys } from "@/lib/query/query-keys";
 import type { Booking, Court } from "@/lib/types/courtly";
 import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
 
-function shouldSkipGlobalPaymentGate(pathname: string) {
-  if (pathname === "/courts/cart") return true;
-  return /^\/courts\/[^/]+\/book(?:\/|$)/.test(pathname);
-}
-
 export default function GlobalPendingPaymentGate() {
-  const pathname = usePathname();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
@@ -39,7 +32,6 @@ export default function GlobalPendingPaymentGate() {
     null,
   );
 
-  const disabledByRoute = shouldSkipGlobalPaymentGate(pathname);
   const { data: myPendingBookings = [] } = useQuery({
     queryKey: queryKeys.bookings.list({
       player_email: user?.email,
@@ -51,7 +43,7 @@ export default function GlobalPendingPaymentGate() {
       });
       return data;
     },
-    enabled: !!user?.email && !disabledByRoute,
+    enabled: !!user?.email,
     staleTime: 15_000,
   });
 
@@ -91,7 +83,7 @@ export default function GlobalPendingPaymentGate() {
       const { data } = await courtlyApi.courts.get(pendingPaymentCourtId);
       return data;
     },
-    enabled: !!pendingPaymentCourtId && !disabledByRoute,
+    enabled: !!pendingPaymentCourtId,
     staleTime: 15_000,
   });
 
@@ -222,7 +214,6 @@ export default function GlobalPendingPaymentGate() {
     },
   });
 
-  if (disabledByRoute) return null;
   if (!overlayPendingBooking || paymentMethods.length === 0) return null;
 
   return (

@@ -531,12 +531,21 @@ export type CourtDayAvailability = {
   venue_closures: VenueClosure[];
 };
 
+/** Per-court bookings + closures for a single date. Venue closures live one level up. */
+export type CourtAvailabilityForDate = {
+  bookings: Booking[];
+  court_closures: CourtClosure[];
+};
+
 export type CourtBookingSurfaceResponse = {
   court: Court;
   sibling_courts: Court[];
   /** Effective flat booking fee (PHP) for this venue: platform default or venue override. */
   flat_booking_fee: number;
-  availability: CourtDayAvailability;
+  /** Venue-wide closures (apply to every court in the venue). */
+  venue_closures: VenueClosure[];
+  /** Per-court availability keyed by court_id, covering the focal court and every sibling. */
+  availability_by_court_id: Record<string, CourtAvailabilityForDate>;
   reviews: CourtReview[];
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import { ArrowLeft, CalendarIcon, Loader2, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
@@ -286,26 +286,19 @@ export default function AdminVenueCourtsPage() {
     },
   });
 
-  const closureSurfaceQueries = useQueries({
-    queries: venueCourts.map((court) => ({
-      queryKey: queryKeys.bookingSurface.courtDay(court.id, closureForm.date),
-      queryFn: async () => {
-        const { data } = await courtlyApi.courts.bookingSurface(court.id, {
-          date: closureForm.date,
-        });
-        return data;
-      },
-      enabled: closureOpen && Boolean(closureForm.date),
-      staleTime: 20_000,
-    })),
+  const closureLeaderCourtId = venueCourts[0]?.id ?? "";
+  const closureSurfaceQuery = useQuery({
+    queryKey: queryKeys.bookingSurface.courtDay(closureLeaderCourtId, closureForm.date),
+    queryFn: async () => {
+      const { data } = await courtlyApi.courts.bookingSurface(closureLeaderCourtId, {
+        date: closureForm.date,
+      });
+      return data;
+    },
+    enabled: closureOpen && Boolean(closureForm.date) && Boolean(closureLeaderCourtId),
+    staleTime: 20_000,
   });
-  const closureSurfaceByCourtId = useMemo(() => {
-    const out = new Map<string, (typeof closureSurfaceQueries)[number]["data"]>();
-    venueCourts.forEach((court, index) => {
-      out.set(court.id, closureSurfaceQueries[index]?.data);
-    });
-    return out;
-  }, [closureSurfaceQueries, venueCourts]);
+  const closureSurface = closureSurfaceQuery.data;
   const closureTokenSummaryByCourtId = useMemo(() => {
     const out = new Map<
       string,
@@ -316,17 +309,16 @@ export default function AdminVenueCourtsPage() {
         existingCourtClosureIds: string[];
       }
     >();
+    const venueClosed = closureSurface
+      ? occupiedHourStartsFromClosures(closureSurface.venue_closures ?? [], closureForm.date)
+      : new Set<string>();
     venueCourts.forEach((court) => {
-      const payload = closureSurfaceByCourtId.get(court.id);
-      const availability = payload?.availability;
-      const booked = availability ? occupiedHourStarts(availability.bookings ?? []) : new Set<string>();
-      const venueClosed = availability
-        ? occupiedHourStartsFromClosures(availability.venue_closures ?? [], closureForm.date)
+      const slot = closureSurface?.availability_by_court_id?.[court.id];
+      const booked = slot ? occupiedHourStarts(slot.bookings ?? []) : new Set<string>();
+      const existingCourtClosed = slot
+        ? occupiedHourStartsFromClosures(slot.court_closures ?? [], closureForm.date)
         : new Set<string>();
-      const existingCourtClosed = availability
-        ? occupiedHourStartsFromClosures(availability.court_closures ?? [], closureForm.date)
-        : new Set<string>();
-      const existingCourtClosureIds = (availability?.court_closures ?? []).map((closure) => closure.id);
+      const existingCourtClosureIds = (slot?.court_closures ?? []).map((closure) => closure.id);
       out.set(court.id, {
         booked,
         venueClosed,
@@ -335,7 +327,7 @@ export default function AdminVenueCourtsPage() {
       });
     });
     return out;
-  }, [closureForm.date, closureSurfaceByCourtId, venueCourts]);
+  }, [closureForm.date, closureSurface, venueCourts]);
   const saveClosureDraft = useMutation({
     mutationFn: async () => {
       const date = closureForm.date.trim();
@@ -476,7 +468,7 @@ export default function AdminVenueCourtsPage() {
     () => new Date(`${closureForm.date}T12:00:00`),
     [closureForm.date],
   );
-  const closureGridLoading = closureSurfaceQueries.some((query) => query.isLoading);
+  const closureGridLoading = closureSurfaceQuery.isLoading;
 
   const toggleAmenity = (amenity: string) => {
     setVenueForm((prev) => ({

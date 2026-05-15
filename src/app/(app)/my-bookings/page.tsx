@@ -419,15 +419,6 @@ export default function MyBookingsPage() {
                         ) : null}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
-                        {group.items.some((item) => item.status === "pending_payment") ? (
-                          <Button size="sm" className="shrink-0 bg-amber-600 text-white hover:bg-amber-700" asChild>
-                            <Link
-                              href={`/courts/${group.items.find((item) => item.status === "pending_payment")!.court_id}/book`}
-                            >
-                              Pay now
-                            </Link>
-                          </Button>
-                        ) : null}
                         <Button size="sm" variant="outline" className="shrink-0" asChild>
                           <Link href={`/my-bookings/${group.detailBookingId}`}>
                             Details

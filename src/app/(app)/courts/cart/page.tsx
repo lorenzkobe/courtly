@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft,
@@ -9,9 +9,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import PaymentLockOverlay from "@/components/payments/PaymentLockOverlay";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
@@ -32,28 +31,11 @@ import {
 } from "@/lib/bookings/booking-cart-analytics";
 import { buildBookingPayloads } from "@/lib/bookings/booking-payloads";
 import { formatPhp } from "@/lib/format-currency";
-import { optimizePaymentProofImage } from "@/lib/payments/optimize-payment-proof";
-import {
-  PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES,
-} from "@/lib/payments/payment-proof-constraints";
 import { queryKeys } from "@/lib/query/query-keys";
 import { useBookingCart } from "@/lib/stores/booking-cart";
-import type { Booking, Court } from "@/lib/types/courtly";
-import { venuePaymentMethodsForCheckout } from "@/lib/venue-payment-methods";
+import type { Booking, Court, CourtBookingSurfaceResponse } from "@/lib/types/courtly";
 import { segmentsTotalCost } from "@/lib/court-pricing";
 import { splitBookingAmounts } from "@/lib/platform-fee";
-
-type PaymentOverlayState = {
-  booking_id: string;
-  booking_group_id: string;
-  hold_expires_at: string;
-  total_due: number;
-  payment_methods: Array<{
-    method: "gcash" | "maya";
-    account_name: string;
-    account_number: string;
-  }>;
-};
 
 function cartLineLabel(slots: string[]) {
   const runs = groupIntoContiguousHourRuns(slots);
@@ -79,79 +61,59 @@ export default function BookingCartPage() {
   const removeItem = useBookingCart((state) => state.removeItem);
   const clearCart = useBookingCart((state) => state.clearCart);
 
-  const [paymentOverlay, setPaymentOverlay] = useState<PaymentOverlayState | null>(null);
-  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"gcash" | "maya" | null>(
-    null,
-  );
-  const [optimizedProof, setOptimizedProof] = useState<{
-    dataUrl: string;
-    mimeType: "image/jpeg";
-    bytes: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [proofOptimizing, setProofOptimizing] = useState(false);
-  const { data: myPendingBookings = [] } = useQuery({
-    queryKey: queryKeys.bookings.list({
-      player_email: user?.email,
-    }),
-    queryFn: async () => {
-      if (!user?.email) return [] as Booking[];
-      const { data } = await courtlyApi.bookings.list({
-        player_email: user.email,
-      });
-      return data;
-    },
-    enabled: !!user?.email,
-  });
-  const activePendingBooking = useMemo(() => {
-    const now = Date.now();
-    const candidates = myPendingBookings
-      .filter(
-        (booking) =>
-          booking.status === "pending_payment" &&
-          booking.hold_expires_at &&
-          new Date(booking.hold_expires_at).getTime() > now,
-      )
-      .sort((a, b) => (b.created_date ?? "").localeCompare(a.created_date ?? ""));
-    return candidates[0] ?? null;
-  }, [myPendingBookings]);
-  const pendingPaymentCourtId = activePendingBooking?.court_id ?? null;
-  const { data: pendingPaymentCourt } = useQuery({
-    queryKey: pendingPaymentCourtId
-      ? queryKeys.courts.detail(pendingPaymentCourtId)
-      : queryKeys.courts.detail(""),
-    queryFn: async () => {
-      if (!pendingPaymentCourtId) return null as Court | null;
-      const { data } = await courtlyApi.courts.get(pendingPaymentCourtId);
-      return data;
-    },
-    enabled: !!pendingPaymentCourtId,
-  });
 
-  const itemSurfaces = useQueries({
-    queries: cartItems.map((item) => ({
-      queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
+  const cartFetchGroups = useMemo(() => {
+    const seen = new Map<
+      string,
+      { leaderCourtId: string; date: string }
+    >();
+    for (const item of cartItems) {
+      const groupKey = `${item.venueId}__${item.date}`;
+      if (seen.has(groupKey)) continue;
+      seen.set(groupKey, { leaderCourtId: item.courtId, date: item.date });
+    }
+    return Array.from(seen.values());
+  }, [cartItems]);
+
+  const cartGroupQueries = useQueries({
+    queries: cartFetchGroups.map((group) => ({
+      queryKey: queryKeys.bookingSurface.courtDay(group.leaderCourtId, group.date),
       queryFn: async () => {
-        const { data } = await courtlyApi.courts.bookingSurface(item.courtId, {
-          date: item.date,
+        const { data } = await courtlyApi.courts.bookingSurface(group.leaderCourtId, {
+          date: group.date,
         });
         return data;
       },
       staleTime: 15_000,
-      enabled: !!item.courtId,
+      enabled: !!group.leaderCourtId,
     })),
   });
 
+  const cartSurfaceByCourtAndDate = useMemo(() => {
+    const out = new Map<string, CourtBookingSurfaceResponse>();
+    cartFetchGroups.forEach((group, index) => {
+      const data = cartGroupQueries[index]?.data;
+      if (!data) return;
+      for (const cid of Object.keys(data.availability_by_court_id)) {
+        out.set(`${cid}__${group.date}`, data);
+      }
+    });
+    return out;
+  }, [cartFetchGroups, cartGroupQueries]);
+
   const cartLines = useMemo(() => {
-    return cartItems.map((item, index) => {
-      const surface = itemSurfaces[index]?.data;
-      const court = (surface?.court ?? null) as Court | null;
-      const bookings = surface?.availability.bookings ?? [];
-      const courtClosures = surface?.availability.court_closures ?? [];
-      const venueClosures = surface?.availability.venue_closures ?? [];
+    return cartItems.map((item) => {
+      const surface = cartSurfaceByCourtAndDate.get(`${item.courtId}__${item.date}`);
+      const court: Court | null = surface
+        ? surface.court.id === item.courtId
+          ? surface.court
+          : (surface.sibling_courts.find((c) => c.id === item.courtId) ?? null)
+        : null;
+      const slot = surface?.availability_by_court_id?.[item.courtId];
+      const bookings = slot?.bookings ?? [];
+      const courtClosures = slot?.court_closures ?? [];
+      const venueClosures = surface?.venue_closures ?? [];
 
       const occupied = new Set<string>();
       for (const token of occupiedHourStarts(bookings)) occupied.add(token);
@@ -178,8 +140,8 @@ export default function BookingCartPage() {
       return {
         item,
         court,
-        isLoading: itemSurfaces[index]?.isLoading ?? false,
-        isError: itemSurfaces[index]?.isError ?? false,
+        isLoading: !surface,
+        isError: false,
         segments,
         unavailableSlots,
         billableHours,
@@ -188,12 +150,12 @@ export default function BookingCartPage() {
         totals,
       };
     });
-  }, [cartItems, itemSurfaces]);
+  }, [cartItems, cartSurfaceByCourtAndDate]);
 
   const hasBlockingConflicts = cartLines.some(
     (line) => line.unavailableSlots.length > 0 || line.segments.length === 0 || !line.court,
   );
-  const isAnyLoading = itemSurfaces.some((query) => query.isLoading);
+  const isAnyLoading = cartGroupQueries.some((query) => query.isLoading);
 
   const grandTotal = cartLines.reduce((sum, line) => sum + line.totals.total_cost, 0);
 
@@ -204,13 +166,7 @@ export default function BookingCartPage() {
     },
     onSuccess: (checkout) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      cartItems.forEach((item) => {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
-        });
-      });
-      setPaymentOverlay(checkout);
-      setSelectedPaymentMethod(checkout.payment_methods[0]?.method ?? null);
+      void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
       clearCart();
       trackBookingCartEvent("cart_checkout_succeeded", {
         checkoutGroupId: checkout.booking_group_id,
@@ -224,151 +180,9 @@ export default function BookingCartPage() {
       );
       trackBookingCartEvent("cart_checkout_failed", { message });
       toast.error(message);
-      void Promise.all(
-        cartItems.map((item) =>
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.bookingSurface.courtDay(item.courtId, item.date),
-          }),
-        ),
-      );
-    },
-  });
-
-  const submitPaymentProof = useMutation({
-    mutationFn: async () => {
-      if (!paymentOverlay) throw new Error("No active booking hold.");
-      if (!selectedPaymentMethod) throw new Error("Select a payment method.");
-      if (!optimizedProof) throw new Error("Upload a payment screenshot first.");
-      const { data } = await courtlyApi.bookings.submitPaymentProof(paymentOverlay.booking_id, {
-        payment_method: selectedPaymentMethod,
-        payment_proof_data_url: optimizedProof.dataUrl,
-        payment_proof_mime_type: optimizedProof.mimeType,
-        payment_proof_bytes: optimizedProof.bytes,
-        payment_proof_width: optimizedProof.width,
-        payment_proof_height: optimizedProof.height,
-      });
-      return data;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      setPaymentOverlay(null);
-      setOptimizedProof(null);
-      setSelectedPaymentMethod(null);
-      toast.success("Payment submitted. Waiting for venue confirmation.");
-      router.push("/my-bookings");
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Could not submit payment proof."));
-    },
-  });
-  const cancelPendingPayment = useMutation({
-    mutationFn: async (overlay: PaymentOverlayState) => {
-      await courtlyApi.bookings.cancelPending({
-        booking_id: overlay.booking_id,
-        booking_group_id: overlay.booking_group_id,
-      });
-    },
-    onMutate: (overlay: PaymentOverlayState) => {
-      const previousProof = optimizedProof;
-      const previousMethod = selectedPaymentMethod;
-      setPaymentOverlay(null);
-      setOptimizedProof(null);
-      setSelectedPaymentMethod(null);
-      return { previousOverlay: overlay, previousProof, previousMethod };
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
-      setPaymentOverlay(null);
-      setOptimizedProof(null);
-      setSelectedPaymentMethod(null);
-      toast.success("Pending booking cancelled. Slots are now available again.");
-    },
-    onError: (error, _vars, ctx) => {
-      if (ctx?.previousOverlay) {
-        setPaymentOverlay(ctx.previousOverlay);
-      }
-      setOptimizedProof(ctx?.previousProof ?? null);
-      setSelectedPaymentMethod(ctx?.previousMethod ?? null);
-      toast.error(apiErrorMessage(error, "Could not cancel pending booking."));
     },
   });
-
-  useEffect(() => {
-    const id = window.setInterval(() => setCountdownNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (!activePendingBooking || !pendingPaymentCourt) return;
-    const paymentMethods = venuePaymentMethodsForCheckout(pendingPaymentCourt);
-    if (paymentMethods.length === 0) return;
-    const bookingGroupId =
-      activePendingBooking.booking_group_id ?? activePendingBooking.id;
-    const relatedPending = myPendingBookings.filter(
-      (booking) =>
-        (booking.booking_group_id === bookingGroupId ||
-          booking.id === activePendingBooking.id) &&
-        booking.status === "pending_payment",
-    );
-    const totalDue = relatedPending.reduce(
-      (sum, booking) => sum + Number(booking.total_cost ?? 0),
-      0,
-    );
-    setPaymentOverlay((current) => {
-      if (
-        current &&
-        current.booking_group_id === bookingGroupId &&
-        current.hold_expires_at === activePendingBooking.hold_expires_at
-      ) {
-        return { ...current, total_due: totalDue, payment_methods: paymentMethods };
-      }
-      return {
-        booking_id: activePendingBooking.id,
-        booking_group_id: bookingGroupId,
-        hold_expires_at: activePendingBooking.hold_expires_at!,
-        total_due: totalDue,
-        payment_methods: paymentMethods,
-      };
-    });
-    setSelectedPaymentMethod((current) => {
-      if (current && paymentMethods.some((method) => method.method === current)) return current;
-      return paymentMethods[0]?.method ?? null;
-    });
-  }, [activePendingBooking, myPendingBookings, pendingPaymentCourt]);
-  const overlayRemainingSeconds = paymentOverlay
-    ? Math.max(
-        0,
-        Math.ceil((new Date(paymentOverlay.hold_expires_at).getTime() - countdownNow) / 1000),
-      )
-    : 0;
-  useEffect(() => {
-    if (!paymentOverlay) return;
-    if (overlayRemainingSeconds > 0) return;
-    window.location.reload();
-  }, [overlayRemainingSeconds, paymentOverlay]);
-
-  const processProofFile = async (file: File) => {
-    const allowed = PAYMENT_PROOF_ALLOWED_INPUT_MIME_TYPES as readonly string[];
-    if (!allowed.includes(file.type)) {
-      toast.error("Please use a JPG, PNG, or WebP photo.");
-      return;
-    }
-    setProofOptimizing(true);
-    setOptimizedProof(null);
-    try {
-      const optimized = await optimizePaymentProofImage(file);
-      setOptimizedProof(optimized);
-      toast.success("Photo uploaded");
-    } catch (error) {
-      toast.error(
-        apiErrorMessage(error, "Could not use that image. Try another photo."),
-      );
-      setOptimizedProof(null);
-    } finally {
-      setProofOptimizing(false);
-    }
-  };
 
   const startCheckout = () => {
     if (!user) {
@@ -567,35 +381,6 @@ export default function BookingCartPage() {
           </Card>
         </div>
       )}
-
-      {paymentOverlay ? (
-        <PaymentLockOverlay
-          description="Send the amount to the account below, then upload your proof."
-          remainingSeconds={overlayRemainingSeconds}
-          totalDue={paymentOverlay.total_due}
-          paymentMethods={paymentOverlay.payment_methods}
-          selectedPaymentMethod={selectedPaymentMethod}
-          onPaymentMethodChange={(value) => setSelectedPaymentMethod(value)}
-          onPickProofFile={processProofFile}
-          proofPreviewUrl={optimizedProof?.dataUrl ?? null}
-          proofOptimizing={proofOptimizing}
-          onClearProof={() => setOptimizedProof(null)}
-          onSubmit={() => submitPaymentProof.mutate()}
-          submitDisabled={
-            submitPaymentProof.isPending ||
-            proofOptimizing ||
-            !selectedPaymentMethod ||
-            !optimizedProof
-          }
-          submitPending={submitPaymentProof.isPending}
-          onCancel={() => {
-            if (!paymentOverlay) return;
-            cancelPendingPayment.mutate(paymentOverlay);
-          }}
-          cancelDisabled={submitPaymentProof.isPending}
-          cancelPending={cancelPendingPayment.isPending}
-        />
-      ) : null}
     </div>
   );
 }
