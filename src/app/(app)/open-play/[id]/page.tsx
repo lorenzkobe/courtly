@@ -266,7 +266,15 @@ export default function OpenPlayDetailPage() {
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.detail(sessionId) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.openPlay.all() });
+  };
+
+  const patchDetail = (
+    updater: (current: OpenPlayDetailResponse) => OpenPlayDetailResponse,
+  ) => {
+    queryClient.setQueryData<OpenPlayDetailResponse>(
+      queryKeys.openPlay.detail(sessionId),
+      (current) => (current ? updater(current) : current),
+    );
   };
 
   const processProofFile = async (file: File) => {
@@ -333,9 +341,9 @@ export default function OpenPlayDetailPage() {
         join_note: joinNote.trim() || undefined,
       });
     },
-    onSuccess: () => {
+    onSuccess: ({ data: response }) => {
+      patchDetail((current) => ({ ...current, my_request: response.request }));
       toast.success("Payment proof sent for organizer review.");
-      refresh();
     },
     onError: () => toast.error("Could not submit payment proof."),
   });
@@ -343,9 +351,12 @@ export default function OpenPlayDetailPage() {
   const commentMutation = useMutation({
     mutationFn: async () =>
       courtlyApi.openPlay.addComment(sessionId, { comment: commentDraft.trim() }),
-    onSuccess: () => {
+    onSuccess: ({ data: response }) => {
+      patchDetail((current) => ({
+        ...current,
+        comments: [...current.comments, response.comment],
+      }));
       setCommentDraft("");
-      refresh();
     },
     onError: () => toast.error("Could not add comment."),
   });
@@ -436,10 +447,10 @@ export default function OpenPlayDetailPage() {
         maya_account_name: hostAcceptsMaya ? hostMayaAccountName.trim() : null,
         maya_account_number: hostAcceptsMaya ? hostMayaAccountNumber.trim() : null,
       }),
-    onSuccess: () => {
+    onSuccess: ({ data: updatedSession }) => {
+      patchDetail((current) => ({ ...current, session: updatedSession }));
       toast.success("Open play updated.");
       setEditOpen(false);
-      refresh();
     },
     onError: (error) =>
       toast.error(apiErrorMessage(error, "Could not update open play.")),

@@ -51,7 +51,12 @@ import { isValidOpenPlayDuprRange, roundDuprBound } from "@/lib/open-play/dupr-r
 import { cn, formatBookingStatusLabel } from "@/lib/utils";
 import { BookingStatusStepper } from "@/components/booking/BookingStatusStepper";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
-import type { Booking, Court, CourtReview } from "@/lib/types/courtly";
+import type {
+  Booking,
+  BookingDetailContextResponse,
+  Court,
+  CourtReview,
+} from "@/lib/types/courtly";
 import { isValidPhMobile } from "@/lib/validation/person-fields";
 
 const statusStyles: Record<string, string> = {
@@ -96,24 +101,30 @@ function BookingReviewSection({
     return format(new Date(createdAtMs + 24 * 60 * 60 * 1000), "PPp");
   }, [myReview]);
 
-  const invalidateReviews = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.reviews.venue(court.venue_id),
-    });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.courts.detail(court.id) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
-  }, [queryClient, court.id, court.venue_id]);
+  const patchBookingDetailReviews = useCallback(
+    (next: (prev: CourtReview[]) => CourtReview[]) => {
+      queryClient.setQueryData<BookingDetailContextResponse>(
+        ["my-booking-detail", bookingId, "with-group"],
+        (prev) => {
+          if (!prev) return prev;
+          return { ...prev, reviews: next(prev.reviews ?? []) };
+        },
+      );
+    },
+    [queryClient, bookingId],
+  );
 
   const createReviewMut = useMutation({
     mutationFn: async () => {
-      await courtlyApi.venueReviews.create(court.venue_id, {
+      const { data } = await courtlyApi.venueReviews.create(court.venue_id, {
         booking_id: bookingId,
         rating: ratingDraft,
         comment: commentDraft.trim() || undefined,
       });
+      return data;
     },
-    onSuccess: () => {
-      invalidateReviews();
+    onSuccess: (created) => {
+      patchBookingDetailReviews((prev) => [created, ...prev]);
       toast.success("Thanks for your review!");
     },
     onError: (err: unknown) =>
@@ -123,13 +134,20 @@ function BookingReviewSection({
   const updateReviewMut = useMutation({
     mutationFn: async () => {
       if (!myReview) throw new Error("No review");
-      await courtlyApi.venueReviews.update(court.venue_id, myReview.id, {
-        rating: ratingDraft,
-        comment: commentDraft.trim() || undefined,
-      });
+      const { data } = await courtlyApi.venueReviews.update(
+        court.venue_id,
+        myReview.id,
+        {
+          rating: ratingDraft,
+          comment: commentDraft.trim() || undefined,
+        },
+      );
+      return data;
     },
-    onSuccess: () => {
-      invalidateReviews();
+    onSuccess: (updated) => {
+      patchBookingDetailReviews((prev) =>
+        prev.map((review) => (review.id === updated.id ? updated : review)),
+      );
       toast.success("Review updated");
     },
     onError: (err: unknown) =>
@@ -140,9 +158,12 @@ function BookingReviewSection({
     mutationFn: async () => {
       if (!myReview) throw new Error("No review");
       await courtlyApi.venueReviews.remove(court.venue_id, myReview.id);
+      return myReview.id;
     },
-    onSuccess: () => {
-      invalidateReviews();
+    onSuccess: (removedId) => {
+      patchBookingDetailReviews((prev) =>
+        prev.filter((review) => review.id !== removedId),
+      );
       toast.success("Review removed");
     },
     onError: (err: unknown) =>

@@ -5,7 +5,7 @@ import {
   deleteRow,
   getCourtById,
   getCourtClosureById,
-  listVenueAdminAssignments,
+  listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { CourtClosure } from "@/lib/types/courtly";
@@ -15,12 +15,12 @@ type Ctx = { params: Promise<{ id: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const [court, cur, assignments] = await Promise.all([
+  const [court, cur] = await Promise.all([
     getCourtById(courtId),
     getCourtClosureById(courtId, closureId),
-    listVenueAdminAssignments(),
   ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(court.venue_id);
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -72,12 +72,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId, closureId } = await ctx.params;
-  const [court, cur, assignments] = await Promise.all([
+  const [court, cur] = await Promise.all([
     getCourtById(courtId),
     getCourtClosureById(courtId, closureId),
-    listVenueAdminAssignments(),
   ]);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(court.venue_id);
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

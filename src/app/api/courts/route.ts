@@ -40,16 +40,22 @@ export async function GET(req: Request) {
   const summaries = await listReviewSummaryByVenueIds(
     [...new Set(list.map((court) => court.venue_id))],
   );
-  return NextResponse.json(
-    list.map((court) => ({
-      ...court,
-      review_summary:
-        summaries.get(court.venue_id) ?? {
-          average_rating: 0,
-          review_count: 0,
-        },
-    })),
-  );
+  const payload = list.map((court) => ({
+    ...court,
+    review_summary:
+      summaries.get(court.venue_id) ?? {
+        average_rating: 0,
+        review_count: 0,
+      },
+  }));
+  const response = NextResponse.json(payload);
+  if (!manageable) {
+    response.headers.set(
+      "Cache-Control",
+      "public, s-maxage=60, stale-while-revalidate=600",
+    );
+  }
+  return response;
 }
 
 export async function POST(req: Request) {

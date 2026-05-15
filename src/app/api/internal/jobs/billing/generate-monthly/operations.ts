@@ -47,24 +47,77 @@ export async function runGenerateMonthlyBilling(params?: {
 
   const { data: venues, error: venueErr } = await db
     .from("venues")
-    .select("id")
+    .select("id, name")
     .eq("status", "active");
   if (venueErr) throw venueErr;
+
+  const venueRows = (venues ?? []) as { id: string; name: string }[];
+  const venueIds = venueRows.map((row) => row.id);
 
   let generated = 0;
   let skipped = 0;
   let protected_paid = 0;
 
-  for (const venue of (venues ?? []) as { id: string }[]) {
-    const { data: existing } = await db
-      .from("venue_billing_cycles")
-      .select("id, status")
-      .eq("venue_id", venue.id)
-      .eq("period_start", periodStart)
-      .maybeSingle();
+  if (venueIds.length === 0) {
+    return { generated, skipped, protected_paid };
+  }
 
+  const [existingCyclesResult, courtsResult] = await Promise.all([
+    db
+      .from("venue_billing_cycles")
+      .select("id, venue_id, status")
+      .in("venue_id", venueIds)
+      .eq("period_start", periodStart),
+    db.from("courts").select("id, venue_id").in("venue_id", venueIds),
+  ]);
+
+  const existingByVenue = new Map<string, { id: string; status: string }>();
+  for (const row of (existingCyclesResult.data ?? []) as {
+    id: string;
+    venue_id: string;
+    status: string;
+  }[]) {
+    existingByVenue.set(row.venue_id, { id: row.id, status: row.status });
+  }
+
+  const courtsByVenue = new Map<string, string[]>();
+  const courtToVenue = new Map<string, string>();
+  for (const row of (courtsResult.data ?? []) as { id: string; venue_id: string }[]) {
+    const list = courtsByVenue.get(row.venue_id) ?? [];
+    list.push(row.id);
+    courtsByVenue.set(row.venue_id, list);
+    courtToVenue.set(row.id, row.venue_id);
+  }
+
+  const allCourtIds = Array.from(courtToVenue.keys());
+  const bookingsByVenue = new Map<string, { count: number; fees: number }>();
+  if (allCourtIds.length > 0) {
+    const { data: bookings } = await db
+      .from("bookings")
+      .select("court_id, booking_fee")
+      .in("court_id", allCourtIds)
+      .in("status", ["confirmed", "completed"])
+      .gte("date", periodStart)
+      .lte("date", periodEnd);
+    for (const row of (bookings ?? []) as { court_id: string; booking_fee: unknown }[]) {
+      const venueId = courtToVenue.get(row.court_id);
+      if (!venueId) continue;
+      const current = bookingsByVenue.get(venueId) ?? { count: 0, fees: 0 };
+      current.count += 1;
+      current.fees += Number(row.booking_fee ?? 0);
+      bookingsByVenue.set(venueId, current);
+    }
+  }
+
+  const periodLabel = new Date(periodStart + "T00:00:00").toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+  });
+
+  for (const venue of venueRows) {
+    const existing = existingByVenue.get(venue.id);
     if (existing) {
-      if ((existing as { status: string }).status === "paid") {
+      if (existing.status === "paid") {
         protected_paid++;
         continue;
       }
@@ -74,73 +127,38 @@ export async function runGenerateMonthlyBilling(params?: {
       }
     }
 
-    const { data: courts } = await db
-      .from("courts")
+    const stats = bookingsByVenue.get(venue.id) ?? { count: 0, fees: 0 };
+
+    const { data: upserted, error } = await db
+      .from("venue_billing_cycles")
+      .upsert(
+        {
+          venue_id: venue.id,
+          period_start: periodStart,
+          period_end: periodEnd,
+          booking_count: stats.count,
+          total_booking_fees: stats.fees,
+          status: "unsettled",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "venue_id,period_start", ignoreDuplicates: false },
+      )
       .select("id")
-      .eq("venue_id", venue.id);
-
-    const courtIds = ((courts ?? []) as { id: string }[]).map((court) => court.id);
-
-    let booking_count = 0;
-    let total_booking_fees = 0;
-
-    if (courtIds.length > 0) {
-      const { data: bookings } = await db
-        .from("bookings")
-        .select("booking_fee")
-        .in("court_id", courtIds)
-        .in("status", ["confirmed", "completed"])
-        .gte("date", periodStart)
-        .lte("date", periodEnd);
-
-      booking_count = (bookings ?? []).length;
-      total_booking_fees = ((bookings ?? []) as { booking_fee: unknown }[]).reduce(
-        (sum, b) => sum + Number(b.booking_fee ?? 0),
-        0,
-      );
-    }
-
-    const { error } = await db.from("venue_billing_cycles").upsert(
-      {
-        venue_id: venue.id,
-        period_start: periodStart,
-        period_end: periodEnd,
-        booking_count,
-        total_booking_fees,
-        status: "unsettled",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "venue_id,period_start", ignoreDuplicates: false },
-    );
+      .maybeSingle();
 
     if (error) {
       skipped++;
-    } else {
-      generated++;
-      // Fire-and-forget: notify venue admins about the new billing cycle
-      const { data: newCycle } = await db
-        .from("venue_billing_cycles")
-        .select("id")
-        .eq("venue_id", venue.id)
-        .eq("period_start", periodStart)
-        .maybeSingle();
-      const { data: venueRow } = await db
-        .from("venues")
-        .select("name")
-        .eq("id", venue.id)
-        .maybeSingle();
-      if (newCycle?.id && venueRow?.name) {
-        const periodLabel = new Date(periodStart + "T00:00:00").toLocaleDateString("en-PH", {
-          year: "numeric",
-          month: "long",
-        });
-        emitNewBillingCycleToVenueAdmins({
-          venueId: venue.id,
-          venueName: venueRow.name as string,
-          cycleId: newCycle.id as string,
-          period: periodLabel,
-        }).catch(() => undefined);
-      }
+      continue;
+    }
+    generated++;
+    const cycleId = (upserted as { id?: string } | null)?.id;
+    if (cycleId && venue.name) {
+      emitNewBillingCycleToVenueAdmins({
+        venueId: venue.id,
+        venueName: venue.name,
+        cycleId,
+        period: periodLabel,
+      }).catch(() => undefined);
     }
   }
 

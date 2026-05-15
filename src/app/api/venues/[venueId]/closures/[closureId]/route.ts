@@ -3,9 +3,9 @@ import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import {
   deleteRow,
+  getVenueById,
   getVenueClosureById,
-  listVenueAdminAssignments,
-  listVenues,
+  listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
 import type { VenueClosure } from "@/lib/types/courtly";
@@ -15,13 +15,12 @@ type Ctx = { params: Promise<{ venueId: string; closureId: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const [venues, cur, assignments] = await Promise.all([
-    listVenues(),
+  const [venue, cur] = await Promise.all([
+    getVenueById(venueId),
     getVenueClosureById(venueId, closureId),
-    listVenueAdminAssignments(),
   ]);
-  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   if (!user || !canMutateVenue(user, venueId, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -74,13 +73,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, closureId } = await ctx.params;
-  const [venues, cur, assignments] = await Promise.all([
-    listVenues(),
+  const [venue, cur] = await Promise.all([
+    getVenueById(venueId),
     getVenueClosureById(venueId, closureId),
-    listVenueAdminAssignments(),
   ]);
-  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   if (!user || !canMutateVenue(user, venueId, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

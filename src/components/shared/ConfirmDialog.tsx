@@ -37,13 +37,15 @@ export default function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   const [remaining, setRemaining] = useState(countdownSeconds ?? 0);
+  const runKey = `${open}:${countdownSeconds ?? 0}`;
+  const [lastRunKey, setLastRunKey] = useState(runKey);
+  if (lastRunKey !== runKey) {
+    setLastRunKey(runKey);
+    setRemaining(open && countdownSeconds ? countdownSeconds : 0);
+  }
 
   useEffect(() => {
-    if (!open || !countdownSeconds) {
-      setRemaining(countdownSeconds ?? 0);
-      return;
-    }
-    setRemaining(countdownSeconds);
+    if (!open || !countdownSeconds) return;
     const interval = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {

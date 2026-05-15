@@ -8,7 +8,6 @@ import {
   hasAnyBookingsForVenue,
   listCourtsByVenue,
   listManagedUsersByIds,
-  listVenueAdminAssignments,
   listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
@@ -93,7 +92,7 @@ export async function GET(_req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId } = await ctx.params;
-  const assignments = await listVenueAdminAssignments();
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   const canWrite = !!user && canMutateVenue(user, venueId, assignments);
   if (!canWrite) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

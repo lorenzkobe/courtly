@@ -543,29 +543,48 @@ export default function BookCourtPage() {
 
   const deleteReviewMut = useMutation({
     mutationFn: async (reviewId: string) => {
-      if (!court?.venue_id) return;
+      if (!court?.venue_id) return reviewId;
       await courtlyApi.venueReviews.remove(court.venue_id, reviewId);
+      return reviewId;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: bookingSurfaceKey,
-      });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.courts.all() });
+    onSuccess: (removedId) => {
+      queryClient.setQueryData<CourtBookingSurfaceResponse>(
+        bookingSurfaceKey,
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                reviews: prev.reviews.filter((review) => review.id !== removedId),
+              }
+            : prev,
+      );
       toast.success("Review removed");
     },
   });
 
   const flagReviewMut = useMutation({
     mutationFn: async (p: { reviewId: string; reason: string }) => {
-      if (!court?.venue_id) return;
-      await courtlyApi.venueReviews.flag(court.venue_id, p.reviewId, {
+      if (!court?.venue_id) return null;
+      const { data } = await courtlyApi.venueReviews.flag(court.venue_id, p.reviewId, {
         reason: p.reason || undefined,
       });
+      return data;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: bookingSurfaceKey,
-      });
+    onSuccess: (flagged) => {
+      if (flagged) {
+        queryClient.setQueryData<CourtBookingSurfaceResponse>(
+          bookingSurfaceKey,
+          (prev) =>
+            prev
+              ? {
+                  ...prev,
+                  reviews: prev.reviews.map((review) =>
+                    review.id === flagged.id ? flagged : review,
+                  ),
+                }
+              : prev,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.reviews.flagged() });
       setFlagReviewId(null);
       setFlagNote("");
@@ -589,7 +608,7 @@ export default function BookCourtPage() {
         queryKey: queryKeys.bookings.my(user?.email, court?.sport),
       });
       void queryClient.invalidateQueries({
-        queryKey: ["booking-surface"],
+        queryKey: bookingSurfaceKey,
       });
       setCartCheckoutReviewOpen(false);
       clearCart();

@@ -622,13 +622,6 @@ export async function listManagedUsersByIds(userIds: string[]): Promise<ManagedU
   }));
 }
 
-export async function listVenueAdminAssignments(): Promise<VenueAdminAssignment[]> {
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.from("venue_admin_assignments").select("*");
-  if (error) throw error;
-  return (data ?? []) as VenueAdminAssignment[];
-}
-
 export async function listVenueAdminAssignmentsByAdminUser(
   adminUserId: string,
 ): Promise<VenueAdminAssignment[]> {
@@ -979,7 +972,7 @@ export async function countFutureBookingsByPlayer(
   sport?: CourtSport | null,
 ): Promise<number> {
   const supabase = await createSupabaseServerClient();
-  let query = supabase
+  const query = supabase
     .from("bookings")
     .select("id, courts(id,venues(sport))", { count: "exact", head: false })
     .eq("player_email", playerEmail)

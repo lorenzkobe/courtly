@@ -165,8 +165,16 @@ export default function BookingCartPage() {
       return data;
     },
     onSuccess: (checkout) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
-      void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
+      if (user?.email) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookings.list({ player_email: user.email }),
+        });
+      }
+      for (const group of cartFetchGroups) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(group.leaderCourtId, group.date),
+        });
+      }
       clearCart();
       trackBookingCartEvent("cart_checkout_succeeded", {
         checkoutGroupId: checkout.booking_group_id,
@@ -180,7 +188,11 @@ export default function BookingCartPage() {
       );
       trackBookingCartEvent("cart_checkout_failed", { message });
       toast.error(message);
-      void queryClient.invalidateQueries({ queryKey: ["booking-surface"] });
+      for (const group of cartFetchGroups) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(group.leaderCourtId, group.date),
+        });
+      }
     },
   });
 

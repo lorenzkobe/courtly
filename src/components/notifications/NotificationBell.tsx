@@ -14,7 +14,10 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { NOTIFICATIONS_QUERY_KEY } from "@/lib/notifications/query-key";
 import { useNotificationRealtime } from "@/lib/notifications/use-notification-realtime";
 import { isSupabasePublicConfigured } from "@/lib/supabase/env";
-import type { Notification } from "@/lib/notifications/types";
+import type {
+  Notification,
+  NotificationsListResponse,
+} from "@/lib/notifications/types";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -134,8 +137,9 @@ export default function NotificationBell({ className }: { className?: string }) 
       // the badge count immediately, even before the popover is opened.
       enabled: Boolean(user),
       staleTime: 15_000,
-      refetchInterval: 60_000,
     });
+
+  const pagedKey = [...NOTIFICATIONS_QUERY_KEY, "paged", PAGE_LIMIT] as const;
 
   const markRead = useMutation({
     mutationFn: async (id: string) => {
@@ -144,8 +148,32 @@ export default function NotificationBell({ className }: { className?: string }) 
       );
       return markReadResponse;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });
+    onSuccess: (_response, id) => {
+      const readAt = new Date().toISOString();
+      queryClient.setQueryData<{
+        pages: NotificationsListResponse[];
+        pageParams: unknown[];
+      }>(pagedKey, (prev) => {
+        if (!prev) return prev;
+        let didMarkUnread = false;
+        const pages = prev.pages.map((page) => ({
+          ...page,
+          items: page.items.map((item) => {
+            if (item.id !== id) return item;
+            if (item.read_at) return item;
+            didMarkUnread = true;
+            return { ...item, read_at: readAt };
+          }),
+        }));
+        if (!didMarkUnread) return prev;
+        if (pages[0]) {
+          pages[0] = {
+            ...pages[0],
+            unread_count: Math.max(0, (pages[0].unread_count ?? 0) - 1),
+          };
+        }
+        return { ...prev, pages };
+      });
     },
   });
 
@@ -156,7 +184,21 @@ export default function NotificationBell({ className }: { className?: string }) 
       return markAllReadResponse;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [...NOTIFICATIONS_QUERY_KEY] });
+      const readAt = new Date().toISOString();
+      queryClient.setQueryData<{
+        pages: NotificationsListResponse[];
+        pageParams: unknown[];
+      }>(pagedKey, (prev) => {
+        if (!prev) return prev;
+        const pages = prev.pages.map((page, idx) => ({
+          ...page,
+          unread_count: idx === 0 ? 0 : page.unread_count,
+          items: page.items.map((item) =>
+            item.read_at ? item : { ...item, read_at: readAt },
+          ),
+        }));
+        return { ...prev, pages };
+      });
     },
   });
 

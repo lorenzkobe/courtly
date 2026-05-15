@@ -216,7 +216,7 @@ function CycleDetailDialog({
                 </p>
                 {proofUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={proofUrl} alt="Payment proof" className="max-h-64 rounded-lg border object-contain" />
+                  <img src={proofUrl} alt="Payment proof" className="max-h-64 max-w-md rounded-lg border object-contain" />
                 ) : (
                   <Button size="sm" variant="outline" onClick={handleViewProof} disabled={loadingProof}>
                     {loadingProof ? "Loading…" : "View proof"}

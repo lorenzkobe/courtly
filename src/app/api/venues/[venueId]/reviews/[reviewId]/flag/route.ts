@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canVenueAdminFlagReview } from "@/lib/auth/management";
 import {
+  getVenueById,
   listCourtReviews,
-  listVenueAdminAssignments,
-  listVenues,
+  listVenueAdminAssignmentsByVenue,
   updateRow,
 } from "@/lib/data/courtly-db";
 import { emitReviewFlagged } from "@/lib/notifications/emit-from-server";
@@ -14,12 +14,11 @@ type Ctx = { params: Promise<{ venueId: string; reviewId: string }> };
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId, reviewId } = await ctx.params;
-  const [venues, assignments, reviews] = await Promise.all([
-    listVenues(),
-    listVenueAdminAssignments(),
+  const [venue, assignments, reviews] = await Promise.all([
+    getVenueById(venueId),
+    listVenueAdminAssignmentsByVenue(venueId),
     listCourtReviews(),
   ]);
-  const venue = venues.find((row) => row.id === venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (
     !user ||

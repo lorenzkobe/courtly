@@ -6,7 +6,7 @@ import {
   hasConfirmedBookingConflictForCourt,
   insertRow,
   listCourtClosuresByCourt,
-  listVenueAdminAssignments,
+  listVenueAdminAssignmentsByVenue,
 } from "@/lib/data/courtly-db";
 import type { CourtClosure } from "@/lib/types/courtly";
 
@@ -15,10 +15,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Public: `?date=yyyy-MM-dd` for that day. Authenticated venue/superadmin: all blocks for the court. */
 export async function GET(req: Request, ctx: Ctx) {
   const { id: courtId } = await ctx.params;
-  const [court, assignments] = await Promise.all([
-    getCourtById(courtId),
-    listVenueAdminAssignments(),
-  ]);
+  const court = await getCourtById(courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
@@ -29,6 +26,7 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const user = await readSessionUser();
+  const assignments = await listVenueAdminAssignmentsByVenue(court.venue_id);
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -44,11 +42,9 @@ export async function GET(req: Request, ctx: Ctx) {
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { id: courtId } = await ctx.params;
-  const [court, assignments] = await Promise.all([
-    getCourtById(courtId),
-    listVenueAdminAssignments(),
-  ]);
+  const court = await getCourtById(courtId);
   if (!court) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(court.venue_id);
   if (!user || !canMutateCourt(user, court, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -1,7 +1,4 @@
-import {
-  listVenueAdminAssignments,
-  listVenueAdminAssignmentsByVenue,
-} from "@/lib/data/courtly-db";
+import { listVenueAdminAssignmentsByVenue } from "@/lib/data/courtly-db";
 import type { Booking, CourtReview } from "@/lib/types/courtly";
 import type { EmitNotificationInput } from "@/lib/notifications/repository";
 import { createNotificationRepository } from "@/lib/notifications/repository-factory";
@@ -209,12 +206,8 @@ export async function emitBookingCreatedToVenueAdmins(params: {
   bookerLabel: string;
   bookerUserId: string | null;
 }): Promise<void> {
-  const assignments = await listVenueAdminAssignments();
-  const adminIds = new Set(
-    assignments
-      .filter((a) => a.venue_id === params.venueId)
-      .map((a) => a.admin_user_id),
-  );
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  const adminIds = new Set(assignments.map((a) => a.admin_user_id));
   if (params.bookerUserId) adminIds.delete(params.bookerUserId);
   const inputs: EmitNotificationInput[] = [...adminIds].map((user_id) => ({
     user_id,
@@ -235,14 +228,8 @@ export async function emitBookingAutoConfirmedToVenueAdmins(params: {
   courtName: string;
   venueName: string;
 }): Promise<void> {
-  const assignments = await listVenueAdminAssignments();
-  const adminIds = [
-    ...new Set(
-      assignments
-        .filter((a) => a.venue_id === params.venueId)
-        .map((a) => a.admin_user_id),
-    ),
-  ];
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  const adminIds = [...new Set(assignments.map((a) => a.admin_user_id))];
   const inputs = adminIds.map(
     (user_id): EmitNotificationInput => ({
       user_id,
@@ -540,14 +527,8 @@ export async function emitReviewCreatedToVenueAdmins(params: {
   reviewerLabel: string;
   rating: number;
 }): Promise<void> {
-  const assignments = await listVenueAdminAssignments();
-  const adminIds = [
-    ...new Set(
-      assignments
-        .filter((a) => a.venue_id === params.venueId)
-        .map((a) => a.admin_user_id),
-    ),
-  ];
+  const assignments = await listVenueAdminAssignmentsByVenue(params.venueId);
+  const adminIds = [...new Set(assignments.map((a) => a.admin_user_id))];
   const inputs = adminIds.map(
     (user_id): EmitNotificationInput => ({
       user_id,

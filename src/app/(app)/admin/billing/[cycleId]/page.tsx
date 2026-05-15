@@ -344,7 +344,7 @@ export default function AdminBillingCyclePage({
                     <img
                       src={proofUrl}
                       alt="Payment proof"
-                      className="max-h-64 rounded-lg border object-contain"
+                      className="max-h-64 max-w-md rounded-lg border object-contain"
                     />
                   ) : (
                     <Button size="sm" variant="outline" onClick={handleViewProof} disabled={loadingProof}>

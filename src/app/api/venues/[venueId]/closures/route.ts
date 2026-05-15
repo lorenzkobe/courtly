@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { canMutateVenue } from "@/lib/auth/management";
 import {
+  getVenueById,
   hasConfirmedBookingConflictForVenue,
   insertRow,
-  listVenueAdminAssignments,
+  listVenueAdminAssignmentsByVenue,
   listVenueClosuresByVenue,
-  listVenues,
 } from "@/lib/data/courtly-db";
 import type { VenueClosure } from "@/lib/types/courtly";
 
@@ -14,11 +14,7 @@ type Ctx = { params: Promise<{ venueId: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
   const { venueId } = await ctx.params;
-  const [venues, assignments] = await Promise.all([
-    listVenues(),
-    listVenueAdminAssignments(),
-  ]);
-  const venue = venues.find((row) => row.id === venueId);
+  const venue = await getVenueById(venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
@@ -29,6 +25,7 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const user = await readSessionUser();
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   if (!user || !canMutateVenue(user, venueId, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -44,12 +41,9 @@ export async function GET(req: Request, ctx: Ctx) {
 export async function POST(req: Request, ctx: Ctx) {
   const user = await readSessionUser();
   const { venueId } = await ctx.params;
-  const [venues, assignments] = await Promise.all([
-    listVenues(),
-    listVenueAdminAssignments(),
-  ]);
-  const venue = venues.find((row) => row.id === venueId);
+  const venue = await getVenueById(venueId);
   if (!venue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const assignments = await listVenueAdminAssignmentsByVenue(venueId);
   if (!user || !canMutateVenue(user, venueId, assignments)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

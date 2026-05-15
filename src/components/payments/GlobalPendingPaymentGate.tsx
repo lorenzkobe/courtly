@@ -181,9 +181,36 @@ export default function GlobalPendingPaymentGate() {
       });
     },
     onSuccess: () => {
+      const submittedMethod = selectedPaymentMethod;
+      const groupId = bookingGroupId;
+      const anchorId = overlayPendingBooking?.id ?? null;
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      queryClient.setQueriesData<Booking[]>(
+        { queryKey: queryKeys.bookings.all() },
+        (prev) => {
+          if (!Array.isArray(prev)) return prev;
+          let changed = false;
+          const next = prev.map((booking) => {
+            const inGroup =
+              booking.status === "pending_payment" &&
+              ((groupId && booking.booking_group_id === groupId) ||
+                booking.id === anchorId);
+            if (!inGroup) return booking;
+            changed = true;
+            return {
+              ...booking,
+              status: "pending_confirmation" as Booking["status"],
+              payment_submitted_method:
+                submittedMethod ?? booking.payment_submitted_method ?? null,
+              payment_submitted_at:
+                booking.payment_submitted_at ?? new Date().toISOString(),
+            };
+          });
+          return changed ? next : prev;
+        },
+      );
+      void queryClient.invalidateQueries({ queryKey: ["my-booking-detail"] });
       toast.success("Payment submitted. Waiting for venue confirmation.");
     },
     onError: (error) => {
@@ -201,11 +228,39 @@ export default function GlobalPendingPaymentGate() {
     onMutate: (payload: { booking_id: string; booking_group_id: string }) => {
       setOptimisticCancelBookingId(payload.booking_id);
     },
-    onSuccess: () => {
+    onSuccess: (_response, payload) => {
       setOptimisticCancelBookingId(null);
       setOptimizedProof(null);
       setSelectedPaymentMethod(null);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+      const freedSurfaceKeys = new Set<string>();
+      queryClient.setQueriesData<Booking[]>(
+        { queryKey: queryKeys.bookings.all() },
+        (prev) => {
+          if (!Array.isArray(prev)) return prev;
+          let removed = false;
+          const next = prev.filter((booking) => {
+            const inGroup =
+              booking.status === "pending_payment" &&
+              (booking.booking_group_id === payload.booking_group_id ||
+                booking.id === payload.booking_id);
+            if (!inGroup) return true;
+            removed = true;
+            if (booking.court_id && booking.date) {
+              freedSurfaceKeys.add(`${booking.court_id}__${booking.date}`);
+            }
+            return false;
+          });
+          return removed ? next : prev;
+        },
+      );
+      for (const composite of freedSurfaceKeys) {
+        const [courtId, date] = composite.split("__");
+        if (!courtId || !date) continue;
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookingSurface.courtDay(courtId, date),
+        });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["my-booking-detail"] });
       toast.success("Pending booking cancelled. Slots are now available again.");
     },
     onError: (error) => {

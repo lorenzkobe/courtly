@@ -771,8 +771,11 @@ export default function AdminBookingsPage() {
       const { data } = await courtlyApi.adminBookings.addNote(detailBooking.id, note);
       return data.note;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-booking-notes", activeDetailId] });
+    onSuccess: (note) => {
+      queryClient.setQueryData<{ notes: BookingAdminNote[] }>(
+        ["admin-booking-notes", activeDetailId],
+        (prev) => ({ notes: [note, ...(prev?.notes ?? [])] }),
+      );
       toast.success("Note added");
     },
     onError: (error) => {
