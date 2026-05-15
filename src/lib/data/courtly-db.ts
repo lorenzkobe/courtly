@@ -595,6 +595,136 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
   }));
 }
 
+type AuthSummary = { email: string; email_confirmed_at: string | null };
+type AuthCache = { at: number; map: Map<string, AuthSummary> };
+
+const AUTH_CACHE_TTL_MS = 15_000;
+let cachedAuthSummaries: AuthCache | null = null;
+let inflightAuthFetch: Promise<Map<string, AuthSummary>> | null = null;
+
+async function fetchAuthSummariesUncached(): Promise<Map<string, AuthSummary>> {
+  const admin = createSupabaseAdminClient();
+  const map = new Map<string, AuthSummary>();
+  let page = 1;
+  const perPage = 200;
+  for (;;) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    for (const u of data.users) {
+      if (u.id && u.email) {
+        map.set(u.id, {
+          email: u.email,
+          email_confirmed_at: u.email_confirmed_at ?? null,
+        });
+      }
+    }
+    if (data.users.length < perPage) break;
+    page += 1;
+  }
+  return map;
+}
+
+export async function listAuthSummariesById(): Promise<Map<string, AuthSummary>> {
+  const now = Date.now();
+  if (cachedAuthSummaries && now - cachedAuthSummaries.at < AUTH_CACHE_TTL_MS) {
+    return cachedAuthSummaries.map;
+  }
+  if (inflightAuthFetch) return inflightAuthFetch;
+  inflightAuthFetch = (async () => {
+    try {
+      const map = await fetchAuthSummariesUncached();
+      cachedAuthSummaries = { at: Date.now(), map };
+      return map;
+    } finally {
+      inflightAuthFetch = null;
+    }
+  })();
+  return inflightAuthFetch;
+}
+
+export function invalidateAuthSummaryCache() {
+  cachedAuthSummaries = null;
+}
+
+type ManagedUserDirectoryFilters = {
+  role?: "all" | ManagedUser["role"];
+  active?: "all" | "active" | "inactive";
+};
+
+export async function listManagedUsersForDirectory(
+  filters: ManagedUserDirectoryFilters = {},
+): Promise<ManagedUser[]> {
+  const supabase = await createSupabaseServerClient();
+
+  let profilesQuery = supabase
+    .from("profiles")
+    .select(
+      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
+    );
+  if (filters.role && filters.role !== "all") {
+    profilesQuery = profilesQuery.eq("role", filters.role);
+  }
+  if (filters.active === "active") {
+    profilesQuery = profilesQuery.eq("is_active", true);
+  } else if (filters.active === "inactive") {
+    profilesQuery = profilesQuery.eq("is_active", false);
+  }
+
+  const profilesPromise = profilesQuery;
+  const authMapPromise = listAuthSummariesById();
+
+  const [profilesRes, authMap] = await Promise.all([
+    profilesPromise,
+    authMapPromise,
+  ]);
+  if (profilesRes.error) throw profilesRes.error;
+  const profileRows = (profilesRes.data ?? []) as Array<{
+    id: string;
+    full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    birthdate: string | null;
+    mobile_number: string | null;
+    role: ManagedUser["role"];
+    is_active: boolean;
+    created_at: string;
+  }>;
+
+  const adminIds = profileRows
+    .filter((row) => row.role === "admin")
+    .map((row) => row.id);
+
+  let assignmentsByAdmin = new Map<string, string[]>();
+  if (adminIds.length > 0) {
+    const { data: assignments, error: assignmentsError } = await supabase
+      .from("venue_admin_assignments")
+      .select("venue_id, admin_user_id")
+      .in("admin_user_id", adminIds);
+    if (assignmentsError) throw assignmentsError;
+    assignmentsByAdmin = new Map();
+    for (const row of (assignments ?? []) as Array<{
+      venue_id: string;
+      admin_user_id: string;
+    }>) {
+      const list = assignmentsByAdmin.get(row.admin_user_id) ?? [];
+      list.push(row.venue_id);
+      assignmentsByAdmin.set(row.admin_user_id, list);
+    }
+  }
+
+  return profileRows.map((row) => {
+    const auth = authMap.get(row.id);
+    const venueIds =
+      row.role === "admin" ? assignmentsByAdmin.get(row.id) ?? [] : [];
+    return {
+      ...row,
+      email: auth?.email ?? "",
+      email_confirmed_at: auth?.email_confirmed_at ?? null,
+      venue_ids: venueIds,
+    } as ManagedUser;
+  });
+}
+
 export async function listManagedUsersByIds(userIds: string[]): Promise<ManagedUser[]> {
   if (userIds.length === 0) return [];
   const supabase = await createSupabaseServerClient();

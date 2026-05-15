@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
+import {
+  invalidateAuthSummaryCache,
+  listManagedUsersForDirectory,
+} from "@/lib/data/courtly-db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { authCallbackUrl } from "@/lib/supabase/app-url";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -12,97 +16,27 @@ import {
   PH_MOBILE_REGEX,
 } from "@/lib/validation/person-fields";
 
-type AuthListSummary = {
-  email: string;
-  email_confirmed_at: string | null;
-};
-
-async function listAuthSummariesById(): Promise<Map<string, AuthListSummary>> {
-  const admin = createSupabaseAdminClient();
-  const map = new Map<string, AuthListSummary>();
-  let page = 1;
-  const perPage = 200;
-  for (;;) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-    for (const u of data.users) {
-      if (u.id && u.email) {
-        map.set(u.id, {
-          email: u.email,
-          email_confirmed_at: u.email_confirmed_at ?? null,
-        });
-      }
-    }
-    if (data.users.length < perPage) break;
-    page += 1;
-  }
-  return map;
-}
-
 export async function GET() {
   const user = await readSessionUser();
   if (user?.role !== "superadmin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const supabase = await createSupabaseServerClient();
-
-  let authById: Map<string, AuthListSummary>;
   try {
-    authById = await listAuthSummariesById();
-  } catch (e) {
+    const users = await listManagedUsersForDirectory();
+    return NextResponse.json(users);
+  } catch (err) {
     const message =
-      e instanceof Error ? e.message : "Could not load auth directory from Supabase.";
-    console.error("[managed-users GET] listAuthSummariesById failed:", e);
+      err instanceof Error ? err.message : "Could not load directory.";
+    console.error("[managed-users GET] failed:", err);
     return NextResponse.json(
       {
         error:
-          "Could not list users from authentication (check SUPABASE_SERVICE_ROLE_KEY and project settings).",
+          "Could not list users (check SUPABASE_SERVICE_ROLE_KEY and project settings).",
         detail: message,
       },
       { status: 502 },
     );
   }
-
-  const { data: users, error: profilesError } = await supabase
-    .from("profiles")
-    .select(
-      "id, full_name, first_name, last_name, birthdate, mobile_number, role, is_active, created_at",
-    );
-  if (profilesError) {
-    console.error("[managed-users GET] profiles select:", profilesError);
-    return NextResponse.json(
-      { error: profilesError.message || "Could not load profiles." },
-      { status: 500 },
-    );
-  }
-
-  const { data: assignments, error: assignmentsError } = await supabase
-    .from("venue_admin_assignments")
-    .select("venue_id, admin_user_id");
-  if (assignmentsError) {
-    console.error("[managed-users GET] venue_admin_assignments select:", assignmentsError);
-    return NextResponse.json(
-      { error: assignmentsError.message || "Could not load venue assignments." },
-      { status: 500 },
-    );
-  }
-
-  return NextResponse.json(
-    (users ?? []).map((managedUser: { id: string; role: string }) => ({
-      ...managedUser,
-      email: authById.get(managedUser.id)?.email ?? "",
-      email_confirmed_at: authById.get(managedUser.id)?.email_confirmed_at ?? null,
-      venue_ids:
-        managedUser.role === "admin"
-          ? (assignments ?? [])
-              .filter(
-                (assignment: { admin_user_id: string }) =>
-                  assignment.admin_user_id === managedUser.id,
-              )
-              .map((assignment: { venue_id: string }) => assignment.venue_id)
-          : [],
-    })),
-  );
 }
 
 export async function POST(req: Request) {
@@ -206,14 +140,17 @@ export async function POST(req: Request) {
     })
     .eq("id", id);
 
-  if (role === "admin" && Array.isArray(body.venue_ids)) {
-    for (const venueId of body.venue_ids) {
-      await supabase.from("venue_admin_assignments").insert({
-        venue_id: venueId,
-        admin_user_id: id,
-      });
-    }
+  if (role === "admin" && Array.isArray(body.venue_ids) && body.venue_ids.length > 0) {
+    await supabase
+      .from("venue_admin_assignments")
+      .insert(
+        body.venue_ids.map((venueId) => ({
+          venue_id: venueId,
+          admin_user_id: id,
+        })),
+      );
   }
+  invalidateAuthSummaryCache();
   return NextResponse.json({
     id,
     email,

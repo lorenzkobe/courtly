@@ -12,6 +12,7 @@ export async function POST(req: Request) {
     year?: number;
     month?: number;
     mode?: "backfill" | "replace_unsettled";
+    venue_id?: string;
   };
 
   if (body.mode && body.mode !== "backfill" && body.mode !== "replace_unsettled") {
@@ -23,11 +24,15 @@ export async function POST(req: Request) {
   if (body.month !== undefined && (!Number.isInteger(body.month) || body.month < 1 || body.month > 12)) {
     return NextResponse.json({ error: "Invalid month." }, { status: 400 });
   }
+  if (body.venue_id !== undefined && (typeof body.venue_id !== "string" || body.venue_id.length === 0)) {
+    return NextResponse.json({ error: "Invalid venue id." }, { status: 400 });
+  }
 
   const result = await runGenerateMonthlyBilling({
     year: body.year,
     month: body.month,
     mode: body.mode ?? "backfill",
+    venueId: body.venue_id,
   });
 
   return NextResponse.json(result);

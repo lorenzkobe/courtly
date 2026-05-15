@@ -297,7 +297,21 @@ function GenerateBillingDialog({
   const [mode, setMode] = useState<GenerateMode>("backfill");
   const [selectedYear, setSelectedYear] = useState(defaultMonth.year);
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth.month);
+  const [selectedVenueId, setSelectedVenueId] = useState<string>("all");
   const monthOptions = buildMonthOptions();
+
+  const venuesQuery = useQuery({
+    queryKey: ["superadmin", "billing", "generate-venues"],
+    queryFn: async () => {
+      const res = await courtlyApi.venues.list();
+      return res.data
+        .filter((v) => v.status === "active")
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const venueOptions = venuesQuery.data ?? [];
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -305,6 +319,7 @@ function GenerateBillingDialog({
         year: selectedYear,
         month: selectedMonth,
         mode,
+        venue_id: selectedVenueId === "all" ? undefined : selectedVenueId,
       }),
     onSuccess: (res) => {
       const { data } = res;
@@ -348,6 +363,30 @@ function GenerateBillingDialog({
           </div>
 
           <div className="space-y-2">
+            <Label>Venue</Label>
+            <Select
+              value={selectedVenueId}
+              onValueChange={setSelectedVenueId}
+              disabled={venuesQuery.isLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={venuesQuery.isLoading ? "Loading venues…" : "All venues"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All active venues</SelectItem>
+                {venueOptions.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Limit generation to a single venue, or run for every active venue.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label>Mode</Label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -359,9 +398,9 @@ function GenerateBillingDialog({
                     : "border-border hover:border-primary/40"
                 }`}
               >
-                <p className="text-sm font-medium">Fill missing</p>
+                <p className="text-sm font-medium">Only create missing cycles</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Only create cycles that don&apos;t exist yet. Safe to run anytime.
+                  Skip venues that already have a cycle for this month. Safe to re-run.
                 </p>
               </button>
               <button
@@ -373,9 +412,9 @@ function GenerateBillingDialog({
                     : "border-border hover:border-primary/40"
                 }`}
               >
-                <p className="text-sm font-medium">Regenerate unsettled</p>
+                <p className="text-sm font-medium">Recalculate unsettled cycles</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Recalculate all unsettled cycles. Paid cycles are never touched.
+                  Re-run the totals for unsettled cycles this month. Paid cycles are never touched.
                 </p>
               </button>
             </div>

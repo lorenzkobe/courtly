@@ -420,6 +420,16 @@ export const courtlyApi = {
       users_cursor?: string | null;
       venues_cursor?: string | null;
       limit?: number;
+      q?: string;
+      role?: "all" | "user" | "admin" | "superadmin";
+      status?: "all" | "active" | "inactive" | "invite_pending";
+      sort?:
+        | "name_asc"
+        | "name_desc"
+        | "email_asc"
+        | "email_desc"
+        | "created_asc"
+        | "created_desc";
     }) => http.get<SuperadminDirectoryPagedResponse>("/api/superadmin/directory", { params }),
     bookingFee: {
       get: () =>
@@ -539,6 +549,7 @@ export const courtlyApi = {
       year?: number;
       month?: number;
       mode: "backfill" | "replace_unsettled";
+      venue_id?: string;
     }) =>
       http.post<import("@/lib/types/courtly").GenerateBillingResult>(
         "/api/superadmin/billing/generate-monthly",

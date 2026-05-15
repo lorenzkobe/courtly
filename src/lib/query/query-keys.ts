@@ -109,8 +109,27 @@ export const queryKeys = {
     venueRequests: () => ["admin", "venue-requests"] as const,
   },
   superadmin: {
-    directoryPaged: (limit?: number) =>
-      ["superadmin", "directory", "paged", { limit: limit ?? null }] as const,
+    directoryPaged: (
+      limit?: number,
+      filters?: {
+        q?: string;
+        role?: string;
+        status?: string;
+        sort?: string;
+      },
+    ) =>
+      [
+        "superadmin",
+        "directory",
+        "paged",
+        {
+          limit: limit ?? null,
+          q: normalized(filters?.q),
+          role: normalized(filters?.role),
+          status: normalized(filters?.status),
+          sort: normalized(filters?.sort),
+        },
+      ] as const,
     venueRequests: (status?: NullableString) =>
       ["superadmin", "venue-requests", { status: normalized(status) }] as const,
   },

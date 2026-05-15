@@ -8,8 +8,18 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { CalendarIcon, Copy, History, Plus, Send, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  CalendarIcon,
+  Copy,
+  History,
+  ListFilter,
+  Plus,
+  Search,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import PageHeader from "@/components/shared/PageHeader";
@@ -21,6 +31,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -116,6 +127,35 @@ type UserSort =
   | "created_desc"
   | "created_asc";
 
+type StatusFilter = "all" | "active" | "inactive" | "invite_pending";
+
+type UserFilters = {
+  role: "all" | ManagedUser["role"];
+  status: StatusFilter;
+};
+
+function defaultUserFilters(): UserFilters {
+  return { role: "all", status: "all" };
+}
+
+type AppliedFilterChip = {
+  id: string;
+  label: string;
+  onRemove: () => void;
+};
+
+const ROLE_LABELS: Record<ManagedUser["role"], string> = {
+  user: "Player",
+  admin: "Court admin",
+  superadmin: "Superadmin",
+};
+
+const STATUS_LABELS: Record<Exclude<StatusFilter, "all">, string> = {
+  active: "Active",
+  inactive: "Inactive",
+  invite_pending: "Invite pending",
+};
+
 export default function SuperadminUsersPage() {
   const PAGE_LIMIT = 20;
   const queryClient = useQueryClient();
@@ -128,12 +168,34 @@ export default function SuperadminUsersPage() {
     link: string;
     message: string;
   } | null>(null);
-  const [roleFilter, setRoleFilter] = useState<"all" | ManagedUser["role"]>(
-    "all",
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState<UserFilters>(() =>
+    defaultUserFilters(),
   );
+  const [draftFilters, setDraftFilters] = useState<UserFilters>(() =>
+    defaultUserFilters(),
+  );
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [sortBy, setSortBy] = useState<UserSort>("name_asc");
   const [accountHistoryOpen, setAccountHistoryOpen] = useState(false);
   const [accountHistoryUserId, setAccountHistoryUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  const queryParams = useMemo(
+    () => ({
+      q: debouncedSearch || undefined,
+      role: appliedFilters.role !== "all" ? appliedFilters.role : undefined,
+      status:
+        appliedFilters.status !== "all" ? appliedFilters.status : undefined,
+      sort: sortBy,
+    }),
+    [debouncedSearch, appliedFilters, sortBy],
+  );
 
   const {
     data: directoryPages,
@@ -144,12 +206,21 @@ export default function SuperadminUsersPage() {
     isFetchingNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT),
+    queryKey: queryKeys.superadmin.directoryPaged(PAGE_LIMIT, {
+      q: queryParams.q,
+      role: queryParams.role,
+      status: queryParams.status,
+      sort: queryParams.sort,
+    }),
     queryFn: async ({ pageParam }) => {
       const { data } = await courtlyApi.superadmin.directory({
         limit: PAGE_LIMIT,
         users_cursor: pageParam.users_cursor,
         venues_cursor: pageParam.venues_cursor,
+        q: queryParams.q,
+        role: queryParams.role,
+        status: queryParams.status,
+        sort: queryParams.sort,
       });
       return data;
     },
@@ -177,39 +248,55 @@ export default function SuperadminUsersPage() {
     directoryPages?.pages?.[directoryPages.pages.length - 1]?.managed_users.has_more ??
     false;
 
-  const visibleUsers = useMemo(() => {
-    let list = [...users];
-    if (roleFilter !== "all") {
-      list = list.filter((managedUser) => managedUser.role === roleFilter);
+  const visibleUsers = users;
+  const hasActiveSearchOrFilters =
+    Boolean(debouncedSearch) ||
+    appliedFilters.role !== "all" ||
+    appliedFilters.status !== "all";
+
+  const openFilterDialog = useCallback(() => {
+    if (!filterDialogOpen) {
+      setDraftFilters({ ...appliedFilters });
     }
-    list.sort((a, b) => {
-      const nameA = userDisplayName(a);
-      const nameB = userDisplayName(b);
-      switch (sortBy) {
-        case "name_desc":
-          return nameB.localeCompare(nameA, undefined, {
-            sensitivity: "base",
-          });
-        case "email_asc":
-          return a.email.localeCompare(b.email, undefined, {
-            sensitivity: "base",
-          });
-        case "email_desc":
-          return b.email.localeCompare(a.email, undefined, {
-            sensitivity: "base",
-          });
-        case "created_desc":
-          return b.created_at.localeCompare(a.created_at);
-        case "created_asc":
-          return a.created_at.localeCompare(b.created_at);
-        default:
-          return nameA.localeCompare(nameB, undefined, {
-            sensitivity: "base",
-          });
-      }
-    });
-    return list;
-  }, [users, roleFilter, sortBy]);
+    setFilterDialogOpen(true);
+  }, [appliedFilters, filterDialogOpen]);
+
+  const applyFilterDraft = useCallback(() => {
+    setAppliedFilters({ ...draftFilters });
+    setFilterDialogOpen(false);
+  }, [draftFilters]);
+
+  const resetFilterDraft = useCallback(() => {
+    setDraftFilters(defaultUserFilters());
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    const empty = defaultUserFilters();
+    setAppliedFilters(empty);
+    if (filterDialogOpen) setDraftFilters(empty);
+  }, [filterDialogOpen]);
+
+  const appliedFilterChips = useMemo((): AppliedFilterChip[] => {
+    const chips: AppliedFilterChip[] = [];
+    if (appliedFilters.role !== "all") {
+      chips.push({
+        id: "role",
+        label: `Role: ${ROLE_LABELS[appliedFilters.role]}`,
+        onRemove: () => setAppliedFilters((prev) => ({ ...prev, role: "all" })),
+      });
+    }
+    if (appliedFilters.status !== "all") {
+      chips.push({
+        id: "status",
+        label: `Status: ${STATUS_LABELS[appliedFilters.status]}`,
+        onRemove: () =>
+          setAppliedFilters((prev) => ({ ...prev, status: "all" })),
+      });
+    }
+    return chips;
+  }, [appliedFilters]);
+
+  const activeFilterCount = appliedFilterChips.length;
 
   const { data: accountHistoryData, isLoading: accountHistoryLoading } = useQuery({
     queryKey: ["managed-user-audits", accountHistoryUserId],
@@ -399,45 +486,168 @@ export default function SuperadminUsersPage() {
         </Button>
       </PageHeader>
 
-      {!isLoading && users.length > 0 ? (
-        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/10 p-4 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="min-w-40 flex-1">
-            <Label className="text-xs text-muted-foreground">Account type</Label>
-            <Select
-              value={roleFilter}
-              onValueChange={(v) =>
-                setRoleFilter(v as "all" | ManagedUser["role"])
-              }
-            >
-              <SelectTrigger className="mt-1.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All roles</SelectItem>
-                <SelectItem value="user">Player</SelectItem>
-                <SelectItem value="admin">Court admin</SelectItem>
-                <SelectItem value="superadmin">Superadmin</SelectItem>
-              </SelectContent>
-            </Select>
+      {!isLoading && (users.length > 0 || hasActiveSearchOrFilters) ? (
+        <div className="mb-6 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name or email..."
+                className="pl-9"
+              />
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <Select
+                value={sortBy}
+                onValueChange={(v) => setSortBy(v as UserSort)}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name_asc">Name (A–Z)</SelectItem>
+                  <SelectItem value="name_desc">Name (Z–A)</SelectItem>
+                  <SelectItem value="email_asc">Email (A–Z)</SelectItem>
+                  <SelectItem value="email_desc">Email (Z–A)</SelectItem>
+                  <SelectItem value="created_desc">Newest first</SelectItem>
+                  <SelectItem value="created_asc">Oldest first</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="relative shrink-0"
+                aria-label="Open user filters"
+                onClick={openFilterDialog}
+              >
+                <ListFilter className="h-4 w-4" />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </Button>
+            </div>
           </div>
-          <div className="min-w-48 flex-1">
-            <Label className="text-xs text-muted-foreground">Sort by</Label>
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as UserSort)}>
-              <SelectTrigger className="mt-1.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name_asc">Name (A–Z)</SelectItem>
-                <SelectItem value="name_desc">Name (Z–A)</SelectItem>
-                <SelectItem value="email_asc">Email (A–Z)</SelectItem>
-                <SelectItem value="email_desc">Email (Z–A)</SelectItem>
-                <SelectItem value="created_desc">Newest first</SelectItem>
-                <SelectItem value="created_asc">Oldest first</SelectItem>
-              </SelectContent>
-            </Select>
+
+          <div
+            className={cn(
+              "flex min-w-0 flex-wrap items-center gap-2",
+              appliedFilterChips.length > 0 &&
+                "rounded-lg border border-border/60 bg-muted/20 p-2",
+            )}
+          >
+            {appliedFilterChips.map((chip) => (
+              <Badge
+                key={chip.id}
+                variant="secondary"
+                className="h-7 shrink-0 gap-0.5 rounded-full pr-0.5 pl-2.5 font-normal"
+              >
+                <span className="max-w-[220px] truncate sm:max-w-[320px]">
+                  {chip.label}
+                </span>
+                <button
+                  type="button"
+                  onClick={chip.onRemove}
+                  className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove filter ${chip.label}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+            {activeFilterCount > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={clearAllFilters}
+              >
+                Clear filters
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
+
+      <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+        <DialogContent className="max-h-[min(92dvh,36rem)] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Filters</DialogTitle>
+            <DialogDescription>
+              Narrow the directory by role or account status. Apply to update
+              the list; filter chips can be removed individually.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="user-filter-role">Account type</Label>
+              <Select
+                value={draftFilters.role}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    role: v as UserFilters["role"],
+                  }))
+                }
+              >
+                <SelectTrigger id="user-filter-role" className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All roles</SelectItem>
+                  <SelectItem value="user">Player</SelectItem>
+                  <SelectItem value="admin">Court admin</SelectItem>
+                  <SelectItem value="superadmin">Superadmin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="user-filter-status">Status</Label>
+              <Select
+                value={draftFilters.status}
+                onValueChange={(v) =>
+                  setDraftFilters((d) => ({
+                    ...d,
+                    status: v as StatusFilter,
+                  }))
+                }
+              >
+                <SelectTrigger id="user-filter-status" className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="invite_pending">Invite pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="flex-row flex-wrap gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={resetFilterDraft}
+            >
+              Reset
+            </Button>
+            <Button
+              type="button"
+              className="font-heading"
+              onClick={applyFilterDraft}
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -458,13 +668,9 @@ export default function SuperadminUsersPage() {
       ) : users.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No users in the directory yet. Add a user to get started.
-          </CardContent>
-        </Card>
-      ) : visibleUsers.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No users match the current filters.
+            {hasActiveSearchOrFilters
+              ? "No users match the current filters."
+              : "No users in the directory yet. Add a user to get started."}
           </CardContent>
         </Card>
       ) : (

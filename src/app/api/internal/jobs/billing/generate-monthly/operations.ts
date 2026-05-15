@@ -26,6 +26,7 @@ export async function runGenerateMonthlyBilling(params?: {
   year?: number;
   month?: number;
   mode?: "backfill" | "replace_unsettled";
+  venueId?: string;
 }): Promise<GenerateBillingResult> {
   const mode = params?.mode ?? "backfill";
 
@@ -45,10 +46,14 @@ export async function runGenerateMonthlyBilling(params?: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
-  const { data: venues, error: venueErr } = await db
+  let venuesQuery = db
     .from("venues")
     .select("id, name")
     .eq("status", "active");
+  if (params?.venueId) {
+    venuesQuery = venuesQuery.eq("id", params.venueId);
+  }
+  const { data: venues, error: venueErr } = await venuesQuery;
   if (venueErr) throw venueErr;
 
   const venueRows = (venues ?? []) as { id: string; name: string }[];

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
+import { invalidateAuthSummaryCache } from "@/lib/data/courtly-db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ManagedUser } from "@/lib/types/courtly";
@@ -135,13 +136,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     .eq("id", id)
     .single();
   if (Array.isArray(patch.venue_ids) && role === "admin") {
-    const allowedVenueIds = new Set(patch.venue_ids);
+    const allowedVenueIds = Array.from(new Set(patch.venue_ids));
     await supabase.from("venue_admin_assignments").delete().eq("admin_user_id", id);
-    for (const venueId of allowedVenueIds) {
-      await supabase.from("venue_admin_assignments").insert({
-        venue_id: venueId,
-        admin_user_id: id,
-      });
+    if (allowedVenueIds.length > 0) {
+      await supabase.from("venue_admin_assignments").insert(
+        allowedVenueIds.map((venueId) => ({
+          venue_id: venueId,
+          admin_user_id: id,
+        })),
+      );
     }
   }
   if (role !== "admin") {
@@ -181,6 +184,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
       changed_fields: changedFields,
     });
   }
+  if (typeof patch.email === "string") {
+    invalidateAuthSummaryCache();
+  }
   return NextResponse.json({
     ...next,
     email,
@@ -202,5 +208,6 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   await supabase.from("venue_admin_assignments").delete().eq("admin_user_id", id);
   const admin = createSupabaseAdminClient();
   await admin.auth.admin.deleteUser(id);
+  invalidateAuthSummaryCache();
   return NextResponse.json({ ok: true });
 }
