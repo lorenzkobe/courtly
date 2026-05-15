@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
@@ -51,6 +52,16 @@ import { optimizeVenuePhoto } from "@/lib/venues/optimize-venue-photo";
 import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue-photo-constraints";
 
 type PriceRangeRow = PriceRangeFormRow;
+
+type EditVenueTab = "basics" | "location" | "pricing" | "payments" | "media";
+
+const EDIT_VENUE_TAB_LABELS: Record<EditVenueTab, string> = {
+  basics: "Basics",
+  location: "Location",
+  pricing: "Pricing",
+  payments: "Payments",
+  media: "Media",
+};
 
 const emptyForm = {
   name: "",
@@ -116,6 +127,7 @@ export default function SuperadminVenuesPage() {
   const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [editTab, setEditTab] = useState<EditVenueTab>("basics");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -943,147 +955,259 @@ export default function SuperadminVenuesPage() {
           if (!open) {
             cleanupStagedPhotos(form.photo_urls);
             setPhotoError(null);
+            setEditTab("basics");
           }
           setDialogOpen(open);
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent
+          className="sm:max-w-3xl"
+          contentClassName="gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="border-b border-border/60 px-6 py-4 text-left">
             <DialogTitle className="font-heading">Edit venue</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Venue name *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. BGC Makati Sports Center"
-              />
+          <Tabs
+            value={editTab}
+            onValueChange={(value) => setEditTab(value as EditVenueTab)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="border-b border-border/60 px-4 py-2 sm:px-6">
+              <div className="sm:hidden">
+                <Select
+                  value={editTab}
+                  onValueChange={(value) => setEditTab(value as EditVenueTab)}
+                >
+                  <SelectTrigger className="border-primary/30 bg-primary/10 font-medium text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(EDIT_VENUE_TAB_LABELS) as EditVenueTab[]).map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {EDIT_VENUE_TAB_LABELS[key]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="-mx-1 hidden overflow-x-auto px-1 sm:block">
+                <TabsList>
+                  <TabsTrigger value="basics">Basics</TabsTrigger>
+                  <TabsTrigger value="location">Location</TabsTrigger>
+                  <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                  <TabsTrigger value="payments">Payments</TabsTrigger>
+                  <TabsTrigger value="media">Media</TabsTrigger>
+                </TabsList>
+              </div>
             </div>
-            <div>
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(value) =>
-                  setForm({ ...form, status: value as Venue["status"] })
-                }
-              >
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="closed">Inactive (closed)</SelectItem>
-                </SelectContent>
-              </Select>
-              {form.status === "closed" ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Location *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.location}
-                onChange={(e) =>
-                  setForm({ ...form, location: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <VenueMapPinPicker
-                key={editingVenue?.id ?? "edit-venue"}
-                showPlaceSearch={true}
-                value={
-                  form.map_latitude != null &&
-                  form.map_longitude != null &&
-                  Number.isFinite(form.map_latitude) &&
-                  Number.isFinite(form.map_longitude)
-                    ? { lat: form.map_latitude, lng: form.map_longitude }
-                    : null
-                }
-                onChange={(next) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    map_latitude: next?.lat ?? null,
-                    map_longitude: next?.lng ?? null,
-                  }))
-                }
-                onPlaceDetails={({ city, address }) => {
-                  setForm((f) => ({
-                    ...f,
-                    city: city ?? f.city,
-                    location: address ?? f.location,
-                  }));
-                }}
-              />
-            </div>
-            <div>
-              <Label>Contact number *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.contact_phone}
-                onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
-                placeholder="+63 9XX XXX XXXX or landline"
-              />
-            </div>
-            <div>
-              <Label>Venue booking fee override</Label>
-              <Input
-                className="mt-1.5"
-                type="number"
-                min={0}
-                step={1}
-                inputMode="numeric"
-                value={form.booking_fee_override}
-                onChange={(e) =>
-                  setForm({ ...form, booking_fee_override: e.target.value })
-                }
-                placeholder="Leave blank to use default booking fee"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Optional. When set, this venue-specific fee overrides the superadmin default.
-              </p>
-            </div>
-            <div>
-              <Label>Facebook page link</Label>
-              <Input
-                className="mt-1.5"
-                value={form.facebook_url}
-                onChange={(e) => setForm({ ...form, facebook_url: e.target.value })}
-                placeholder="https://facebook.com/your-page"
-              />
-              {facebookUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Instagram page link</Label>
-              <Input
-                className="mt-1.5"
-                value={form.instagram_url}
-                onChange={(e) => setForm({ ...form, instagram_url: e.target.value })}
-                placeholder="https://instagram.com/your-page"
-              />
-              {instagramUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Sport</Label>
-              <Select value="pickleball" disabled>
-                <SelectTrigger className="mt-1.5 bg-muted/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pickleball">Pickleball</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <TabsContent value="basics" className="mt-0 space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Venue name *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="e.g. BGC Makati Sports Center"
+                    />
+                  </div>
+                  <div>
+                    <Label>Status</Label>
+                    <Select
+                      value={form.status}
+                      onValueChange={(value) =>
+                        setForm({ ...form, status: value as Venue["status"] })
+                      }
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="closed">Inactive (closed)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {form.status === "closed" ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Contact number *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.contact_phone}
+                      onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
+                      placeholder="+63 9XX XXX XXXX or landline"
+                    />
+                  </div>
+                  <div>
+                    <Label>Venue booking fee override</Label>
+                    <Input
+                      className="mt-1.5"
+                      type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
+                      value={form.booking_fee_override}
+                      onChange={(e) =>
+                        setForm({ ...form, booking_fee_override: e.target.value })
+                      }
+                      placeholder="Leave blank to use default booking fee"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Optional. When set, this venue-specific fee overrides the superadmin default.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Facebook page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.facebook_url}
+                      onChange={(e) => setForm({ ...form, facebook_url: e.target.value })}
+                      placeholder="https://facebook.com/your-page"
+                    />
+                    {facebookUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label>Instagram page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.instagram_url}
+                      onChange={(e) => setForm({ ...form, instagram_url: e.target.value })}
+                      placeholder="https://instagram.com/your-page"
+                    />
+                    {instagramUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="sm:max-w-xs">
+                  <Label>Sport</Label>
+                  <Select value="pickleball" disabled>
+                    <SelectTrigger className="mt-1.5 bg-muted/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pickleball">Pickleball</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                  <Label>Venue admins</Label>
+                  <p className="mb-1.5 text-xs text-muted-foreground">
+                    Add or remove court admins. Only users with Court admin role are allowed.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedAdminIds.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No assigned admins.</p>
+                    ) : (
+                      selectedAdminIds.map((adminId) => {
+                        const adminUser = adminOptions.find((option) => option.id === adminId);
+                        if (!adminUser) return null;
+                        return (
+                          <Badge
+                            key={adminId}
+                            variant="outline"
+                            className="gap-1.5 border-primary/30 bg-primary/10 py-1 text-primary"
+                          >
+                            <span>{adminDirectoryLabel(adminUser)}</span>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${adminDirectoryLabel(adminUser)}`}
+                              onClick={() =>
+                                setSelectedAdminIds((prev) => prev.filter((id) => id !== adminId))
+                              }
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Select value={adminToAdd} onValueChange={setAdminToAdd}>
+                      <SelectTrigger className="mt-2 flex-1">
+                        <SelectValue placeholder="Select court admin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {adminOptions
+                          .filter((adminUser) => !selectedAdminIds.includes(adminUser.id))
+                          .map((adminUser) => (
+                            <SelectItem key={adminUser.id} value={adminUser.id}>
+                              {adminDirectoryLabel(adminUser)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => {
+                        if (!adminToAdd) return;
+                        setSelectedAdminIds((prev) => [...prev, adminToAdd]);
+                        setAdminToAdd("");
+                      }}
+                      disabled={!adminToAdd}
+                    >
+                      <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="location" className="mt-0 space-y-4">
+                <div>
+                  <Label>Location *</Label>
+                  <Input
+                    className="mt-1.5"
+                    value={form.location}
+                    onChange={(e) =>
+                      setForm({ ...form, location: e.target.value })
+                    }
+                  />
+                </div>
+                <VenueMapPinPicker
+                  key={editingVenue?.id ?? "edit-venue"}
+                  showPlaceSearch={true}
+                  value={
+                    form.map_latitude != null &&
+                    form.map_longitude != null &&
+                    Number.isFinite(form.map_latitude) &&
+                    Number.isFinite(form.map_longitude)
+                      ? { lat: form.map_latitude, lng: form.map_longitude }
+                      : null
+                  }
+                  onChange={(next) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      map_latitude: next?.lat ?? null,
+                      map_longitude: next?.lng ?? null,
+                    }))
+                  }
+                  onPlaceDetails={({ city, address }) => {
+                    setForm((f) => ({
+                      ...f,
+                      city: city ?? f.city,
+                      location: address ?? f.location,
+                    }));
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="pricing" className="mt-0">
+                <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <Label>Price ranges *</Label>
@@ -1246,295 +1370,240 @@ export default function SuperadminVenuesPage() {
                   ))}
                 </div>
               )}
-            </div>
-            <div>
-              <Label className="mb-2 block">Payment methods *</Label>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Add at least one method. Only enabled methods appear in checkout.
-              </p>
-              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-                <label
-                  className={`block rounded-lg border p-3 transition-colors ${
-                    form.accepts_gcash
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border/60 bg-background"
-                  }`}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">GCash</span>
-                    <input
-                      type="checkbox"
-                      checked={form.accepts_gcash}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
-                      }
-                    />
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Mobile wallet transfer details shown to players.
-                  </span>
-                  {form.accepts_gcash ? (
-                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Input
-                        value={form.gcash_account_name}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
-                        }
-                        placeholder="Account name"
-                      />
-                      <Input
-                        value={form.gcash_account_number}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, gcash_account_number: e.target.value }))
-                        }
-                        placeholder="Account number"
-                      />
-                    </span>
-                  ) : null}
-                </label>
-                <label
-                  className={`block rounded-lg border p-3 transition-colors ${
-                    form.accepts_maya
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border/60 bg-background"
-                  }`}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Maya</span>
-                    <input
-                      type="checkbox"
-                      checked={form.accepts_maya}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
-                      }
-                    />
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Wallet transfer details shown to players.
-                  </span>
-                  {form.accepts_maya ? (
-                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Input
-                        value={form.maya_account_name}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
-                        }
-                        placeholder="Account name"
-                      />
-                      <Input
-                        value={form.maya_account_number}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, maya_account_number: e.target.value }))
-                        }
-                        placeholder="Account number"
-                      />
-                    </span>
-                  ) : null}
-                </label>
-              </div>
-            </div>
-            <div>
-              <Label className="mb-2 block">Amenities</Label>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {amenityOptions.map((amenity) => (
-                  <button
-                    key={amenity}
-                    type="button"
-                    onClick={() => toggleAmenity(amenity)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                      form.amenities.includes(amenity)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-muted-foreground hover:border-primary/40"
+                </div>
+              </TabsContent>
+
+              <TabsContent value="payments" className="mt-0 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Add at least one method. Only enabled methods appear in checkout.
+                </p>
+                <div className="space-y-3">
+                  <label
+                    className={`block rounded-lg border p-3 transition-colors ${
+                      form.accepts_gcash
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border/60 bg-background"
                     }`}
                   >
-                    {formatAmenityLabel(amenity)}
-                  </button>
-                ))}
-              </div>
-              {form.amenities.filter((item) => !amenityOptions.includes(item)).length >
-              0 ? (
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {form.amenities
-                    .filter((item) => !amenityOptions.includes(item))
-                    .map((customAmenity) => (
-                      <Badge
-                        key={customAmenity}
-                        variant="outline"
-                        className="cursor-pointer"
-                        onClick={() =>
-                          setForm((prev) => ({
-                            ...prev,
-                            amenities: prev.amenities.filter(
-                              (amenity) => amenity !== customAmenity,
-                            ),
-                          }))
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">GCash</span>
+                      <input
+                        type="checkbox"
+                        checked={form.accepts_gcash}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
                         }
-                      >
-                        {formatAmenityLabel(customAmenity)} x
-                      </Badge>
-                    ))}
+                      />
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Mobile wallet transfer details shown to players.
+                    </span>
+                    {form.accepts_gcash ? (
+                      <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Input
+                          value={form.gcash_account_name}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
+                          }
+                          placeholder="Account name"
+                        />
+                        <Input
+                          value={form.gcash_account_number}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, gcash_account_number: e.target.value }))
+                          }
+                          placeholder="Account number"
+                        />
+                      </span>
+                    ) : null}
+                  </label>
+                  <label
+                    className={`block rounded-lg border p-3 transition-colors ${
+                      form.accepts_maya
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border/60 bg-background"
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Maya</span>
+                      <input
+                        type="checkbox"
+                        checked={form.accepts_maya}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
+                        }
+                      />
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Wallet transfer details shown to players.
+                    </span>
+                    {form.accepts_maya ? (
+                      <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Input
+                          value={form.maya_account_name}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
+                          }
+                          placeholder="Account name"
+                        />
+                        <Input
+                          value={form.maya_account_number}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, maya_account_number: e.target.value }))
+                          }
+                          placeholder="Account number"
+                        />
+                      </span>
+                    ) : null}
+                  </label>
                 </div>
-              ) : null}
-              <div className="flex gap-2">
-                <Input
-                  value={form.customAmenityDraft}
-                  onChange={(e) => setForm({ ...form, customAmenityDraft: e.target.value })}
-                  placeholder="Add custom amenity"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addCustomAmenity();
-                    }
-                  }}
-                />
-                <Button type="button" variant="secondary" onClick={addCustomAmenity}>
-                  Add
-                </Button>
-              </div>
-            </div>
-            <div>
-              <Label>
-                Photos *{" "}
-                <span className="font-normal text-muted-foreground">
-                  ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
-                </span>
-              </Label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {form.photo_urls.map((url, i) => (
-                  <div
-                    key={url}
-                    className="relative aspect-square overflow-hidden rounded-lg border border-border"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`Photo ${i + 1}`}
-                      className="h-full w-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(url)}
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
-                      aria-label="Remove photo"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-                {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingPhoto}
-                    className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
-                  >
-                    {isUploadingPhoto ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Plus className="h-5 w-5" />
-                    )}
-                  </button>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handlePhotoSelect}
-              />
-              {photoError ? (
-                <p className="mt-1 text-xs text-destructive">{photoError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Venue admins</Label>
-              <p className="mb-1.5 text-xs text-muted-foreground">
-                Add or remove court admins. Only users with Court admin role are allowed.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {selectedAdminIds.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No assigned admins.</p>
-                ) : (
-                  selectedAdminIds.map((adminId) => {
-                    const adminUser = adminOptions.find((option) => option.id === adminId);
-                    if (!adminUser) return null;
-                    return (
-                      <Badge
-                        key={adminId}
-                        variant="outline"
-                        className="gap-1.5 border-primary/30 bg-primary/10 py-1 text-primary"
+              </TabsContent>
+
+              <TabsContent value="media" className="mt-0 space-y-6">
+                <div>
+                  <Label>
+                    Photos *{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
+                    </span>
+                  </Label>
+                  <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {form.photo_urls.map((url, i) => (
+                      <div
+                        key={url}
+                        className="relative aspect-square overflow-hidden rounded-lg border border-border"
                       >
-                        <span>{adminDirectoryLabel(adminUser)}</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
                         <button
                           type="button"
-                          aria-label={`Remove ${adminDirectoryLabel(adminUser)}`}
-                          onClick={() =>
-                            setSelectedAdminIds((prev) => prev.filter((id) => id !== adminId))
-                          }
+                          onClick={() => removePhoto(url)}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
+                          aria-label="Remove photo"
                         >
                           <X className="h-3 w-3" />
                         </button>
-                      </Badge>
-                    );
-                  })
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Select value={adminToAdd} onValueChange={setAdminToAdd}>
-                  <SelectTrigger className="mt-2 flex-1">
-                    <SelectValue placeholder="Select court admin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {adminOptions
-                      .filter((adminUser) => !selectedAdminIds.includes(adminUser.id))
-                      .map((adminUser) => (
-                        <SelectItem key={adminUser.id} value={adminUser.id}>
-                          {adminDirectoryLabel(adminUser)}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-2"
-                  onClick={() => {
-                    if (!adminToAdd) return;
-                    setSelectedAdminIds((prev) => [...prev, adminToAdd]);
-                    setAdminToAdd("");
-                  }}
-                  disabled={!adminToAdd}
-                >
-                  <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-                  Add
-                </Button>
-              </div>
+                      </div>
+                    ))}
+                    {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingPhoto}
+                        className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                      >
+                        {isUploadingPhoto ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Plus className="h-5 w-5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  {photoError ? (
+                    <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <Label className="mb-2 block">Amenities</Label>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {amenityOptions.map((amenity) => (
+                      <button
+                        key={amenity}
+                        type="button"
+                        onClick={() => toggleAmenity(amenity)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                          form.amenities.includes(amenity)
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-muted-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        {formatAmenityLabel(amenity)}
+                      </button>
+                    ))}
+                  </div>
+                  {form.amenities.filter((item) => !amenityOptions.includes(item)).length >
+                  0 ? (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {form.amenities
+                        .filter((item) => !amenityOptions.includes(item))
+                        .map((customAmenity) => (
+                          <Badge
+                            key={customAmenity}
+                            variant="outline"
+                            className="cursor-pointer"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                amenities: prev.amenities.filter(
+                                  (amenity) => amenity !== customAmenity,
+                                ),
+                              }))
+                            }
+                          >
+                            {formatAmenityLabel(customAmenity)} x
+                          </Badge>
+                        ))}
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <Input
+                      value={form.customAmenityDraft}
+                      onChange={(e) => setForm({ ...form, customAmenityDraft: e.target.value })}
+                      placeholder="Add custom amenity"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomAmenity();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="secondary" onClick={addCustomAmenity}>
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
             </div>
-          </div>
-          {!priceRangeFormValidation.ok ? (
-            <p
-              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
-              role="alert"
-            >
-              {priceRangeFormValidation.error}
-            </p>
+          </Tabs>
+          {!priceRangeFormValidation.ok || !paymentSettingsValidation.ok ? (
+            <div className="space-y-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+              {!priceRangeFormValidation.ok ? (
+                <p
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                  role="alert"
+                >
+                  {priceRangeFormValidation.error}
+                </p>
+              ) : null}
+              {!paymentSettingsValidation.ok ? (
+                <p
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                  role="alert"
+                >
+                  {paymentSettingsValidation.error}
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          {paymentSettingsValidation.ok ? null : (
-            <p
-              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
-              role="alert"
-            >
-              {paymentSettingsValidation.error}
-            </p>
-          )}
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-end sm:gap-2">
             {editingVenue ? (
               <Button
                 type="button"
                 variant="outline"
-                className="border-destructive/25 text-destructive hover:bg-destructive/5"
+                className="border-destructive/25 text-destructive hover:bg-destructive/5 sm:mr-auto"
                 onClick={() => setConfirmRemoveVenueId(editingVenue.id)}
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />

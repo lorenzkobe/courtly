@@ -22,7 +22,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
 import { courtlyApi } from "@/lib/api/courtly-client";
 import { queryKeys } from "@/lib/query/query-keys";
@@ -44,6 +52,24 @@ import { VENUE_PHOTO_MAX_COUNT, VENUE_PHOTO_MIN_COUNT } from "@/lib/venues/venue
 import type { Venue } from "@/lib/types/courtly";
 
 type PriceRangeRow = PriceRangeFormRow;
+
+type VenueFormSection = "basics" | "location" | "pricing" | "payments" | "media";
+
+const VENUE_FORM_SECTION_LABELS: Record<VenueFormSection, string> = {
+  basics: "Basics",
+  location: "Location",
+  pricing: "Pricing",
+  payments: "Payments",
+  media: "Media",
+};
+
+const WIZARD_STEPS: VenueFormSection[] = [
+  "basics",
+  "location",
+  "pricing",
+  "payments",
+  "media",
+];
 
 const emptyRequestForm = {
   name: "",
@@ -94,6 +120,8 @@ export default function AdminVenuesPage() {
   const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [editTab, setEditTab] = useState<VenueFormSection>("basics");
+  const [wizardStep, setWizardStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: venueCards = [], isFetching: isFetchingVenues, refetch: refetchVenues } = useQuery({
@@ -136,6 +164,34 @@ export default function AdminVenuesPage() {
       }),
     [form],
   );
+  const sectionValid = useMemo<Record<VenueFormSection, boolean>>(
+    () => ({
+      basics:
+        form.name.trim().length > 0 &&
+        form.contact_phone.trim().length > 0 &&
+        !facebookUrlError &&
+        !instagramUrlError,
+      location: form.location.trim().length > 0,
+      pricing: formRateValidation.ok,
+      payments: paymentValidation.ok,
+      media: form.photo_urls.length >= VENUE_PHOTO_MIN_COUNT,
+    }),
+    [
+      form.name,
+      form.contact_phone,
+      form.location,
+      form.photo_urls,
+      facebookUrlError,
+      instagramUrlError,
+      formRateValidation,
+      paymentValidation,
+    ],
+  );
+  const isAddMode = !editingRequestId;
+  const currentWizardSection = WIZARD_STEPS[wizardStep] ?? "basics";
+  const activeSection: VenueFormSection = isAddMode ? currentWizardSection : editTab;
+  const canAdvanceWizard = sectionValid[currentWizardSection];
+  const isLastWizardStep = wizardStep === WIZARD_STEPS.length - 1;
 
   const createRequest = useMutation({
     mutationFn: async () => {
@@ -509,11 +565,16 @@ export default function AdminVenuesPage() {
             setEditingRequestId(null);
             setEditingRequestStatus(null);
             setForm(emptyRequestForm);
+            setEditTab("basics");
+            setWizardStep(0);
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent
+          className="sm:max-w-3xl"
+          contentClassName="gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="border-b border-border/60 px-6 py-4 text-left">
             <DialogTitle className="font-heading">
               {editingRequestId
                 ? editingRequestStatus === "needs_update"
@@ -521,417 +582,532 @@ export default function AdminVenuesPage() {
                   : "Edit venue request"
                 : "Add new venue"}
             </DialogTitle>
+            {isAddMode ? (
+              <p className="text-sm text-muted-foreground">
+                Step {wizardStep + 1} of {WIZARD_STEPS.length} · {VENUE_FORM_SECTION_LABELS[currentWizardSection]}
+              </p>
+            ) : null}
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Venue name *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              />
-            </div>
-            <div>
-              <Label>Location *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.location}
-                onChange={(event) => setForm((prev) => ({ ...prev, location: event.target.value }))}
-              />
-            </div>
-            <VenueMapPinPicker
-              key="admin-venue-request"
-              showPlaceSearch={true}
-              value={
-                form.map_latitude != null && form.map_longitude != null
-                  ? { lat: form.map_latitude, lng: form.map_longitude }
-                  : null
-              }
-              onChange={(next) =>
-                setForm((prev) => ({
-                  ...prev,
-                  map_latitude: next?.lat ?? null,
-                  map_longitude: next?.lng ?? null,
-                }))
-              }
-              onPlaceDetails={({ city, address }) => {
-                setForm((f) => ({
-                  ...f,
-                  city: city ?? f.city,
-                  location: address ?? f.location,
-                }));
-              }}
-            />
-            <div>
-              <Label>Contact number *</Label>
-              <Input
-                className="mt-1.5"
-                value={form.contact_phone}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, contact_phone: event.target.value }))
-                }
-              />
-            </div>
-            <div>
-              <Label>Facebook page link</Label>
-              <Input
-                className="mt-1.5"
-                value={form.facebook_url}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, facebook_url: event.target.value }))
-                }
-              />
-              {facebookUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Instagram page link</Label>
-              <Input
-                className="mt-1.5"
-                value={form.instagram_url}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, instagram_url: event.target.value }))
-                }
-              />
-              {instagramUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
-              ) : null}
-            </div>
-            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Price ranges *</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
+          <Tabs
+            value={activeSection}
+            onValueChange={(value) => {
+              if (!isAddMode) setEditTab(value as VenueFormSection);
+            }}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            {isAddMode ? (
+              <div className="border-b border-border/60 px-4 py-3 sm:px-6">
+                <div className="flex items-center gap-1.5" aria-hidden>
+                  {WIZARD_STEPS.map((_, idx) => (
+                    <span
+                      key={idx}
+                      className={cn(
+                        "h-1.5 flex-1 rounded-full transition-colors",
+                        idx < wizardStep
+                          ? "bg-primary"
+                          : idx === wizardStep
+                            ? "bg-primary"
+                            : "bg-muted",
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="border-b border-border/60 px-4 py-2 sm:px-6">
+                <div className="sm:hidden">
+                  <Select
+                    value={editTab}
+                    onValueChange={(value) => setEditTab(value as VenueFormSection)}
+                  >
+                    <SelectTrigger className="border-primary/30 bg-primary/10 font-medium text-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(VENUE_FORM_SECTION_LABELS) as VenueFormSection[]).map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {VENUE_FORM_SECTION_LABELS[key]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="-mx-1 hidden overflow-x-auto px-1 sm:block">
+                  <TabsList>
+                    <TabsTrigger value="basics">Basics</TabsTrigger>
+                    <TabsTrigger value="location">Location</TabsTrigger>
+                    <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                    <TabsTrigger value="payments">Payments</TabsTrigger>
+                    <TabsTrigger value="media">Media</TabsTrigger>
+                  </TabsList>
+                </div>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <TabsContent value="basics" className="mt-0 space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Venue name *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.name}
+                      onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Contact number *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.contact_phone}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, contact_phone: event.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Facebook page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.facebook_url}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, facebook_url: event.target.value }))
+                      }
+                    />
+                    {facebookUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label>Instagram page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={form.instagram_url}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, instagram_url: event.target.value }))
+                      }
+                    />
+                    {instagramUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
+                    ) : null}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="location" className="mt-0 space-y-4">
+                <div>
+                  <Label>Location *</Label>
+                  <Input
+                    className="mt-1.5"
+                    value={form.location}
+                    onChange={(event) => setForm((prev) => ({ ...prev, location: event.target.value }))}
+                  />
+                </div>
+                <VenueMapPinPicker
+                  key="admin-venue-request"
+                  showPlaceSearch={true}
+                  value={
+                    form.map_latitude != null && form.map_longitude != null
+                      ? { lat: form.map_latitude, lng: form.map_longitude }
+                      : null
+                  }
+                  onChange={(next) =>
                     setForm((prev) => ({
                       ...prev,
-                      hourly_rate_windows: [
-                        ...prev.hourly_rate_windows,
-                        makeEmptyPriceRangeFormRow(),
-                      ],
+                      map_latitude: next?.lat ?? null,
+                      map_longitude: next?.lng ?? null,
                     }))
                   }
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  Add
-                </Button>
-              </div>
-              {form.hourly_rate_windows.length > 0 && (
+                  onPlaceDetails={({ city, address }) => {
+                    setForm((f) => ({
+                      ...f,
+                      city: city ?? f.city,
+                      location: address ?? f.location,
+                    }));
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="pricing" className="mt-0">
+                <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Price ranges *</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          hourly_rate_windows: [
+                            ...prev.hourly_rate_windows,
+                            makeEmptyPriceRangeFormRow(),
+                          ],
+                        }))
+                      }
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Add
+                    </Button>
+                  </div>
+                  {form.hourly_rate_windows.length > 0 && (
+                    <div className="space-y-3">
+                    {form.hourly_rate_windows.map((row, idx) => (
+                      <div key={idx} className="rounded-xl border border-border/50 bg-background p-3">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Range {idx + 1}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Remove range"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                hourly_rate_windows: prev.hourly_rate_windows.filter(
+                                  (_, i) => i !== idx,
+                                ),
+                              }))
+                            }
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <VenueTimeInput
+                              value={row.start}
+                              onChange={(value) =>
+                                setForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[idx] = { ...next[idx]!, start: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                            <VenueTimeInput
+                              value={row.end}
+                              onChange={(value) =>
+                                setForm((prev) => {
+                                  const next = [...prev.hourly_rate_windows];
+                                  next[idx] = { ...next[idx]!, end: value };
+                                  return { ...prev, hourly_rate_windows: next };
+                                })
+                              }
+                            />
+                          </div>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            value={row.rate}
+                            onChange={(event) =>
+                              setForm((prev) => {
+                                const next = [...prev.hourly_rate_windows];
+                                next[idx] = { ...next[idx]!, rate: event.target.value };
+                                return { ...prev, hourly_rate_windows: next };
+                              })
+                            }
+                            placeholder="Rate (PHP / hr)"
+                          />
+                          <div className="space-y-1.5 border-t border-border/50 pt-3">
+                            <span className="block text-xs text-muted-foreground">
+                              Active days
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {ALL_DAYS_OF_WEEK.map((day) => {
+                                const selected = row.days_of_week.includes(day);
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
+                                    onClick={() =>
+                                      setForm((prev) => {
+                                        const next = [...prev.hourly_rate_windows];
+                                        const current = new Set(next[idx]!.days_of_week);
+                                        if (current.has(day)) current.delete(day);
+                                        else current.add(day);
+                                        next[idx] = {
+                                          ...next[idx]!,
+                                          days_of_week: [...current].sort((a, b) => a - b),
+                                        };
+                                        return { ...prev, hourly_rate_windows: next };
+                                      })
+                                    }
+                                    className={cn(
+                                      "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
+                                      selected
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                    )}
+                                  >
+                                    {dayOfWeekInitialLabel(day)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="payments" className="mt-0 space-y-3">
                 <div className="space-y-3">
-                {form.hourly_rate_windows.map((row, idx) => (
-                  <div key={idx} className="rounded-xl border border-border/50 bg-background p-3">
-                    <div className="mb-3 flex items-center justify-between">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Range {idx + 1}
-                      </span>
-                      <Button
+                  <label className="flex items-center justify-between gap-2 rounded-lg border p-3">
+                    <span>GCash</span>
+                    <input
+                      type="checkbox"
+                      checked={form.accepts_gcash}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, accepts_gcash: event.target.checked }))
+                      }
+                    />
+                  </label>
+                  {form.accepts_gcash ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={form.gcash_account_name}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            gcash_account_name: event.target.value,
+                          }))
+                        }
+                        placeholder="GCash account name"
+                      />
+                      <Input
+                        value={form.gcash_account_number}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            gcash_account_number: event.target.value,
+                          }))
+                        }
+                        placeholder="GCash account number"
+                      />
+                    </div>
+                  ) : null}
+                  <label className="flex items-center justify-between gap-2 rounded-lg border p-3">
+                    <span>Maya</span>
+                    <input
+                      type="checkbox"
+                      checked={form.accepts_maya}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, accepts_maya: event.target.checked }))
+                      }
+                    />
+                  </label>
+                  {form.accepts_maya ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={form.maya_account_name}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            maya_account_name: event.target.value,
+                          }))
+                        }
+                        placeholder="Maya account name"
+                      />
+                      <Input
+                        value={form.maya_account_number}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            maya_account_number: event.target.value,
+                          }))
+                        }
+                        placeholder="Maya account number"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="media" className="mt-0 space-y-6">
+                <div>
+                  <Label>
+                    Photos *{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
+                    </span>
+                  </Label>
+                  <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {form.photo_urls.map((url, i) => (
+                      <div
+                        key={url}
+                        className="relative aspect-square overflow-hidden rounded-lg border border-border"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(url)}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
+                          aria-label="Remove photo"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        aria-label="Remove range"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingPhoto}
+                        className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                      >
+                        {isUploadingPhoto ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Plus className="h-5 w-5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  {photoError ? (
+                    <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <Label className="mb-2 block">Amenities</Label>
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {amenityOptions.map((amenity) => (
+                      <button
+                        key={amenity}
+                        type="button"
+                        className={`rounded-lg border px-3 py-1.5 text-xs ${
+                          form.amenities.includes(amenity)
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background"
+                        }`}
                         onClick={() =>
                           setForm((prev) => ({
                             ...prev,
-                            hourly_rate_windows: prev.hourly_rate_windows.filter(
-                              (_, i) => i !== idx,
-                            ),
+                            amenities: prev.amenities.includes(amenity)
+                              ? prev.amenities.filter((item) => item !== amenity)
+                              : [...prev.amenities, amenity],
                           }))
                         }
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <VenueTimeInput
-                          value={row.start}
-                          onChange={(value) =>
-                            setForm((prev) => {
-                              const next = [...prev.hourly_rate_windows];
-                              next[idx] = { ...next[idx]!, start: value };
-                              return { ...prev, hourly_rate_windows: next };
-                            })
-                          }
-                        />
-                        <VenueTimeInput
-                          value={row.end}
-                          onChange={(value) =>
-                            setForm((prev) => {
-                              const next = [...prev.hourly_rate_windows];
-                              next[idx] = { ...next[idx]!, end: value };
-                              return { ...prev, hourly_rate_windows: next };
-                            })
-                          }
-                        />
-                      </div>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        value={row.rate}
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const next = [...prev.hourly_rate_windows];
-                            next[idx] = { ...next[idx]!, rate: event.target.value };
-                            return { ...prev, hourly_rate_windows: next };
-                          })
-                        }
-                        placeholder="Rate (PHP / hr)"
-                      />
-                      <div className="space-y-1.5 border-t border-border/50 pt-3">
-                        <span className="block text-xs text-muted-foreground">
-                          Active days
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {ALL_DAYS_OF_WEEK.map((day) => {
-                            const selected = row.days_of_week.includes(day);
-                            return (
-                              <button
-                                key={day}
-                                type="button"
-                                aria-pressed={selected}
-                                aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
-                                onClick={() =>
-                                  setForm((prev) => {
-                                    const next = [...prev.hourly_rate_windows];
-                                    const current = new Set(next[idx]!.days_of_week);
-                                    if (current.has(day)) current.delete(day);
-                                    else current.add(day);
-                                    next[idx] = {
-                                      ...next[idx]!,
-                                      days_of_week: [...current].sort((a, b) => a - b),
-                                    };
-                                    return { ...prev, hourly_rate_windows: next };
-                                  })
-                                }
-                                className={cn(
-                                  "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
-                                  selected
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
-                                )}
-                              >
-                                {dayOfWeekInitialLabel(day)}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
+                        {formatAmenityLabel(amenity)}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                  <div className="flex gap-2">
+                    <Input
+                      value={form.customAmenityDraft}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, customAmenityDraft: event.target.value }))
+                      }
+                      placeholder="Add custom amenity"
+                    />
+                    <Button type="button" variant="secondary" onClick={addCustomAmenity}>
+                      Add
+                    </Button>
+                  </div>
                 </div>
-              )}
+              </TabsContent>
             </div>
-            <div>
-              <Label className="mb-2 block">Payment methods *</Label>
-              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-                <label className="flex items-center justify-between gap-2 rounded-lg border p-3">
-                  <span>GCash</span>
-                  <input
-                    type="checkbox"
-                    checked={form.accepts_gcash}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, accepts_gcash: event.target.checked }))
-                    }
-                  />
-                </label>
-                {form.accepts_gcash ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Input
-                      value={form.gcash_account_name}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          gcash_account_name: event.target.value,
-                        }))
-                      }
-                      placeholder="GCash account name"
-                    />
-                    <Input
-                      value={form.gcash_account_number}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          gcash_account_number: event.target.value,
-                        }))
-                      }
-                      placeholder="GCash account number"
-                    />
-                  </div>
-                ) : null}
-                <label className="flex items-center justify-between gap-2 rounded-lg border p-3">
-                  <span>Maya</span>
-                  <input
-                    type="checkbox"
-                    checked={form.accepts_maya}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, accepts_maya: event.target.checked }))
-                    }
-                  />
-                </label>
-                {form.accepts_maya ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Input
-                      value={form.maya_account_name}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          maya_account_name: event.target.value,
-                        }))
-                      }
-                      placeholder="Maya account name"
-                    />
-                    <Input
-                      value={form.maya_account_number}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          maya_account_number: event.target.value,
-                        }))
-                      }
-                      placeholder="Maya account number"
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div>
-              <Label className="mb-2 block">Amenities</Label>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {amenityOptions.map((amenity) => (
-                  <button
-                    key={amenity}
-                    type="button"
-                    className={`rounded-lg border px-3 py-1.5 text-xs ${
-                      form.amenities.includes(amenity)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background"
-                    }`}
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        amenities: prev.amenities.includes(amenity)
-                          ? prev.amenities.filter((item) => item !== amenity)
-                          : [...prev.amenities, amenity],
-                      }))
-                    }
-                  >
-                    {formatAmenityLabel(amenity)}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  value={form.customAmenityDraft}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, customAmenityDraft: event.target.value }))
-                  }
-                  placeholder="Add custom amenity"
-                />
-                <Button type="button" variant="secondary" onClick={addCustomAmenity}>
-                  Add
-                </Button>
-              </div>
-            </div>
-            <div>
-              <Label>
-                Photos *{" "}
-                <span className="font-normal text-muted-foreground">
-                  ({form.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
-                </span>
-              </Label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {form.photo_urls.map((url, i) => (
-                  <div
-                    key={url}
-                    className="relative aspect-square overflow-hidden rounded-lg border border-border"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`Photo ${i + 1}`}
-                      className="h-full w-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(url)}
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
-                      aria-label="Remove photo"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-                {form.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingPhoto}
-                    className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
-                  >
-                    {isUploadingPhoto ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Plus className="h-5 w-5" />
-                    )}
-                  </button>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handlePhotoSelect}
-              />
-              {photoError ? (
-                <p className="mt-1 text-xs text-destructive">{photoError}</p>
+          </Tabs>
+          {!isAddMode && (!formRateValidation.ok || !paymentValidation.ok) ? (
+            <div className="space-y-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+              {!formRateValidation.ok ? (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                  {formRateValidation.error}
+                </p>
+              ) : null}
+              {!paymentValidation.ok ? (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                  {paymentValidation.error}
+                </p>
               ) : null}
             </div>
-          </div>
-          {!formRateValidation.ok ? (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-              {formRateValidation.error}
-            </p>
           ) : null}
-          {!paymentValidation.ok ? (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-              {paymentValidation.error}
-            </p>
-          ) : null}
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-end sm:gap-2">
             <Button type="button" variant="outline" onClick={() => setRequestDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              type="button"
-              disabled={
-                createRequest.isPending ||
-                isUploadingPhoto ||
-                !form.name.trim() ||
-                !form.location.trim() ||
-                !form.contact_phone.trim() ||
-                form.photo_urls.length < VENUE_PHOTO_MIN_COUNT ||
-                !formRateValidation.ok ||
-                !paymentValidation.ok ||
-                Boolean(facebookUrlError) ||
-                Boolean(instagramUrlError)
-              }
-              onClick={() => createRequest.mutate()}
-            >
-              {createRequest.isPending
-                ? "Saving..."
-                : editingRequestId
-                  ? editingRequestStatus === "needs_update"
+            {isAddMode ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={wizardStep === 0}
+                  onClick={() => setWizardStep((step) => Math.max(0, step - 1))}
+                >
+                  Back
+                </Button>
+                {isLastWizardStep ? (
+                  <Button
+                    type="button"
+                    disabled={
+                      createRequest.isPending ||
+                      isUploadingPhoto ||
+                      !sectionValid.basics ||
+                      !sectionValid.location ||
+                      !sectionValid.pricing ||
+                      !sectionValid.payments ||
+                      !sectionValid.media
+                    }
+                    onClick={() => createRequest.mutate()}
+                  >
+                    {createRequest.isPending ? "Saving..." : "Submit request"}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={!canAdvanceWizard}
+                    onClick={() =>
+                      setWizardStep((step) => Math.min(WIZARD_STEPS.length - 1, step + 1))
+                    }
+                  >
+                    Next
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                type="button"
+                disabled={
+                  createRequest.isPending ||
+                  isUploadingPhoto ||
+                  !sectionValid.basics ||
+                  !sectionValid.location ||
+                  !sectionValid.pricing ||
+                  !sectionValid.payments ||
+                  !sectionValid.media
+                }
+                onClick={() => createRequest.mutate()}
+              >
+                {createRequest.isPending
+                  ? "Saving..."
+                  : editingRequestStatus === "needs_update"
                     ? "Resend for review"
-                    : "Save changes"
-                  : "Submit request"}
-            </Button>
+                    : "Save changes"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

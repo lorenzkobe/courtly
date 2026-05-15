@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -35,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VenueMapPinPicker } from "@/components/admin/VenueMapPinPicker";
 import { VenueTimeInput } from "@/components/admin/VenueTimeInput";
 import { apiErrorMessage } from "@/lib/api/api-error-message";
@@ -71,6 +73,16 @@ import { queryKeys } from "@/lib/query/query-keys";
 
 const defaultForm = {
   name: "",
+};
+
+type VenueEditTab = "basics" | "location" | "pricing" | "payments" | "media";
+
+const VENUE_EDIT_TAB_LABELS: Record<VenueEditTab, string> = {
+  basics: "Basics",
+  location: "Location",
+  pricing: "Pricing",
+  payments: "Payments",
+  media: "Media",
 };
 
 const defaultClosureForm = {
@@ -140,6 +152,7 @@ export default function AdminVenueCourtsPage() {
   const [stagedPhotoUrls, setStagedPhotoUrls] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [venueEditTab, setVenueEditTab] = useState<VenueEditTab>("basics");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [closureOpen, setClosureOpen] = useState(false);
   const [closureForm, setClosureForm] = useState(defaultClosureForm);
@@ -1121,17 +1134,21 @@ export default function AdminVenueCourtsPage() {
           if (!open) {
             cleanupStagedPhotos(venueForm.photo_urls);
             setPhotoError(null);
+            setVenueEditTab("basics");
           }
           setVenueOpen(open);
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent
+          className="sm:max-w-3xl"
+          contentClassName="gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="border-b border-border/60 px-6 py-4 text-left">
             <DialogTitle className="font-heading">Edit venue</DialogTitle>
           </DialogHeader>
           {venueOpen && !venue ? (
             <div
-              className="space-y-4 py-1"
+              className="space-y-4 overflow-y-auto px-6 py-5"
               aria-busy="true"
               aria-label="Loading venue details"
             >
@@ -1144,503 +1161,566 @@ export default function AdminVenueCourtsPage() {
               <Skeleton className="h-32 w-full rounded-xl" />
             </div>
           ) : (
-          <div className="space-y-4">
-            <div>
-              <Label>Venue name *</Label>
-              <Input
-                className="mt-1.5"
-                value={venueForm.name}
-                onChange={(e) => setVenueForm({ ...venueForm, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Location *</Label>
-              <Input
-                className="mt-1.5"
-                value={venueForm.location}
-                onChange={(e) => setVenueForm({ ...venueForm, location: e.target.value })}
-              />
-            </div>
-            <div>
-              <VenueMapPinPicker
-                key={venueId}
-                showPlaceSearch={true}
-                value={
-                  venueForm.map_latitude != null &&
-                  venueForm.map_longitude != null &&
-                  Number.isFinite(venueForm.map_latitude) &&
-                  Number.isFinite(venueForm.map_longitude)
-                    ? { lat: venueForm.map_latitude, lng: venueForm.map_longitude }
-                    : null
-                }
-                onChange={(next) =>
-                  setVenueForm((prev) => ({
-                    ...prev,
-                    map_latitude: next?.lat ?? null,
-                    map_longitude: next?.lng ?? null,
-                  }))
-                }
-                onPlaceDetails={({ city, address }) => {
-                  setVenueForm((f) => ({
-                    ...f,
-                    city: city ?? f.city,
-                    location: address ?? f.location,
-                  }));
-                }}
-              />
-            </div>
-            <div>
-              <Label>Contact number *</Label>
-              <Input
-                className="mt-1.5"
-                value={venueForm.contact_phone}
-                onChange={(e) => setVenueForm({ ...venueForm, contact_phone: e.target.value })}
-                placeholder="+63 9XX XXX XXXX or landline"
-              />
-            </div>
-            <div>
-              <Label>Facebook page link</Label>
-              <Input
-                className="mt-1.5"
-                value={venueForm.facebook_url}
-                onChange={(e) => setVenueForm({ ...venueForm, facebook_url: e.target.value })}
-                placeholder="https://facebook.com/your-page"
-              />
-              {facebookUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Instagram page link</Label>
-              <Input
-                className="mt-1.5"
-                value={venueForm.instagram_url}
-                onChange={(e) => setVenueForm({ ...venueForm, instagram_url: e.target.value })}
-                placeholder="https://instagram.com/your-page"
-              />
-              {instagramUrlError ? (
-                <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
-              ) : null}
-            </div>
-            <div>
-              <Label>Sport</Label>
-              <Select value="pickleball" disabled>
-                <SelectTrigger className="mt-1.5 bg-muted/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pickleball">Pickleball</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Availability</Label>
-              <Select
-                value={venueForm.status}
-                onValueChange={(v) => setVenueForm({ ...venueForm, status: v as Venue["status"] })}
-              >
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="closed">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
-              </p>
-            </div>
-            <div>
-              <Label className="mb-2 block">Payment methods *</Label>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Add at least one method for active venues. Only enabled methods are shown to players.
-              </p>
-              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-                <label
-                  className={`block rounded-lg border p-3 transition-colors ${
-                    venueForm.accepts_gcash
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border/60 bg-background"
-                  }`}
+          <>
+          <Tabs
+            value={venueEditTab}
+            onValueChange={(value) => setVenueEditTab(value as VenueEditTab)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div className="border-b border-border/60 px-4 py-2 sm:px-6">
+              <div className="sm:hidden">
+                <Select
+                  value={venueEditTab}
+                  onValueChange={(value) => setVenueEditTab(value as VenueEditTab)}
                 >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">GCash</span>
-                    <input
-                      type="checkbox"
-                      checked={venueForm.accepts_gcash}
-                      onChange={(e) =>
-                        setVenueForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
-                      }
-                    />
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Wallet number and account name shown to players.
-                  </span>
-                  {venueForm.accepts_gcash ? (
-                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Input
-                        value={venueForm.gcash_account_name}
-                        onChange={(e) =>
-                          setVenueForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
-                        }
-                        placeholder="Account name"
-                      />
-                      <Input
-                        value={venueForm.gcash_account_number}
-                        onChange={(e) =>
-                          setVenueForm((prev) => ({
-                            ...prev,
-                            gcash_account_number: e.target.value,
-                          }))
-                        }
-                        placeholder="Account number"
-                      />
-                    </span>
-                  ) : null}
-                </label>
-                <label
-                  className={`block rounded-lg border p-3 transition-colors ${
-                    venueForm.accepts_maya
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border/60 bg-background"
-                  }`}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Maya</span>
-                    <input
-                      type="checkbox"
-                      checked={venueForm.accepts_maya}
-                      onChange={(e) =>
-                        setVenueForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
-                      }
-                    />
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    Wallet number and account name shown to players.
-                  </span>
-                  {venueForm.accepts_maya ? (
-                    <span className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <Input
-                        value={venueForm.maya_account_name}
-                        onChange={(e) =>
-                          setVenueForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
-                        }
-                        placeholder="Account name"
-                      />
-                      <Input
-                        value={venueForm.maya_account_number}
-                        onChange={(e) =>
-                          setVenueForm((prev) => ({
-                            ...prev,
-                            maya_account_number: e.target.value,
-                          }))
-                        }
-                        placeholder="Account number"
-                      />
-                    </span>
-                  ) : null}
-                </label>
-              </div>
-            </div>
-            <div>
-              <Label className="mb-2 block">Amenities</Label>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {amenityOptions.map((amenity) => (
-                  <button
-                    key={amenity}
-                    type="button"
-                    onClick={() => toggleAmenity(amenity)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
-                      venueForm.amenities.includes(amenity)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    {formatAmenityLabel(amenity)}
-                  </button>
-                ))}
-              </div>
-              {venueForm.amenities.filter((item) => !amenityOptions.includes(item)).length >
-              0 ? (
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {venueForm.amenities
-                    .filter((item) => !amenityOptions.includes(item))
-                    .map((customAmenity) => (
-                      <Badge
-                        key={customAmenity}
-                        variant="outline"
-                        className="cursor-pointer"
-                        onClick={() =>
-                          setVenueForm((prev) => ({
-                            ...prev,
-                            amenities: prev.amenities.filter(
-                              (amenity) => amenity !== customAmenity,
-                            ),
-                          }))
-                        }
-                      >
-                        {formatAmenityLabel(customAmenity)} x
-                      </Badge>
+                  <SelectTrigger className="border-primary/30 bg-primary/10 font-medium text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(VENUE_EDIT_TAB_LABELS) as VenueEditTab[]).map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {VENUE_EDIT_TAB_LABELS[key]}
+                      </SelectItem>
                     ))}
-                </div>
-              ) : null}
-              <div className="flex gap-2">
-                <Input
-                  value={venueForm.customAmenityDraft}
-                  onChange={(e) =>
-                    setVenueForm({ ...venueForm, customAmenityDraft: e.target.value })
-                  }
-                  placeholder="Add custom amenity"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addCustomAmenity();
-                    }
-                  }}
-                />
-                <Button type="button" variant="secondary" onClick={addCustomAmenity}>
-                  Add
-                </Button>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="-mx-1 hidden overflow-x-auto px-1 sm:block">
+                <TabsList>
+                  <TabsTrigger value="basics">Basics</TabsTrigger>
+                  <TabsTrigger value="location">Location</TabsTrigger>
+                  <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                  <TabsTrigger value="payments">Payments</TabsTrigger>
+                  <TabsTrigger value="media">Media</TabsTrigger>
+                </TabsList>
               </div>
             </div>
-            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <Label>Price ranges *</Label>
-                  <p className="mt-1 max-w-prose text-xs text-muted-foreground">
-                    Non-overlapping hours (e.g. 7am–5pm at one rate, 5pm–10pm at another).
-                  </p>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <TabsContent value="basics" className="mt-0 space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Venue name *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={venueForm.name}
+                      onChange={(e) => setVenueForm({ ...venueForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Availability</Label>
+                    <Select
+                      value={venueForm.status}
+                      onValueChange={(v) => setVenueForm({ ...venueForm, status: v as Venue["status"] })}
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="closed">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Inactive venues stop accepting new bookings. Existing confirmed bookings are not automatically cancelled — contact players directly if their bookings will be affected.
+                    </p>
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 self-start"
-                  onClick={() =>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Contact number *</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={venueForm.contact_phone}
+                      onChange={(e) => setVenueForm({ ...venueForm, contact_phone: e.target.value })}
+                      placeholder="+63 9XX XXX XXXX or landline"
+                    />
+                  </div>
+                  <div className="sm:max-w-xs">
+                    <Label>Sport</Label>
+                    <Select value="pickleball" disabled>
+                      <SelectTrigger className="mt-1.5 bg-muted/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pickleball">Pickleball</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Facebook page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={venueForm.facebook_url}
+                      onChange={(e) => setVenueForm({ ...venueForm, facebook_url: e.target.value })}
+                      placeholder="https://facebook.com/your-page"
+                    />
+                    {facebookUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{facebookUrlError}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label>Instagram page link</Label>
+                    <Input
+                      className="mt-1.5"
+                      value={venueForm.instagram_url}
+                      onChange={(e) => setVenueForm({ ...venueForm, instagram_url: e.target.value })}
+                      placeholder="https://instagram.com/your-page"
+                    />
+                    {instagramUrlError ? (
+                      <p className="mt-1 text-xs text-destructive">{instagramUrlError}</p>
+                    ) : null}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="location" className="mt-0 space-y-4">
+                <div>
+                  <Label>Location *</Label>
+                  <Input
+                    className="mt-1.5"
+                    value={venueForm.location}
+                    onChange={(e) => setVenueForm({ ...venueForm, location: e.target.value })}
+                  />
+                </div>
+                <VenueMapPinPicker
+                  key={venueId}
+                  showPlaceSearch={true}
+                  value={
+                    venueForm.map_latitude != null &&
+                    venueForm.map_longitude != null &&
+                    Number.isFinite(venueForm.map_latitude) &&
+                    Number.isFinite(venueForm.map_longitude)
+                      ? { lat: venueForm.map_latitude, lng: venueForm.map_longitude }
+                      : null
+                  }
+                  onChange={(next) =>
                     setVenueForm((prev) => ({
                       ...prev,
-                      hourly_rate_windows: [
-                        ...prev.hourly_rate_windows,
-                        makeEmptyPriceRangeFormRow(),
-                      ],
+                      map_latitude: next?.lat ?? null,
+                      map_longitude: next?.lng ?? null,
                     }))
                   }
-                >
-                  Add range
-                </Button>
-              </div>
-              {venueForm.hourly_rate_windows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Add at least one start–end range and price per hour.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {venueForm.hourly_rate_windows.map((row, i) => (
-                    <div
-                      key={i}
-                      className="relative rounded-xl border border-border/50 bg-background p-4 pr-12 shadow-sm"
+                  onPlaceDetails={({ city, address }) => {
+                    setVenueForm((f) => ({
+                      ...f,
+                      city: city ?? f.city,
+                      location: address ?? f.location,
+                    }));
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="pricing" className="mt-0">
+                <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <Label>Price ranges *</Label>
+                      <p className="mt-1 max-w-prose text-xs text-muted-foreground">
+                        Non-overlapping hours (e.g. 7am–5pm at one rate, 5pm–10pm at another).
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 self-start"
+                      onClick={() =>
+                        setVenueForm((prev) => ({
+                          ...prev,
+                          hourly_rate_windows: [
+                            ...prev.hourly_rate_windows,
+                            makeEmptyPriceRangeFormRow(),
+                          ],
+                        }))
+                      }
                     >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Remove range"
-                        className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() =>
-                          setVenueForm((prev) => ({
-                            ...prev,
-                            hourly_rate_windows: prev.hourly_rate_windows.filter(
-                              (_, idx) => idx !== i,
-                            ),
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <div className="min-w-0 space-y-1.5">
-                            <Label
-                              className="text-xs text-muted-foreground"
-                              htmlFor={`admin-range-start-${i}`}
-                            >
-                              Start
-                            </Label>
-                            <VenueTimeInput
-                              id={`admin-range-start-${i}`}
-                              value={row.start}
-                              onChange={(value) =>
-                                setVenueForm((prev) => {
-                                  const next = [...prev.hourly_rate_windows];
-                                  next[i] = { ...next[i]!, start: value };
-                                  return { ...prev, hourly_rate_windows: next };
-                                })
-                              }
-                            />
-                          </div>
-                          <div className="min-w-0 space-y-1.5">
-                            <Label
-                              className="text-xs text-muted-foreground"
-                              htmlFor={`admin-range-end-${i}`}
-                            >
-                              End
-                            </Label>
-                            <VenueTimeInput
-                              id={`admin-range-end-${i}`}
-                              value={row.end}
-                              onChange={(value) =>
-                                setVenueForm((prev) => {
-                                  const next = [...prev.hourly_rate_windows];
-                                  next[i] = { ...next[i]!, end: value };
-                                  return { ...prev, hourly_rate_windows: next };
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-                        <div className="min-w-0 space-y-1.5">
-                          <Label
-                            className="text-xs text-muted-foreground"
-                            htmlFor={`admin-range-rate-${i}`}
-                          >
-                            Rate (PHP / hr)
-                          </Label>
-                          <Input
-                            id={`admin-range-rate-${i}`}
-                            type="number"
-                            inputMode="decimal"
-                            className="h-11 w-full"
-                            value={row.rate}
-                            onChange={(e) =>
-                              setVenueForm((prev) => {
-                                const next = [...prev.hourly_rate_windows];
-                                next[i] = { ...next[i]!, rate: e.target.value };
-                                return { ...prev, hourly_rate_windows: next };
-                              })
+                      Add range
+                    </Button>
+                  </div>
+                  {venueForm.hourly_rate_windows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Add at least one start–end range and price per hour.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {venueForm.hourly_rate_windows.map((row, i) => (
+                        <div
+                          key={i}
+                          className="relative rounded-xl border border-border/50 bg-background p-4 pr-12 shadow-sm"
+                        >
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Remove range"
+                            className="absolute right-2 top-2 h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() =>
+                              setVenueForm((prev) => ({
+                                ...prev,
+                                hourly_rate_windows: prev.hourly_rate_windows.filter(
+                                  (_, idx) => idx !== i,
+                                ),
+                              }))
                             }
-                            placeholder="e.g. 450"
-                          />
-                        </div>
-                        <div className="space-y-1.5 border-t border-border/50 pt-3">
-                          <Label className="text-xs text-muted-foreground">
-                            Active days
-                          </Label>
-                          <div className="flex items-center gap-1">
-                            {ALL_DAYS_OF_WEEK.map((day) => {
-                              const selected = row.days_of_week.includes(day);
-                              return (
-                                <button
-                                  key={day}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
-                                  onClick={() =>
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <div className="min-w-0 space-y-1.5">
+                                <Label
+                                  className="text-xs text-muted-foreground"
+                                  htmlFor={`admin-range-start-${i}`}
+                                >
+                                  Start
+                                </Label>
+                                <VenueTimeInput
+                                  id={`admin-range-start-${i}`}
+                                  value={row.start}
+                                  onChange={(value) =>
                                     setVenueForm((prev) => {
                                       const next = [...prev.hourly_rate_windows];
-                                      const current = new Set(next[i]!.days_of_week);
-                                      if (current.has(day)) current.delete(day);
-                                      else current.add(day);
-                                      next[i] = {
-                                        ...next[i]!,
-                                        days_of_week: [...current].sort((a, b) => a - b),
-                                      };
+                                      next[i] = { ...next[i]!, start: value };
                                       return { ...prev, hourly_rate_windows: next };
                                     })
                                   }
-                                  className={cn(
-                                    "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
-                                    selected
-                                      ? "border-primary bg-primary text-primary-foreground"
-                                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
-                                  )}
+                                />
+                              </div>
+                              <div className="min-w-0 space-y-1.5">
+                                <Label
+                                  className="text-xs text-muted-foreground"
+                                  htmlFor={`admin-range-end-${i}`}
                                 >
-                                  {dayOfWeekInitialLabel(day)}
-                                </button>
-                              );
-                            })}
+                                  End
+                                </Label>
+                                <VenueTimeInput
+                                  id={`admin-range-end-${i}`}
+                                  value={row.end}
+                                  onChange={(value) =>
+                                    setVenueForm((prev) => {
+                                      const next = [...prev.hourly_rate_windows];
+                                      next[i] = { ...next[i]!, end: value };
+                                      return { ...prev, hourly_rate_windows: next };
+                                    })
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div className="min-w-0 space-y-1.5">
+                              <Label
+                                className="text-xs text-muted-foreground"
+                                htmlFor={`admin-range-rate-${i}`}
+                              >
+                                Rate (PHP / hr)
+                              </Label>
+                              <Input
+                                id={`admin-range-rate-${i}`}
+                                type="number"
+                                inputMode="decimal"
+                                className="h-11 w-full"
+                                value={row.rate}
+                                onChange={(e) =>
+                                  setVenueForm((prev) => {
+                                    const next = [...prev.hourly_rate_windows];
+                                    next[i] = { ...next[i]!, rate: e.target.value };
+                                    return { ...prev, hourly_rate_windows: next };
+                                  })
+                                }
+                                placeholder="e.g. 450"
+                              />
+                            </div>
+                            <div className="space-y-1.5 border-t border-border/50 pt-3">
+                              <Label className="text-xs text-muted-foreground">
+                                Active days
+                              </Label>
+                              <div className="flex items-center gap-1">
+                                {ALL_DAYS_OF_WEEK.map((day) => {
+                                  const selected = row.days_of_week.includes(day);
+                                  return (
+                                    <button
+                                      key={day}
+                                      type="button"
+                                      aria-pressed={selected}
+                                      aria-label={`Toggle ${formatDaysOfWeekLabel({ days_of_week: [day] })}`}
+                                      onClick={() =>
+                                        setVenueForm((prev) => {
+                                          const next = [...prev.hourly_rate_windows];
+                                          const current = new Set(next[i]!.days_of_week);
+                                          if (current.has(day)) current.delete(day);
+                                          else current.add(day);
+                                          next[i] = {
+                                            ...next[i]!,
+                                            days_of_week: [...current].sort((a, b) => a - b),
+                                          };
+                                          return { ...prev, hourly_rate_windows: next };
+                                        })
+                                      }
+                                      className={cn(
+                                        "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md border text-xs font-medium transition",
+                                        selected
+                                          ? "border-primary bg-primary text-primary-foreground"
+                                          : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                                      )}
+                                    >
+                                      {dayOfWeekInitialLabel(day)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-            <div>
-              <Label>
-                Photos *{" "}
-                <span className="font-normal text-muted-foreground">
-                  ({venueForm.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
-                </span>
-              </Label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {venueForm.photo_urls.map((url, i) => (
-                  <div
-                    key={url}
-                    className="relative aspect-square overflow-hidden rounded-lg border border-border"
+              </TabsContent>
+
+              <TabsContent value="payments" className="mt-0 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Add at least one method for active venues. Only enabled methods are shown to players.
+                </p>
+                <div className="space-y-3">
+                  <label
+                    className={`block rounded-lg border p-3 transition-colors ${
+                      venueForm.accepts_gcash
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border/60 bg-background"
+                    }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`Photo ${i + 1}`}
-                      className="h-full w-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(url)}
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
-                      aria-label="Remove photo"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-                {venueForm.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingPhoto}
-                    className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">GCash</span>
+                      <input
+                        type="checkbox"
+                        checked={venueForm.accepts_gcash}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({ ...prev, accepts_gcash: e.target.checked }))
+                        }
+                      />
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Wallet number and account name shown to players.
+                    </span>
+                    {venueForm.accepts_gcash ? (
+                      <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Input
+                          value={venueForm.gcash_account_name}
+                          onChange={(e) =>
+                            setVenueForm((prev) => ({ ...prev, gcash_account_name: e.target.value }))
+                          }
+                          placeholder="Account name"
+                        />
+                        <Input
+                          value={venueForm.gcash_account_number}
+                          onChange={(e) =>
+                            setVenueForm((prev) => ({
+                              ...prev,
+                              gcash_account_number: e.target.value,
+                            }))
+                          }
+                          placeholder="Account number"
+                        />
+                      </span>
+                    ) : null}
+                  </label>
+                  <label
+                    className={`block rounded-lg border p-3 transition-colors ${
+                      venueForm.accepts_maya
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border/60 bg-background"
+                    }`}
                   >
-                    {isUploadingPhoto ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Plus className="h-5 w-5" />
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Maya</span>
+                      <input
+                        type="checkbox"
+                        checked={venueForm.accepts_maya}
+                        onChange={(e) =>
+                          setVenueForm((prev) => ({ ...prev, accepts_maya: e.target.checked }))
+                        }
+                      />
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Wallet number and account name shown to players.
+                    </span>
+                    {venueForm.accepts_maya ? (
+                      <span className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Input
+                          value={venueForm.maya_account_name}
+                          onChange={(e) =>
+                            setVenueForm((prev) => ({ ...prev, maya_account_name: e.target.value }))
+                          }
+                          placeholder="Account name"
+                        />
+                        <Input
+                          value={venueForm.maya_account_number}
+                          onChange={(e) =>
+                            setVenueForm((prev) => ({
+                              ...prev,
+                              maya_account_number: e.target.value,
+                            }))
+                          }
+                          placeholder="Account number"
+                        />
+                      </span>
+                    ) : null}
+                  </label>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="media" className="mt-0 space-y-6">
+                <div>
+                  <Label>
+                    Photos *{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({venueForm.photo_urls.length}/{VENUE_PHOTO_MAX_COUNT} — at least {VENUE_PHOTO_MIN_COUNT} required)
+                    </span>
+                  </Label>
+                  <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {venueForm.photo_urls.map((url, i) => (
+                      <div
+                        key={url}
+                        className="relative aspect-square overflow-hidden rounded-lg border border-border"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(url)}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/85 hover:bg-background"
+                          aria-label="Remove photo"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {venueForm.photo_urls.length < VENUE_PHOTO_MAX_COUNT && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingPhoto}
+                        className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50"
+                      >
+                        {isUploadingPhoto ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Plus className="h-5 w-5" />
+                        )}
+                      </button>
                     )}
-                  </button>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handlePhotoSelect}
-              />
-              {photoError ? (
-                <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  {photoError ? (
+                    <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <Label className="mb-2 block">Amenities</Label>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {amenityOptions.map((amenity) => (
+                      <button
+                        key={amenity}
+                        type="button"
+                        onClick={() => toggleAmenity(amenity)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                          venueForm.amenities.includes(amenity)
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-muted-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        {formatAmenityLabel(amenity)}
+                      </button>
+                    ))}
+                  </div>
+                  {venueForm.amenities.filter((item) => !amenityOptions.includes(item)).length >
+                  0 ? (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {venueForm.amenities
+                        .filter((item) => !amenityOptions.includes(item))
+                        .map((customAmenity) => (
+                          <Badge
+                            key={customAmenity}
+                            variant="outline"
+                            className="cursor-pointer"
+                            onClick={() =>
+                              setVenueForm((prev) => ({
+                                ...prev,
+                                amenities: prev.amenities.filter(
+                                  (amenity) => amenity !== customAmenity,
+                                ),
+                              }))
+                            }
+                          >
+                            {formatAmenityLabel(customAmenity)} x
+                          </Badge>
+                        ))}
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <Input
+                      value={venueForm.customAmenityDraft}
+                      onChange={(e) =>
+                        setVenueForm({ ...venueForm, customAmenityDraft: e.target.value })
+                      }
+                      placeholder="Add custom amenity"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomAmenity();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="secondary" onClick={addCustomAmenity}>
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+          {!venuePriceRangesValidation.ok || !paymentSettingsValidation.ok ? (
+            <div className="space-y-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+              {!venuePriceRangesValidation.ok ? (
+                <p
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                  role="alert"
+                >
+                  {venuePriceRangesValidation.error}
+                </p>
+              ) : null}
+              {!paymentSettingsValidation.ok ? (
+                <p
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                  role="alert"
+                >
+                  {paymentSettingsValidation.error}
+                </p>
               ) : null}
             </div>
-            {!venuePriceRangesValidation.ok ? (
-              <p
-                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
-                role="alert"
-              >
-                {venuePriceRangesValidation.error}
-              </p>
-            ) : null}
-            {paymentSettingsValidation.ok ? null : (
-              <p
-                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
-                role="alert"
-              >
-                {paymentSettingsValidation.error}
-              </p>
-            )}
+          ) : null}
+          <DialogFooter className="flex-col-reverse gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-end sm:gap-2">
             <Button
-              className="w-full font-heading font-semibold"
+              type="button"
+              variant="outline"
+              onClick={() => setVenueOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="font-heading font-semibold"
               type="button"
               onClick={() => saveVenue.mutate()}
               disabled={
@@ -1655,7 +1735,8 @@ export default function AdminVenueCourtsPage() {
             >
               {saveVenue.isPending ? "Saving..." : "Save Venue"}
             </Button>
-          </div>
+          </DialogFooter>
+          </>
           )}
         </DialogContent>
       </Dialog>

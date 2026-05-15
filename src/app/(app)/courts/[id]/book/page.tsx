@@ -75,7 +75,7 @@ import {
 } from "@/lib/booking-range";
 import { formatPhp, formatPhpCompact } from "@/lib/format-currency";
 import { formatAmenityLabel } from "@/lib/format-amenity";
-import { bookableHourTokensFromRanges } from "@/lib/venue-price-ranges";
+import { bookableHourTokensFromRanges, formatDaysOfWeekLabel } from "@/lib/venue-price-ranges";
 import { canCourtVenueAdminFlagReview, isSuperadmin } from "@/lib/auth/management";
 import type {
   Booking,
@@ -1027,15 +1027,25 @@ export default function BookCourtPage() {
                 <div className="sm:col-span-2">
                   <dt className="text-muted-foreground">Rates by time</dt>
                   <dd className="mt-1 space-y-1 font-medium text-foreground">
-                    {(court.hourly_rate_windows ?? []).map((rateWindow) => (
-                      <div
-                        key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
-                      >
-                        {formatTimeShort(rateWindow.start)} –{" "}
-                        {formatTimeShort(rateWindow.end)}:{" "}
-                        {formatPhpCompact(rateWindow.hourly_rate)}/hr
-                      </div>
-                    ))}
+                    {(court.hourly_rate_windows ?? []).length > 0 ? (
+                      (court.hourly_rate_windows ?? []).map((rateWindow) => (
+                        <div
+                          key={`${rateWindow.start}-${rateWindow.end}-${rateWindow.hourly_rate}`}
+                          className="flex flex-wrap items-baseline gap-x-2"
+                        >
+                          <span>
+                            {formatTimeShort(rateWindow.start)} –{" "}
+                            {formatTimeShort(rateWindow.end)}:{" "}
+                            {formatPhpCompact(rateWindow.hourly_rate)}/hr
+                          </span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            · {formatDaysOfWeekLabel(rateWindow)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="font-normal text-muted-foreground">—</span>
+                    )}
                   </dd>
                 </div>
                 <div>

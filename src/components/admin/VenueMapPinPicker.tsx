@@ -88,6 +88,7 @@ export function VenueMapPinPicker({
       const map = mapRef.current;
       if (!map) return;
       const L = (await import("leaflet")).default;
+      if (mapRef.current !== map) return;
 
       if (markerRef.current) {
         markerRef.current.setLatLng([lat, lng]);
@@ -201,6 +202,7 @@ export function VenueMapPinPicker({
 
     void (async () => {
       const L = (await import("leaflet")).default;
+      if (mapRef.current !== map) return;
       if (value) {
         if (markerRef.current) {
           markerRef.current.setLatLng([value.lat, value.lng]);
