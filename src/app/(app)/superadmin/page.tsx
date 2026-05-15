@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Building2,
+  FileText,
   Flag,
   Receipt,
   UserCog,
@@ -44,6 +45,13 @@ const links = [
     description:
       "Review reports from venue admins about player reviews, clear flags, or remove content.",
     icon: Flag,
+  },
+  {
+    href: "/superadmin/terms",
+    title: "Terms & Conditions",
+    description:
+      "Author the agreement venue admins must accept before using Courtly. Track who accepted, declined, or is pending.",
+    icon: FileText,
   },
 ] as const;
 

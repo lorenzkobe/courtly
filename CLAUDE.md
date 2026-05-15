@@ -347,10 +347,79 @@ These are not hypothetical preferences — they reflect actual past corrections:
     already covers most authenticated pages; the booking and cart pages mount
     their own variant. Adding a third causes the documented double-overlay
     bug.
+15. **Always run a post-task cleanup + optimization pass.** After every task
+    or new feature — before declaring it done — sweep the diff for the items
+    in section 14. The goal is to keep the repo in tip-top shape: no dead
+    code, no redundant queries, no avoidable re-renders, no premature
+    abstractions, no cost or performance regressions.
 
 ---
 
-## 14. Common commands
+## 14. Post-task cleanup & optimization checklist
+
+Run this every time, on the files you touched (and any siblings you reached
+into). Treat it as part of "done", not an optional polish step.
+
+**Dead code & clutter**
+- Remove unused imports, variables, props, types, exports, and files.
+- Remove commented-out code, `console.log`, `debugger`, and TODO/FIXME notes
+  that are no longer relevant.
+- Delete backwards-compat shims you introduced mid-task (re-exports,
+  `_renamed` vars, "// removed" markers).
+- Strip comments that just restate what the code does — keep only non-obvious
+  *why* notes.
+
+**Reuse & duplication**
+- Before adding a helper/component/type, grep for an existing one (especially
+  in `src/lib/`, `src/components/ui/`, `src/lib/types/courtly.ts`).
+- Consolidate near-duplicate query shapes into `courtly-db.ts` rather than
+  inlining a second variant in a route handler.
+- Reuse existing TanStack Query keys from `src/lib/query/` instead of
+  inventing parallel keys for the same data.
+
+**Performance**
+- Look for N+1 Supabase calls — prefer a single query with joins/`in()` over
+  a loop of `.eq()` calls.
+- Only `select()` the columns the caller actually uses; avoid `select('*')`
+  on wide tables (`bookings`, `venues`, `profiles`).
+- Memoize expensive client computations (`useMemo`/`useCallback`) only when
+  they actually help — React Compiler handles most cases; don't add noise.
+- Avoid client-side fetching in `useEffect` when the data could be fetched on
+  the server or via TanStack Query with proper keys.
+- Add `LIMIT` / pagination to any list endpoint that could grow unboundedly.
+
+**Cost**
+- Every new realtime subscription, cron tick, Resend send, signed-URL mint,
+  or service-role write costs money or quota. Justify each one; remove any
+  you added speculatively.
+- Avoid double-fetching the same row in a single request path (server
+  component + route handler + client query all hitting the same table).
+- Don't ship a new background job or polling loop without confirming an
+  existing cron / realtime channel can't cover it.
+
+**Security & correctness**
+- Confirm any new `public` table has the full GRANT block + RLS policies
+  scoped with `to authenticated` / `to anon` and `auth.uid()` /
+  `public.is_superadmin()`.
+- Confirm route handlers re-check role server-side; never trust UI gating
+  alone (especially for feature-preview surfaces).
+- Confirm `createSupabaseAdminClient` is only imported from server-only
+  modules.
+- Confirm any new notification type is wired through the category-emit
+  switch.
+
+**Validation gate**
+- `npm run lint` clean.
+- `npm run build` clean (catches type errors).
+- For UI/UX work: `npm run dev` and click through the golden path + the
+  paired public/auth surface if one exists.
+
+If a sweep finds nothing to remove or tighten, say so explicitly — silence
+shouldn't be ambiguous with "I forgot to check."
+
+---
+
+## 15. Common commands
 
 ```bash
 npm install            # install
@@ -364,7 +433,7 @@ walkthrough.
 
 ---
 
-## 15. Files worth reading first when picking up new work
+## 16. Files worth reading first when picking up new work
 
 - `src/lib/types/courtly.ts` — domain model.
 - `src/lib/data/courtly-db.ts` — every server-side DB call.
@@ -377,7 +446,7 @@ walkthrough.
 
 ---
 
-## 16. When in doubt
+## 17. When in doubt
 
 - Read the existing pattern in the closest sibling file before inventing a new
   one.

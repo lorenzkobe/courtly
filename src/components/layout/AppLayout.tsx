@@ -9,6 +9,7 @@ import {
   Building2,
   Calendar,
   Crown,
+  FileText,
   Flag,
   PhilippinePeso,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import GlobalPendingPaymentGate from "@/components/payments/GlobalPendingPaymentGate";
+import TermsAcceptanceGate from "@/components/admin/TermsAcceptanceGate";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import SportPicker from "@/components/shared/SportPicker";
 import { Button } from "@/components/ui/button";
@@ -73,6 +75,11 @@ function platformSuperadminNav(): NavEntry[] {
       path: "/superadmin/moderation",
       label: "Flagged reviews",
       icon: Flag,
+    },
+    {
+      path: "/superadmin/terms",
+      label: "Terms & Conditions",
+      icon: FileText,
     },
   ];
 }
@@ -321,6 +328,7 @@ export default function AppLayout({
         </div>
       </main>
       <GlobalPendingPaymentGate />
+      <TermsAcceptanceGate />
     </div>
   );
 }

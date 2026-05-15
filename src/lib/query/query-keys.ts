@@ -127,4 +127,10 @@ export const queryKeys = {
       ["reviews", "venue", normalized(venueId)] as const,
     flagged: () => ["reviews", "flagged"] as const,
   },
+  terms: {
+    superadmin: () => ["terms", "superadmin"] as const,
+    acceptances: () => ["terms", "acceptances"] as const,
+    adminState: () => ["terms", "admin-state"] as const,
+    history: () => ["terms", "history"] as const,
+  },
 };

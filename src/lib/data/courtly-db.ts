@@ -2482,3 +2482,489 @@ export async function deletePlatformPaymentMethod(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw error;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Admin Terms & Conditions
+// ────────────────────────────────────────────────────────────────────────────
+
+export type TermsVersionRow = {
+  id: string;
+  version: number;
+  content_html: string;
+  is_published: boolean;
+  published_at: string | null;
+  published_by: string | null;
+  /** `null` means "applies to every admin"; non-null array means specific admin ids. */
+  target_admin_ids: string[] | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminAcceptanceStatus = "accepted" | "rejected" | "pending";
+
+export type AdminAcceptanceRow = {
+  admin_id: string;
+  email: string;
+  full_name: string;
+  status: AdminAcceptanceStatus;
+  responded_at: string | null;
+  /** The version this admin is currently expected to respond to, if any. */
+  applicable_version: number | null;
+  applicable_version_id: string | null;
+  /** Newest version this admin has ever accepted, regardless of applicability. */
+  last_accepted_version: number | null;
+  last_accepted_at: string | null;
+};
+
+/** Most recently published row, regardless of who it targets. */
+export async function getCurrentPublishedTerms(): Promise<TermsVersionRow | null> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("terms_versions")
+    .select("*")
+    .eq("is_published", true)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as TermsVersionRow | null) ?? null;
+}
+
+/**
+ * Returns the highest-version published row that applies to a specific admin,
+ * i.e. `target_admin_ids IS NULL` (all admins) or contains the admin's id.
+ */
+export async function getApplicableTermsForAdmin(
+  adminId: string,
+): Promise<TermsVersionRow | null> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("terms_versions")
+    .select("*")
+    .eq("is_published", true)
+    .or(`target_admin_ids.is.null,target_admin_ids.cs.{${adminId}}`)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as TermsVersionRow | null) ?? null;
+}
+
+export async function getDraftTerms(): Promise<TermsVersionRow | null> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("terms_versions")
+    .select("*")
+    .eq("is_published", false)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as TermsVersionRow | null) ?? null;
+}
+
+/** Updates the singleton draft row (created by migration 0049 seed). */
+export async function upsertDraftTerms(input: {
+  content_html: string;
+}): Promise<TermsVersionRow> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const draft = await getDraftTerms();
+  if (draft) {
+    const { data, error } = await db
+      .from("terms_versions")
+      .update({ content_html: input.content_html })
+      .eq("id", draft.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as TermsVersionRow;
+  }
+  // Defensive: seed missing — recreate it.
+  const nextVersion = await nextDraftVersion();
+  const { data, error } = await db
+    .from("terms_versions")
+    .insert({
+      version: nextVersion,
+      content_html: input.content_html,
+      is_published: false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TermsVersionRow;
+}
+
+async function nextDraftVersion(): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("terms_versions")
+    .select("version")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const top = (data as { version: number } | null)?.version;
+  return typeof top === "number" ? top + 1 : 1;
+}
+
+/**
+ * Publishes the current draft as a new version row. The draft row keeps the
+ * just-published HTML so the superadmin can iterate further. Pass
+ * `targetAdminIds` to scope the publish to a subset of admins; omit or pass
+ * null to publish to everyone.
+ */
+export async function publishDraft(input: {
+  actorId: string;
+  targetAdminIds?: string[] | null;
+}): Promise<TermsVersionRow> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const draft = await getDraftTerms();
+  const contentHtml = draft?.content_html ?? "";
+  const nextVersion = await nextDraftVersion();
+  const targets =
+    Array.isArray(input.targetAdminIds) && input.targetAdminIds.length > 0
+      ? Array.from(new Set(input.targetAdminIds))
+      : null;
+  const { data, error } = await db
+    .from("terms_versions")
+    .insert({
+      version: nextVersion,
+      content_html: contentHtml,
+      is_published: true,
+      published_at: new Date().toISOString(),
+      published_by: input.actorId,
+      target_admin_ids: targets,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TermsVersionRow;
+}
+
+export type AdminTermsState =
+  | { status: "no_terms" }
+  | {
+      status: "pending" | "accepted" | "declined";
+      version_id: string;
+      version: number;
+      content_html: string;
+      responded_at: string | null;
+    };
+
+export async function getAdminTermsState(adminId: string): Promise<AdminTermsState> {
+  const applicable = await getApplicableTermsForAdmin(adminId);
+  if (!applicable) return { status: "no_terms" };
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("terms_acceptances")
+    .select("status, responded_at")
+    .eq("terms_version_id", applicable.id)
+    .eq("admin_user_id", adminId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { status: "accepted" | "rejected"; responded_at: string } | null;
+  const mappedStatus: "pending" | "accepted" | "declined" = !row
+    ? "pending"
+    : row.status === "accepted"
+      ? "accepted"
+      : "declined";
+  return {
+    status: mappedStatus,
+    version_id: applicable.id,
+    version: applicable.version,
+    content_html: applicable.content_html,
+    responded_at: row?.responded_at ?? null,
+  };
+}
+
+export async function recordAdminAcceptance(input: {
+  adminId: string;
+  versionId: string;
+  status: "accepted" | "rejected";
+}): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { error } = await db
+    .from("terms_acceptances")
+    .upsert(
+      {
+        terms_version_id: input.versionId,
+        admin_user_id: input.adminId,
+        status: input.status,
+        responded_at: new Date().toISOString(),
+      },
+      { onConflict: "terms_version_id,admin_user_id" },
+    );
+  if (error) throw error;
+}
+
+/**
+ * Per-admin acceptance status. Each admin's "applicable" version is the
+ * highest published row whose `target_admin_ids` is null or contains them.
+ * The latest_version returned is just an anchor for UI labels (e.g. "Next
+ * publish: vN+1") and is the global max regardless of scope.
+ */
+export async function listAdminAcceptanceStatuses(): Promise<{
+  latest_version: number | null;
+  rows: AdminAcceptanceRow[];
+}> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+
+  const { data: versionRows, error: versionsError } = await db
+    .from("terms_versions")
+    .select("id, version, target_admin_ids")
+    .eq("is_published", true)
+    .order("version", { ascending: false });
+  if (versionsError) throw versionsError;
+  const versions = (versionRows ?? []) as Array<{
+    id: string;
+    version: number;
+    target_admin_ids: string[] | null;
+  }>;
+
+  const { data: admins, error: adminsError } = await db
+    .from("profiles")
+    .select("id, full_name, first_name, last_name, role, is_active")
+    .eq("role", "admin")
+    .eq("is_active", true);
+  if (adminsError) throw adminsError;
+  const adminRows = (admins ?? []) as Array<{
+    id: string;
+    full_name: string | null;
+    first_name: string | null;
+    last_name: string | null;
+  }>;
+  if (adminRows.length === 0) {
+    return { latest_version: versions[0]?.version ?? null, rows: [] };
+  }
+
+  // Resolve emails from auth.users via paginated listUsers (mirrors
+  // /api/admin/managed-users/route.ts:listAuthSummariesById).
+  const emailsById = new Map<string, string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adminAuth = (supabase as any).auth;
+  let page = 1;
+  const perPage = 200;
+  for (;;) {
+    const { data: usersPage, error: usersError } = await adminAuth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (usersError) throw usersError;
+    const users = (usersPage?.users ?? []) as Array<{ id: string; email?: string }>;
+    for (const userRow of users) {
+      if (userRow.id && userRow.email) emailsById.set(userRow.id, userRow.email);
+    }
+    if (users.length < perPage) break;
+    page += 1;
+  }
+
+  const { data: accept, error: acceptError } = await db
+    .from("terms_acceptances")
+    .select("admin_user_id, terms_version_id, status, responded_at");
+  if (acceptError) throw acceptError;
+  const acceptByPair = new Map<
+    string,
+    { status: "accepted" | "rejected"; responded_at: string }
+  >();
+  const versionLookup = new Map(versions.map((version) => [version.id, version.version]));
+  const lastAcceptedByAdmin = new Map<
+    string,
+    { version: number; responded_at: string }
+  >();
+  for (const row of ((accept ?? []) as Array<{
+    admin_user_id: string;
+    terms_version_id: string;
+    status: "accepted" | "rejected";
+    responded_at: string;
+  }>)) {
+    acceptByPair.set(`${row.admin_user_id}::${row.terms_version_id}`, {
+      status: row.status,
+      responded_at: row.responded_at,
+    });
+    if (row.status === "accepted") {
+      const versionNumber = versionLookup.get(row.terms_version_id);
+      if (versionNumber == null) continue;
+      const existing = lastAcceptedByAdmin.get(row.admin_user_id);
+      if (!existing || versionNumber > existing.version) {
+        lastAcceptedByAdmin.set(row.admin_user_id, {
+          version: versionNumber,
+          responded_at: row.responded_at,
+        });
+      }
+    }
+  }
+
+  const applicableFor = (adminId: string) => {
+    for (const version of versions) {
+      if (version.target_admin_ids === null) return version;
+      if (version.target_admin_ids.includes(adminId)) return version;
+    }
+    return null;
+  };
+
+  const rows: AdminAcceptanceRow[] = adminRows.map((r) => {
+    const applicable = applicableFor(r.id);
+    const acc = applicable
+      ? acceptByPair.get(`${r.id}::${applicable.id}`)
+      : undefined;
+    const displayName =
+      (r.full_name && r.full_name.trim()) ||
+      [r.first_name, r.last_name].filter((part) => part && part.trim()).join(" ").trim() ||
+      "";
+    const status: AdminAcceptanceStatus = !applicable
+      ? "pending"
+      : !acc
+        ? "pending"
+        : acc.status === "accepted"
+          ? "accepted"
+          : "rejected";
+    const lastAccepted = lastAcceptedByAdmin.get(r.id) ?? null;
+    return {
+      admin_id: r.id,
+      email: emailsById.get(r.id) ?? "",
+      full_name: displayName,
+      status,
+      responded_at: acc?.responded_at ?? null,
+      applicable_version: applicable?.version ?? null,
+      applicable_version_id: applicable?.id ?? null,
+      last_accepted_version: lastAccepted?.version ?? null,
+      last_accepted_at: lastAccepted?.responded_at ?? null,
+    };
+  });
+
+  rows.sort((a, b) => {
+    const order = { pending: 0, rejected: 1, accepted: 2 } as const;
+    const diff = order[a.status] - order[b.status];
+    if (diff !== 0) return diff;
+    return (a.full_name || a.email).localeCompare(b.full_name || b.email);
+  });
+
+  return { latest_version: versions[0]?.version ?? null, rows };
+}
+
+export type TermsHistoryRow = {
+  id: string;
+  version: number;
+  content_html: string;
+  published_at: string | null;
+  published_by_name: string | null;
+  target_admin_ids: string[] | null;
+  target_admin_names: Array<{ admin_id: string; name: string }> | null;
+};
+
+/**
+ * Chronological history (newest first) of every published version, with
+ * publisher and target-admin names resolved from `profiles` for display.
+ * Skips the auth.users email lookup intentionally — names suffice for the
+ * dialog, and avoiding the paginated listUsers keeps this O(versions) for
+ * the IO cost instead of O(total users).
+ */
+export async function listTermsVersionHistory(): Promise<TermsHistoryRow[]> {
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data: versionRows, error } = await db
+    .from("terms_versions")
+    .select(
+      "id, version, content_html, published_at, published_by, target_admin_ids",
+    )
+    .eq("is_published", true)
+    .order("version", { ascending: false });
+  if (error) throw error;
+  const versions = (versionRows ?? []) as Array<{
+    id: string;
+    version: number;
+    content_html: string;
+    published_at: string | null;
+    published_by: string | null;
+    target_admin_ids: string[] | null;
+  }>;
+  if (versions.length === 0) return [];
+
+  const profileIds = new Set<string>();
+  for (const version of versions) {
+    if (version.published_by) profileIds.add(version.published_by);
+    if (version.target_admin_ids) {
+      for (const id of version.target_admin_ids) profileIds.add(id);
+    }
+  }
+
+  const profilesById = new Map<string, { name: string }>();
+  if (profileIds.size > 0) {
+    const { data: profileRows, error: profilesError } = await db
+      .from("profiles")
+      .select("id, full_name, first_name, last_name")
+      .in("id", Array.from(profileIds));
+    if (profilesError) throw profilesError;
+    for (const row of (profileRows ?? []) as Array<{
+      id: string;
+      full_name: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }>) {
+      const composed =
+        (row.full_name && row.full_name.trim()) ||
+        [row.first_name, row.last_name]
+          .filter((part) => part && part.trim())
+          .join(" ")
+          .trim() ||
+        "";
+      profilesById.set(row.id, { name: composed });
+    }
+  }
+
+  const shortId = (id: string) => `Admin ${id.slice(0, 8)}`;
+
+  return versions.map((version) => ({
+    id: version.id,
+    version: version.version,
+    content_html: version.content_html,
+    published_at: version.published_at,
+    published_by_name: version.published_by
+      ? profilesById.get(version.published_by)?.name || shortId(version.published_by)
+      : null,
+    target_admin_ids: version.target_admin_ids,
+    target_admin_names: version.target_admin_ids
+      ? version.target_admin_ids.map((id) => ({
+          admin_id: id,
+          name: profilesById.get(id)?.name || shortId(id),
+        }))
+      : null,
+  }));
+}
+
+/**
+ * Clears the admin's acceptance for the version currently applicable to them
+ * (their highest-version scoped row). Used by the superadmin Reset action.
+ */
+export async function resetAdminAcceptance(input: { adminId: string }): Promise<void> {
+  const applicable = await getApplicableTermsForAdmin(input.adminId);
+  if (!applicable) return;
+  const supabase = createSupabaseAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { error } = await db
+    .from("terms_acceptances")
+    .delete()
+    .eq("admin_user_id", input.adminId)
+    .eq("terms_version_id", applicable.id);
+  if (error) throw error;
+}

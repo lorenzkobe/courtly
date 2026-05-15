@@ -587,6 +587,85 @@ export const courtlyApi = {
       http.delete<{ ok: boolean }>(`/api/superadmin/billing/payment-methods/${id}`),
   },
 
+  superadminTerms: {
+    get: () =>
+      http.get<{
+        draft: { content_html: string; updated_at: string | null };
+        published: {
+          id: string;
+          version: number;
+          content_html: string;
+          published_at: string | null;
+        } | null;
+      }>("/api/superadmin/terms"),
+    saveDraft: (contentHtml: string) =>
+      http.patch<{ draft: { content_html: string; updated_at: string | null } }>(
+        "/api/superadmin/terms/draft",
+        { content_html: contentHtml },
+      ),
+    publish: (body?: { target_admin_ids?: string[] }) =>
+      http.post<{
+        published: {
+          id: string;
+          version: number;
+          content_html: string;
+          published_at: string | null;
+          target_admin_ids: string[] | null;
+        };
+      }>("/api/superadmin/terms/publish", body ?? {}),
+    acceptances: () =>
+      http.get<{
+        latest_version: number | null;
+        rows: Array<{
+          admin_id: string;
+          email: string;
+          full_name: string;
+          status: "accepted" | "rejected" | "pending";
+          responded_at: string | null;
+          applicable_version: number | null;
+          applicable_version_id: string | null;
+          last_accepted_version: number | null;
+          last_accepted_at: string | null;
+        }>;
+      }>("/api/superadmin/terms/acceptances"),
+    history: () =>
+      http.get<{
+        versions: Array<{
+          id: string;
+          version: number;
+          content_html: string;
+          published_at: string | null;
+          published_by_name: string | null;
+          target_admin_ids: string[] | null;
+          target_admin_names: Array<{
+            admin_id: string;
+            name: string;
+          }> | null;
+        }>;
+      }>("/api/superadmin/terms/history"),
+    resetAcceptance: (adminId: string) =>
+      http.post<{ ok: boolean }>(
+        `/api/superadmin/terms/acceptances/${adminId}/reset`,
+        {},
+      ),
+  },
+
+  adminTerms: {
+    state: () =>
+      http.get<
+        | { status: "no_terms" }
+        | {
+            status: "pending" | "accepted" | "declined";
+            version_id: string;
+            version: number;
+            content_html: string;
+            responded_at: string | null;
+          }
+      >("/api/admin/terms/state"),
+    accept: () => http.post<{ ok: boolean }>("/api/admin/terms/accept", {}),
+    decline: () => http.post<{ ok: boolean }>("/api/admin/terms/decline", {}),
+  },
+
   adminBilling: {
     list: (params?: { status?: string }) =>
       http.get<import("@/lib/types/courtly").AdminBillingListResponse>(
