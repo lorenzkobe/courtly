@@ -1008,6 +1008,7 @@ export default function AdminBookingsPage() {
             : "This will confirm the booking."
         }
         confirmLabel={pendingGroupDecision === "cancelled" ? "Cancel booking" : "Confirm booking"}
+        confirmVariant={pendingGroupDecision === "cancelled" ? "destructive" : "default"}
         isPending={updateBookingGroupStatus.isPending}
         onConfirm={() => {
           if (!pendingGroupDecision) return;
@@ -1024,6 +1025,7 @@ export default function AdminBookingsPage() {
             : "This will mark the booking as completed."
         }
         confirmLabel={completionGroupDecision === "refund" ? "Refund booking" : "Complete booking"}
+        confirmVariant={completionGroupDecision === "refund" ? "destructive" : "default"}
         isPending={updateBookingGroupStatus.isPending}
         onConfirm={() => {
           if (!completionGroupDecision) return;
@@ -1036,6 +1038,7 @@ export default function AdminBookingsPage() {
         title="Mark as refunded?"
         description="This will mark the booking as refunded."
         confirmLabel="Mark as refunded"
+        confirmVariant="default"
         isPending={updateBookingGroupStatus.isPending}
         onConfirm={() => updateBookingGroupStatus.mutate({ status: "refunded" })}
       />

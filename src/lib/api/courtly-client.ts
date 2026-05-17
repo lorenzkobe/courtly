@@ -480,6 +480,12 @@ export const courtlyApi = {
         action_link?: string;
         message?: string;
       }>(`/api/admin/managed-users/${id}/resend-invite`),
+    sendPasswordReset: (id: string) =>
+      http.post<{
+        emailed: boolean;
+        action_link?: string;
+        message?: string;
+      }>(`/api/admin/managed-users/${id}/send-password-reset`),
   },
 
   revenue: {

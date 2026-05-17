@@ -554,6 +554,7 @@ export default function SuperadminVenuesPage() {
         title="Approve venue request?"
         description="This will create the venue and assign the requester as a venue admin."
         confirmLabel="Approve"
+        confirmVariant="default"
         isPending={approveRequest.isPending}
         onConfirm={() => {
           if (!confirmApproveRequestId) return;
@@ -584,6 +585,7 @@ export default function SuperadminVenuesPage() {
         title="Send update request?"
         description="This will send your note to the admin and mark the request as needs update."
         confirmLabel="Send update request"
+        confirmVariant="default"
         isPending={requestVenueUpdate.isPending}
         onConfirm={() => {
           if (!confirmRequestUpdateRequestId) return;

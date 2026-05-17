@@ -77,7 +77,7 @@ function AuthCallbackContent() {
           return;
         }
 
-        if (!cancelled) router.replace(next);
+        if (!cancelled) window.location.replace(next);
       } catch (e) {
         if (!cancelled) {
           router.replace(

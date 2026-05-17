@@ -12,6 +12,7 @@ import {
   CalendarIcon,
   Copy,
   History,
+  KeyRound,
   ListFilter,
   Plus,
   Search,
@@ -163,8 +164,10 @@ export default function SuperadminUsersPage() {
   const [editing, setEditing] = useState<ManagedUser | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [confirmRemoveUserId, setConfirmRemoveUserId] = useState<string | null>(null);
+  const [confirmPasswordResetUserId, setConfirmPasswordResetUserId] = useState<string | null>(null);
   const [birthdateOpen, setBirthdateOpen] = useState(false);
   const [inviteLinkDialog, setInviteLinkDialog] = useState<{
+    title: string;
     link: string;
     message: string;
   } | null>(null);
@@ -397,6 +400,7 @@ export default function SuperadminUsersPage() {
       }
       if (data.action_link) {
         setInviteLinkDialog({
+          title: "Invitation link",
           link: data.action_link,
           message: data.message ?? "Copy the link and send it to the user.",
         });
@@ -406,6 +410,33 @@ export default function SuperadminUsersPage() {
     },
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Could not resend invitation"));
+    },
+  });
+
+  const sendPasswordReset = useMutation({
+    mutationFn: async (userId: string) => {
+      const { data } = await courtlyApi.managedUsers.sendPasswordReset(userId);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.emailed) {
+        toast.success(data.message ?? "Password reset email sent.");
+        return;
+      }
+      if (data.action_link) {
+        setInviteLinkDialog({
+          title: "Password reset link",
+          link: data.action_link,
+          message:
+            data.message ??
+            "Copy the password reset link and send it to the user.",
+        });
+        return;
+      }
+      toast.success("Done.");
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Could not send password reset email"));
     },
   });
 
@@ -475,6 +506,22 @@ export default function SuperadminUsersPage() {
           if (!confirmRemoveUserId) return;
           removeUser.mutate(confirmRemoveUserId);
           setConfirmRemoveUserId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!confirmPasswordResetUserId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmPasswordResetUserId(null);
+        }}
+        title="Send password reset email?"
+        description="The user will receive an email with a link to choose a new password. Their current password will keep working until they complete the reset."
+        confirmLabel="Send email"
+        confirmVariant="default"
+        isPending={sendPasswordReset.isPending}
+        onConfirm={() => {
+          if (!confirmPasswordResetUserId) return;
+          sendPasswordReset.mutate(confirmPasswordResetUserId);
+          setConfirmPasswordResetUserId(null);
         }}
       />
       <PageHeader
@@ -756,27 +803,13 @@ export default function SuperadminUsersPage() {
           <div className="space-y-4">
             <div>
               <Label>Email *</Label>
-              <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-                <Input
-                  className="min-w-0 flex-1"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  disabled={!!editing}
-                />
-                {editing && isInvitePending(editing) ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full shrink-0 whitespace-nowrap sm:w-auto"
-                    disabled={resendInvite.isPending}
-                    onClick={() => resendInvite.mutate(editing.id)}
-                  >
-                    <Send className="mr-1.5 h-3.5 w-3.5 shrink-0" />
-                    {resendInvite.isPending ? "Sending…" : "Resend invitation"}
-                  </Button>
-                ) : null}
-              </div>
+              <Input
+                className="mt-1.5"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                disabled={!!editing}
+              />
             </div>
             {!editing ? (
               <p className="text-xs text-muted-foreground">
@@ -899,22 +932,58 @@ export default function SuperadminUsersPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 Inactive users cannot log in.
               </p>
-              {editing ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 w-full gap-1.5 sm:w-auto"
-                  onClick={() => {
-                    setAccountHistoryUserId(editing.id);
-                    setAccountHistoryOpen(true);
-                  }}
-                >
-                  <History className="h-4 w-4" aria-hidden />
-                  Account history
-                </Button>
-              ) : null}
             </div>
+            {editing ? (
+              <div className="border-t border-border/60 pt-4">
+                <Label>Actions</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {isInvitePending(editing) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={resendInvite.isPending}
+                      onClick={() => resendInvite.mutate(editing.id)}
+                    >
+                      <Send className="h-4 w-4" aria-hidden />
+                      {resendInvite.isPending
+                        ? "Sending…"
+                        : "Resend invitation"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={sendPasswordReset.isPending}
+                      onClick={() =>
+                        setConfirmPasswordResetUserId(editing.id)
+                      }
+                    >
+                      <KeyRound className="h-4 w-4" aria-hidden />
+                      {sendPasswordReset.isPending
+                        ? "Sending…"
+                        : "Send password reset email"}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      setAccountHistoryUserId(editing.id);
+                      setAccountHistoryOpen(true);
+                    }}
+                  >
+                    <History className="h-4 w-4" aria-hidden />
+                    Account history
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             {form.role === "admin" ? (
               <div>
                 <Label>Venue assignments</Label>
@@ -1070,7 +1139,9 @@ export default function SuperadminUsersPage() {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-heading">Invitation link</DialogTitle>
+            <DialogTitle className="font-heading">
+              {inviteLinkDialog?.title ?? "Invitation link"}
+            </DialogTitle>
           </DialogHeader>
           {inviteLinkDialog ? (
             <div className="space-y-3">
