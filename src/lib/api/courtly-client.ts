@@ -43,6 +43,20 @@ export type VenueWritePayload = Omit<Partial<Venue>, "map_latitude" | "map_longi
 };
 import type { NotificationsListResponse } from "@/lib/notifications/types";
 
+export type MyProfileResponse = {
+  id: string;
+  email: string;
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  birthdate: string;
+  mobile_number: string;
+  role: "user" | "admin" | "superadmin";
+  is_active: boolean;
+  dupr_rating: number;
+  created_at: string;
+};
+
 export type AdminAssignedVenueSummary = {
   id: string;
   name: string;
@@ -543,6 +557,21 @@ export const courtlyApi = {
       registrations_cursor?: string | null;
       limit?: number;
     }) => http.get<MyBookingsOverviewResponse>("/api/me/bookings-overview", { params }),
+    profile: {
+      get: () => http.get<MyProfileResponse>("/api/me/profile"),
+      update: (body: {
+        firstName: string;
+        lastName: string;
+        birthdate: string;
+        mobileNumber: string;
+        duprRating?: number;
+      }) => http.patch<MyProfileResponse>("/api/me/profile", body),
+    },
+    changePassword: (body: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }) => http.post<{ ok: boolean }>("/api/me/change-password", body),
   },
 
   superadminBilling: {

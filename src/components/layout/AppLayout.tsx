@@ -18,6 +18,7 @@ import {
   Receipt,
   Trophy,
   UserCog,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -223,7 +224,10 @@ export default function AppLayout({
 
           <div className="space-y-2 border-t border-sidebar-border px-4 py-4">
             {user ? (
-              <div className="mb-1 px-2 py-1">
+              <Link
+                href="/profile"
+                className="mb-1 block rounded-lg px-2 py-1 transition-colors hover:bg-sidebar-accent"
+              >
                 <p className="truncate text-xs font-medium text-sidebar-foreground">
                   {user.full_name || user.email}
                 </p>
@@ -233,7 +237,7 @@ export default function AppLayout({
                 <p className="mt-1 text-[10px] font-medium tracking-wide text-primary/90">
                   {formatStatusLabel(user.role)}
                 </p>
-              </div>
+              </Link>
             ) : null}
             <button
               type="button"
@@ -301,6 +305,13 @@ export default function AppLayout({
                 </Link>
               );
             })}
+            <Link
+              href="/profile"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+            >
+              <UserRound className="h-5 w-5" /> Profile
+            </Link>
             <button
               type="button"
               onClick={signOut}
