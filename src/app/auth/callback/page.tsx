@@ -80,7 +80,7 @@ function AuthCallbackContent() {
         fail(
           "Could not sign you in. Open the link from your email again, or request a new invitation or password reset.",
         );
-      }, 5000);
+      }, 15000);
 
       // Implicit flow: Supabase redirects back with hash-fragment tokens.
       // @supabase/ssr's browser client does not reliably consume the URL hash,

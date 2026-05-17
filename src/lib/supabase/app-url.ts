@@ -1,13 +1,13 @@
 /**
  * Public site URL for Supabase auth redirects (invite, magic link, etc.).
  *
- * Vercel: set `NEXT_PUBLIC_APP_URL` to production (`https://courtly-pi.vercel.app`).
+ * Vercel: set `NEXT_PUBLIC_APP_URL` to production (`https://www.courtly.cc`).
  * For preview deployments, leave it unset so `VERCEL_URL` is used automatically.
  *
  * Supabase Dashboard → Authentication → URL configuration:
- * - Site URL: your production origin (e.g. `https://courtly-pi.vercel.app`).
+ * - Site URL: your production origin (e.g. `https://www.courtly.cc`).
  * - Redirect URLs: include `http://localhost:3000/auth/callback`,
- *   `https://courtly-pi.vercel.app/auth/callback`, and a wildcard such as
+ *   `https://www.courtly.cc/auth/callback`, and a wildcard such as
  *   `https://*.vercel.app/auth/callback` for preview branch URLs.
  *   Invites and password reset emails land on `/auth/callback` first, then
  *   `next` sends users to `/auth/set-password` to choose a password.
