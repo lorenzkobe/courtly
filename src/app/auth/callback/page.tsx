@@ -82,8 +82,34 @@ function AuthCallbackContent() {
         );
       }, 5000);
 
+      // Implicit flow: Supabase redirects back with hash-fragment tokens.
+      // @supabase/ssr's browser client does not reliably consume the URL hash,
+      // so parse it ourselves and call setSession explicitly.
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      const hashParams = hash.startsWith("#") ? new URLSearchParams(hash.slice(1)) : null;
+      const accessToken = hashParams?.get("access_token") ?? null;
+      const refreshToken = hashParams?.get("refresh_token") ?? null;
+      const hashError =
+        hashParams?.get("error_description")?.trim() ||
+        hashParams?.get("error")?.trim() ||
+        null;
+
+      if (hashError) {
+        fail(hashError);
+        return;
+      }
+
       try {
-        if (code) {
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) {
+            fail(error.message);
+            return;
+          }
+        } else if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
             const { data } = await supabase.auth.getSession();
