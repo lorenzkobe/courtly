@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import axios from "axios";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,8 +13,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { courtlyApi } from "@/lib/api/courtly-client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { EMAIL_REGEX } from "@/lib/validation/person-fields";
+
+const GENERIC_DONE_MESSAGE =
+  "If an account exists for that email, we sent a link to reset your password.";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -30,18 +32,28 @@ export default function ForgotPasswordPage() {
     setDoneMessage(null);
     setSubmitting(true);
     try {
-      const { data } = await courtlyApi.auth.forgotPassword({ email: normalizedEmail });
-      setDoneMessage(
-        typeof data?.message === "string"
-          ? data.message
-          : "If an account exists for that email, we sent a link to reset your password.",
-      );
-    } catch (err) {
-      if (axios.isAxiosError(err) && typeof err.response?.data?.error === "string") {
-        setError(err.response.data.error);
-      } else {
-        setError("Could not send reset email. Try again later.");
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        setError("Sign-in is not configured in this browser. Try again later.");
+        return;
       }
+
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+        "/auth/set-password",
+      )}`;
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
+        normalizedEmail,
+        { redirectTo },
+      );
+
+      if (resetErr) {
+        setError(resetErr.message || "Could not send reset email. Try again later.");
+        return;
+      }
+
+      setDoneMessage(GENERIC_DONE_MESSAGE);
+    } catch {
+      setError("Could not send reset email. Try again later.");
     } finally {
       setSubmitting(false);
     }
