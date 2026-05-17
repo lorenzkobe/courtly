@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { courtlyApi } from "@/lib/api/courtly-client";
 import { EMAIL_REGEX } from "@/lib/validation/person-fields";
 
 const GENERIC_DONE_MESSAGE =
@@ -32,26 +32,8 @@ export default function ForgotPasswordPage() {
     setDoneMessage(null);
     setSubmitting(true);
     try {
-      const supabase = getSupabaseBrowserClient();
-      if (!supabase) {
-        setError("Sign-in is not configured in this browser. Try again later.");
-        return;
-      }
-
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
-        "/auth/set-password",
-      )}`;
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
-        normalizedEmail,
-        { redirectTo },
-      );
-
-      if (resetErr) {
-        setError(resetErr.message || "Could not send reset email. Try again later.");
-        return;
-      }
-
-      setDoneMessage(GENERIC_DONE_MESSAGE);
+      const res = await courtlyApi.auth.forgotPassword({ email: normalizedEmail });
+      setDoneMessage(res.data?.message || GENERIC_DONE_MESSAGE);
     } catch {
       setError("Could not send reset email. Try again later.");
     } finally {

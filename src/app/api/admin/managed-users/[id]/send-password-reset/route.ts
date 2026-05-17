@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionUser } from "@/lib/auth/cookie-session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseResetClient } from "@/lib/supabase/auth-reset";
 import { authCallbackUrl } from "@/lib/supabase/app-url";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -31,7 +32,11 @@ export async function POST(_req: Request, ctx: Ctx) {
   const email = authData.user.email;
   const redirectTo = resetRedirectTo();
 
-  const resetRes = await admin.auth.resetPasswordForEmail(
+  // Implicit-flow client — PKCE links from the admin client are unusable because
+  // the verifier never reaches the recipient's browser. Token-hash links work
+  // cross-browser and are consumed by /auth/callback via detectSessionInUrl.
+  const reset = createSupabaseResetClient();
+  const resetRes = await reset.auth.resetPasswordForEmail(
     email,
     redirectTo ? { redirectTo } : undefined,
   );
